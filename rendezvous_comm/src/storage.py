@@ -1,11 +1,17 @@
 """Results storage and retrieval for experiment runs.
 
-Directory layout:
+Directory layout per run:
   results/<exp_id>/<run_id>/
-    ├── config.yaml         # Full config snapshot
-    ├── metrics.json        # Final aggregate metrics
-    ├── training_log.csv    # Per-iteration training metrics from BenchMARL
-    └── eval_episodes.json  # Per-episode eval data (optional)
+    input/
+      config.yaml           # Frozen config snapshot
+    logs/
+      run.log               # Python logger output
+      training_log.csv      # Per-iteration training metrics
+    output/
+      benchmarl/            # Raw BenchMARL artifacts (CSV, checkpoints)
+      metrics.json          # Final aggregate metrics
+      eval_episodes.json    # Per-episode eval data (optional)
+    report.txt              # Human-readable run summary
 """
 import json
 import os
@@ -26,36 +32,47 @@ def _json_serializable(obj):
 
 
 class RunStorage:
-    """Manages data for a single experiment run."""
+    """Manages data for a single experiment run.
+
+    Creates a structured directory with input/, logs/, and output/ subdirs.
+    """
 
     def __init__(self, results_dir: Path, run_id: str):
         self.run_dir = results_dir / run_id
-        self.run_dir.mkdir(parents=True, exist_ok=True)
         self.run_id = run_id
 
+        # Create structured subdirectories
+        self.input_dir = self.run_dir / "input"
+        self.logs_dir = self.run_dir / "logs"
+        self.output_dir = self.run_dir / "output"
+        self.benchmarl_dir = self.output_dir / "benchmarl"
+
+        for d in (self.input_dir, self.logs_dir, self.output_dir, self.benchmarl_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
     def save_config(self, config: Dict[str, Any]):
-        """Save the full config snapshot."""
+        """Save the full config snapshot to input/config.yaml."""
         config["_saved_at"] = datetime.now().isoformat()
-        with open(self.run_dir / "config.yaml", "w") as f:
+        with open(self.input_dir / "config.yaml", "w") as f:
             yaml.dump(config, f, default_flow_style=False)
 
     def save_metrics(self, metrics: Dict[str, float]):
-        """Save final aggregate metrics."""
-        with open(self.run_dir / "metrics.json", "w") as f:
+        """Save final aggregate metrics to output/metrics.json."""
+        with open(self.output_dir / "metrics.json", "w") as f:
             json.dump(metrics, f, indent=2, default=_json_serializable)
 
     def load_metrics(self) -> Optional[Dict[str, float]]:
-        path = self.run_dir / "metrics.json"
+        path = self.output_dir / "metrics.json"
         if not path.exists():
             return None
         with open(path) as f:
             return json.load(f)
 
     def append_training_log(self, row: Dict[str, Any]):
-        """Append a row to the training CSV log."""
+        """Append a row to logs/training_log.csv."""
         import csv
 
-        path = self.run_dir / "training_log.csv"
+        path = self.logs_dir / "training_log.csv"
         file_exists = path.exists()
         with open(path, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=sorted(row.keys()))
@@ -64,12 +81,12 @@ class RunStorage:
             writer.writerow(row)
 
     def save_eval_episodes(self, episodes: List[Dict[str, Any]]):
-        """Save per-episode evaluation data."""
-        with open(self.run_dir / "eval_episodes.json", "w") as f:
+        """Save per-episode evaluation data to output/eval_episodes.json."""
+        with open(self.output_dir / "eval_episodes.json", "w") as f:
             json.dump(episodes, f, indent=2, default=_json_serializable)
 
     def is_complete(self) -> bool:
-        return (self.run_dir / "metrics.json").exists()
+        return (self.output_dir / "metrics.json").exists()
 
 
 class ExperimentStorage:
@@ -90,7 +107,7 @@ class ExperimentStorage:
         runs = []
         if self.results_dir.exists():
             for d in sorted(self.results_dir.iterdir()):
-                if d.is_dir() and (d / "metrics.json").exists():
+                if d.is_dir() and (d / "output" / "metrics.json").exists():
                     runs.append(d.name)
         return runs
 
@@ -114,7 +131,6 @@ class ExperimentStorage:
         for run_id, metrics in all_metrics.items():
             row = {"run_id": run_id}
             row.update(metrics)
-            # Parse run_id to extract params
             row.update(_parse_run_id(run_id))
             rows.append(row)
         return pd.DataFrame(rows)

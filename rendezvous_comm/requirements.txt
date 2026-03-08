@@ -1,0 +1,8 @@
+# Dependencies for rendezvous_comm experiments
+# Install via: pip install -r rendezvous_comm/requirements.txt
+# Or from repo root: pip install -e ".[rendezvous]"
+benchmarl
+matplotlib
+pandas
+pyyaml
+tqdm

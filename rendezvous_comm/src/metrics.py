@@ -21,7 +21,13 @@ from torch import Tensor
 
 @dataclass
 class EpisodeMetrics:
-    """Metrics collected during a single episode across all envs."""
+    """Metrics collected during a single episode across all envs.
+
+    M1 (success_rate) works in two modes:
+      - targets_respawn=False: done() fires when all targets covered → binary
+      - targets_respawn=True: done() never fires, so we track the cumulative
+        number of targets covered per step and report the coverage rate.
+    """
 
     # Per-step accumulators (call update_step each step)
     cumulative_reward: Optional[Tensor] = None   # (n_envs,)
@@ -30,6 +36,7 @@ class EpisodeMetrics:
     done_at_step: Optional[Tensor] = None        # (n_envs,) step when done
     total_tokens: Optional[Tensor] = None        # (n_envs,)
     is_done: Optional[Tensor] = None             # (n_envs,) bool
+    total_targets_covered: Optional[Tensor] = None  # (n_envs,) cumulative
 
     def init(self, n_envs: int, device: str = "cpu"):
         self.cumulative_reward = torch.zeros(n_envs, device=device)
@@ -40,6 +47,7 @@ class EpisodeMetrics:
         )
         self.total_tokens = torch.zeros(n_envs, device=device)
         self.is_done = torch.zeros(n_envs, device=device, dtype=torch.bool)
+        self.total_targets_covered = torch.zeros(n_envs, device=device)
         return self
 
     def update_step(
@@ -70,6 +78,10 @@ class EpisodeMetrics:
                 # collision_rew is negative when collision occurs
                 self.collision_count += (agent_info["collision_rew"] < 0).float()
 
+        # Targets covered this step (from any agent's info — all share same value)
+        if info and "targets_covered" in info[0]:
+            self.total_targets_covered += info[0]["targets_covered"]
+
         # Track completion step
         newly_done = dones & ~self.is_done
         self.done_at_step[newly_done] = step
@@ -83,7 +95,15 @@ class EpisodeMetrics:
         n = self.cumulative_reward.shape[0]
 
         # M1: Success Rate
+        # If done() ever fired (targets_respawn=False), use that.
+        # Otherwise, report coverage rate (targets covered per step).
         success_rate = self.is_done.float().mean().item()
+
+        # M1b: Average targets covered per step (meaningful when respawn=True)
+        steps = self.step_count.float().clamp(min=1)
+        avg_targets_covered_per_step = (
+            self.total_targets_covered / steps
+        ).mean().item()
 
         # M2: Average Return
         avg_return = self.cumulative_reward.mean().item()
@@ -101,6 +121,7 @@ class EpisodeMetrics:
 
         return {
             "M1_success_rate": success_rate,
+            "M1b_avg_targets_covered_per_step": avg_targets_covered_per_step,
             "M2_avg_return": avg_return,
             "M3_avg_steps": avg_steps,
             "M4_avg_collisions": avg_collisions,

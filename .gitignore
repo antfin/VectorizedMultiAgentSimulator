@@ -251,3 +251,9 @@ dmypy.json
 cython_debug/
 
 !/.idea/multiagentparticlesimulator.iml
+
+# Rendezvous comm experiment outputs
+rendezvous_comm/results/
+rendezvous_comm/checkpoints/
+rendezvous_comm/notebooks/mappo_*
+rendezvous_comm/notebooks/ippo_*

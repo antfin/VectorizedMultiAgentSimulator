@@ -1,7 +1,6 @@
 """Experiment configuration loading and management."""
 import copy
 import itertools
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -13,6 +12,29 @@ RENDEZVOUS_ROOT = Path(__file__).parent.parent
 CONFIGS_DIR = RENDEZVOUS_ROOT / "configs"
 RESULTS_DIR = RENDEZVOUS_ROOT / "results"
 CHECKPOINTS_DIR = RENDEZVOUS_ROOT / "checkpoints"
+
+# ── Profiles ───────────────────────────────────────────────────────
+# "fast" cuts everything down for quick validation (~5 min).
+# "complete" uses the YAML as-is (full sweep).
+
+PROFILES = {
+    "fast": {
+        "train": {
+            "max_n_frames": 120_000,
+            "on_policy_n_envs_per_worker": 60,
+            "on_policy_n_minibatch_iters": 4,
+            "evaluation_interval": 60_000,
+            "evaluation_episodes": 20,
+        },
+        "sweep": {
+            "seeds": [0],
+            "n_agents": [4],
+            "lidar_range": [0.35],
+            "algorithms": ["mappo"],
+        },
+    },
+    "complete": {},  # no overrides
+}
 
 
 @dataclass
@@ -114,10 +136,25 @@ class ExperimentSpec:
                     yield run_id, overrides, algo, seed
 
 
-def load_experiment(yaml_path: str) -> ExperimentSpec:
-    """Load an experiment spec from a YAML config file."""
+def load_experiment(
+    yaml_path: str,
+    profile: str = "complete",
+) -> ExperimentSpec:
+    """Load an experiment spec from a YAML config file.
+
+    Args:
+        yaml_path: path to the experiment YAML
+        profile: "fast" for quick validation, "complete" for full sweep
+    """
     with open(yaml_path) as f:
         raw = yaml.safe_load(f)
+
+    # Apply profile overrides
+    overrides = PROFILES.get(profile, {})
+    if overrides:
+        for section in ("task", "train", "sweep"):
+            if section in overrides:
+                raw.setdefault(section, {}).update(overrides[section])
 
     task = TaskConfig(**raw.get("task", {}))
     train = TrainConfig(**raw.get("train", {}))

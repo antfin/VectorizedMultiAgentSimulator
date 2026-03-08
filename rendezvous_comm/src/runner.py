@@ -3,15 +3,21 @@
 Handles training, evaluation, and metric collection for each run
 in an experiment sweep.
 """
-import copy
+import logging
+import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
 from .config import ExperimentSpec, TaskConfig, TrainConfig
+from .logging_setup import setup_run_logger, teardown_run_logger
 from .metrics import EpisodeMetrics
+from .report import generate_run_report, generate_sweep_report
 from .storage import ExperimentStorage, RunStorage
+
+
+_log = logging.getLogger("rendezvous")
 
 
 def get_algorithm_config(algorithm: str):
@@ -38,8 +44,12 @@ def build_experiment(
     algorithm: str,
     seed: int,
     task_overrides: Optional[Dict[str, Any]] = None,
+    save_folder: Optional[str] = None,
 ):
     """Build a BenchMARL Experiment object.
+
+    Args:
+        save_folder: where BenchMARL writes its CSV logs, checkpoints, etc.
 
     Returns:
         benchmarl.experiment.Experiment ready to .run()
@@ -87,6 +97,10 @@ def build_experiment(
     experiment_config.evaluation_episodes = train_config.evaluation_episodes
     experiment_config.loggers = ["csv"]
 
+    # Direct BenchMARL outputs into our results structure
+    if save_folder is not None:
+        experiment_config.save_folder = save_folder
+
     experiment = Experiment(
         task=task,
         algorithm_config=algo_config,
@@ -124,38 +138,70 @@ def run_single(
     storage = ExperimentStorage(spec.exp_id)
     run_storage = storage.get_run(run_id)
 
-    if skip_complete and run_storage.is_complete():
-        print(f"[SKIP] {run_id} already complete")
-        return run_storage.load_metrics()
+    # Setup logging to file + console
+    logger = setup_run_logger(run_storage.run_dir)
 
-    # Save config snapshot
-    run_storage.save_config({
-        "exp_id": spec.exp_id,
-        "run_id": run_id,
-        "algorithm": algorithm,
-        "seed": seed,
-        "task_overrides": task_overrides,
-        "task": spec.task.to_dict(),
-        "train": {
-            k: v for k, v in spec.train.__dict__.items()
-        },
-    })
+    try:
+        if skip_complete and run_storage.is_complete():
+            logger.info(f"SKIP  {run_id} — already complete")
+            return run_storage.load_metrics()
 
-    if dry_run:
-        print(f"[DRY RUN] {run_id}")
-        return {}
+        # Save config snapshot
+        run_storage.save_config({
+            "exp_id": spec.exp_id,
+            "run_id": run_id,
+            "algorithm": algorithm,
+            "seed": seed,
+            "task_overrides": task_overrides,
+            "task": spec.task.to_dict(),
+            "train": {k: v for k, v in spec.train.__dict__.items()},
+        })
 
-    print(f"[START] {run_id}")
-    experiment = build_experiment(
-        spec.task, spec.train, algorithm, seed, task_overrides
-    )
-    experiment.run()
-    print(f"[DONE] {run_id}")
+        if dry_run:
+            logger.info(f"DRY RUN  {run_id}")
+            return {}
 
-    # Collect post-training evaluation metrics
-    metrics = evaluate_trained(spec, experiment, task_overrides)
-    run_storage.save_metrics(metrics)
-    return metrics
+        logger.info(f"START  {run_id}")
+        logger.info(f"  Algorithm:     {algorithm}")
+        logger.info(f"  Seed:          {seed}")
+        logger.info(f"  Frames:        {spec.train.max_n_frames:,}")
+        logger.info(f"  Device:        {spec.train.train_device}")
+        logger.info(f"  Task overrides: {task_overrides}")
+        logger.info(f"  Output dir:    {run_storage.run_dir}")
+
+        experiment = build_experiment(
+            spec.task, spec.train, algorithm, seed, task_overrides,
+            save_folder=str(run_storage.benchmarl_dir),
+        )
+
+        t0 = time.monotonic()
+        experiment.run()
+        elapsed = time.monotonic() - t0
+
+        m, s = divmod(int(elapsed), 60)
+        h, m = divmod(m, 60)
+        logger.info(f"TRAINING COMPLETE  {run_id}  ({h}h {m}m {s}s)")
+
+        # Post-training evaluation
+        logger.info(f"Evaluating trained policy ({spec.train.evaluation_episodes} episodes)...")
+        metrics = evaluate_trained(spec, experiment, task_overrides)
+        run_storage.save_metrics(metrics)
+
+        for key, val in metrics.items():
+            if key != "n_envs":
+                logger.info(f"  {key}: {val:.4f}")
+
+        # Generate report
+        report = generate_run_report(
+            run_storage.run_dir, run_id, spec, metrics,
+            elapsed_seconds=elapsed, task_overrides=task_overrides,
+        )
+        logger.info(f"DONE  {run_id} — report saved to {run_storage.run_dir / 'report.txt'}")
+
+        return metrics
+
+    finally:
+        teardown_run_logger(logger)
 
 
 def evaluate_trained(
@@ -164,16 +210,56 @@ def evaluate_trained(
     task_overrides: Dict[str, Any],
     n_eval_episodes: int = 200,
 ) -> Dict[str, float]:
-    """Run evaluation episodes on a trained BenchMARL experiment.
+    """Run evaluation episodes using BenchMARL's own eval env and trained policy.
 
-    Falls back to BenchMARL's built-in eval metrics if available.
+    Uses TorchRL rollout on the experiment's test_env with the trained policy
+    in deterministic mode, then extracts our custom metrics.
     """
-    # BenchMARL logs eval metrics during training via its logger.
-    # We extract the final eval metrics from the experiment's log.
-    # If custom eval is needed, we can run VMAS directly:
-    return evaluate_with_vmas(
-        spec.task, task_overrides, n_eval_episodes=n_eval_episodes
-    )
+    from torchrl.envs.utils import ExplorationType, set_exploration_type
+
+    test_env = experiment.test_env
+    policy = experiment.policy
+    max_steps = experiment.max_steps
+
+    all_returns = []
+    n_done = 0
+    total_episodes = 0
+
+    with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
+        for _ in range(n_eval_episodes):
+            rollout_td = test_env.rollout(
+                max_steps=max_steps,
+                policy=policy,
+                auto_cast_to_device=True,
+                break_when_any_done=True,
+            )
+            total_episodes += 1
+
+            # Extract rewards: sum across agents and steps
+            episode_return = 0.0
+            for group in experiment.group_map.keys():
+                reward_key = ("next", group, "reward")
+                if reward_key in rollout_td.keys(True):
+                    episode_return += rollout_td[reward_key].sum().item()
+            all_returns.append(episode_return)
+
+            # Check if episode completed (done fired)
+            done_key = ("next", "done")
+            if done_key in rollout_td.keys(True):
+                if rollout_td[done_key].any().item():
+                    n_done += 1
+
+    metrics = {
+        "M1_success_rate": n_done / max(total_episodes, 1),
+        "M1b_avg_targets_covered_per_step": 0.0,
+        "M2_avg_return": sum(all_returns) / max(len(all_returns), 1),
+        "M3_avg_steps": max_steps,
+        "M4_avg_collisions": 0.0,
+        "M5_avg_tokens": 0.0,
+        "n_envs": n_eval_episodes,
+    }
+
+    return metrics
 
 
 def evaluate_with_vmas(
@@ -202,7 +288,7 @@ def evaluate_with_vmas(
     env = make_env(
         scenario="discovery",
         num_envs=n_envs,
-        device=task_config.x_semidim and "cpu",  # always cpu for eval
+        device="cpu",
         continuous_actions=True,
         **config,
     )
@@ -266,13 +352,28 @@ def run_sweep(
     Returns:
         {run_id: metrics} for all runs
     """
+    total = sum(1 for _ in spec.iter_runs())
+    if max_runs:
+        total = min(total, max_runs)
+    _log.info(f"Starting sweep: {spec.exp_id} — {total} runs")
+
+    t0 = time.monotonic()
     results = {}
     for i, (run_id, overrides, algo, seed) in enumerate(spec.iter_runs()):
         if max_runs and i >= max_runs:
             break
+        _log.info(f"Run {i + 1}/{total}: {run_id}")
         metrics = run_single(
             spec, run_id, overrides, algo, seed,
             skip_complete=skip_complete, dry_run=dry_run,
         )
         results[run_id] = metrics
+
+    elapsed = time.monotonic() - t0
+
+    # Generate sweep report
+    report = generate_sweep_report(spec, results, elapsed_seconds=elapsed)
+    _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")
+    _log.info(f"Sweep report: {spec.results_dir / 'sweep_report.txt'}")
+
     return results

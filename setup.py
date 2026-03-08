@@ -43,6 +43,13 @@ setup(
         "rllib": ["ray[rllib]<=2.2"],
         "render": ["opencv-python", "moviepy", "matplotlib", "opencv-python"],
         "test": ["pytest", "pytest-instafail", "pyyaml", "tqdm"],
+        "rendezvous": [
+            "benchmarl",
+            "matplotlib",
+            "pandas",
+            "pyyaml",
+            "tqdm",
+        ],
     },
     include_package_data=True,
 )
