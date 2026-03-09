@@ -331,6 +331,134 @@ def plot_baseline_comparison_bars(
     return fig
 
 
+def plot_baseline_grouped_bars(
+    heuristic_metrics: Dict[str, float],
+    random_metrics: Dict[str, float],
+) -> plt.Figure:
+    """Grouped horizontal bar chart comparing Heuristic vs Random.
+
+    Shows four metrics side-by-side: M1_success_rate,
+    M6_coverage_progress, M2_avg_return, M9_spatial_spread.
+
+    Args:
+        heuristic_metrics: metric dict for the heuristic policy
+        random_metrics: metric dict for the random policy
+
+    Returns:
+        matplotlib Figure
+    """
+    set_style()
+    metrics = [
+        "M1_success_rate",
+        "M6_coverage_progress",
+        "M2_avg_return",
+        "M9_spatial_spread",
+    ]
+    labels = [METRIC_LABELS.get(m, m) for m in metrics]
+    heur_vals = [heuristic_metrics.get(m, 0) for m in metrics]
+    rand_vals = [random_metrics.get(m, 0) for m in metrics]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    y = np.arange(len(metrics))
+    bar_h = 0.35
+
+    bars_h = ax.barh(
+        y - bar_h / 2, heur_vals, bar_h,
+        label="Heuristic", color="#27ae60", edgecolor="white",
+    )
+    bars_r = ax.barh(
+        y + bar_h / 2, rand_vals, bar_h,
+        label="Random", color="#e74c3c", edgecolor="white",
+    )
+
+    all_vals = heur_vals + rand_vals
+    x_min = min(0, min(all_vals))
+    x_max = max(all_vals)
+    x_pad = (x_max - x_min) * 0.2 + 0.1
+
+    for bars in (bars_h, bars_r):
+        for bar in bars:
+            v = bar.get_width()
+            offset = x_pad * 0.1 if v >= 0 else -x_pad * 0.1
+            ax.text(
+                v + offset, bar.get_y() + bar.get_height() / 2,
+                f"{v:.2f}", va="center", fontsize=10, fontweight="bold",
+            )
+
+    ax.set_xlim(x_min - x_pad * 0.3, x_max + x_pad)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels)
+    ax.set_title("Baseline Comparison: Heuristic vs Random", fontsize=13)
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.2, axis="x")
+    fig.tight_layout()
+    return fig
+
+
+def plot_results_comparison(
+    comparison_dict: Dict[str, Dict[str, float]],
+    colors: Optional[Dict[str, str]] = None,
+) -> plt.Figure:
+    """1x3 subplot figure comparing policies across three metrics.
+
+    Each subplot is a horizontal bar chart for one metric:
+    M1_success_rate, M2_avg_return, M6_coverage_progress.
+
+    Args:
+        comparison_dict: {"Random": metrics, "Heuristic": metrics,
+                          "Trained (MAPPO)": metrics}
+        colors: optional dict mapping labels to hex colour strings
+
+    Returns:
+        matplotlib Figure
+    """
+    set_style()
+    if colors is None:
+        colors = {
+            "Random": "#e74c3c",
+            "Heuristic": "#27ae60",
+            "Trained (MAPPO)": "#1f77b4",
+        }
+
+    metrics = ["M1_success_rate", "M2_avg_return", "M6_coverage_progress"]
+    policy_labels = list(comparison_dict.keys())
+
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+
+    for ax, metric in zip(axes, metrics):
+        values = [
+            comparison_dict[p].get(metric, 0) for p in policy_labels
+        ]
+        bar_colors = [colors.get(p, "#999") for p in policy_labels]
+
+        bars = ax.barh(
+            policy_labels, values, color=bar_colors,
+            height=0.5, edgecolor="white",
+        )
+
+        is_pct = "rate" in metric or "progress" in metric
+        v_min = min(0, min(values)) if values else 0
+        v_max = max(values) if values else 1
+        v_pad = (v_max - v_min) * 0.2 + 0.1
+
+        for bar, v in zip(bars, values):
+            label = f"{v:.0%}" if is_pct else f"{v:.2f}"
+            offset = v_pad * 0.1
+            ax.text(
+                v + offset, bar.get_y() + bar.get_height() / 2,
+                label, va="center", fontsize=10, fontweight="bold",
+            )
+
+        ax.set_xlim(v_min - v_pad * 0.3 if v_min < 0 else 0,
+                     v_max + v_pad)
+        ax.set_title(METRIC_LABELS.get(metric, metric), fontsize=12)
+        ax.grid(True, alpha=0.2, axis="x")
+
+    fig.suptitle("Policy Comparison", fontsize=14, fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
 def save_figure(fig: plt.Figure, path: str, dpi: int = 150):
     """Save figure to file."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)

@@ -2,8 +2,11 @@
 
 Renders configs, metrics, and summaries as readable tables.
 Falls back to plain text when IPython is not available.
+All HTML uses dark-first styling for notebook compatibility.
 """
+import base64
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import ExperimentSpec
@@ -22,6 +25,22 @@ METRIC_INFO = {
     "n_envs": ("", "Eval Episodes", "Number of evaluation episodes", ".0f"),
 }
 
+# ── Dark-first color tokens ──────────────────────────────────────
+_BG_SURFACE = "#1e1e2e"
+_BG_SURFACE2 = "#252535"
+_BG_HEADER = "#2c3e50"
+_BG_HEADER_BLUE = "#3498db"
+_BG_HEADER_ORANGE = "#e67e22"
+_BG_HEADER_GREEN = "#27ae60"
+_FG_PRIMARY = "#cdd6f4"
+_FG_SECONDARY = "#a6adc8"
+_FG_MUTED = "#7f849c"
+_BORDER = "#45475a"
+_GREEN = "#27ae60"
+_ORANGE = "#e67e22"
+_RED = "#e74c3c"
+_BLUE = "#3498db"
+
 
 def _in_notebook() -> bool:
     try:
@@ -38,6 +57,27 @@ def _html(content: str):
         display(HTML(content))
     else:
         print(content)
+
+
+def _table_style():
+    return (
+        f"border-collapse:collapse;width:100%;border:1px solid {_BORDER};"
+        f"margin:10px 0;background:{_BG_SURFACE};color:{_FG_PRIMARY}"
+    )
+
+
+def _header_row(text, colspan=3, bg=_BG_HEADER):
+    return (
+        f'<tr style="background:{bg};color:white">'
+        f'<td colspan="{colspan}" style="padding:8px"><b>{text}</b></td></tr>'
+    )
+
+
+def _subheader_row(text, colspan=3):
+    return (
+        f'<tr style="background:{_BG_SURFACE2};color:{_FG_SECONDARY}">'
+        f'<td colspan="{colspan}" style="padding:6px"><b>{text}</b></td></tr>'
+    )
 
 
 # ── Config display ─────────────────────────────────────────────────
@@ -58,37 +98,46 @@ def display_config(spec: ExperimentSpec):
 
 def _build_config_html(spec, task, train, sweep, total_runs):
     rows = ""
+    rows += (
+        f'<tr style="background:{_BG_HEADER};color:white">'
+        f'<td colspan="3" style="padding:10px;font-size:16px">'
+        f'<b>{spec.exp_id.upper()}: {spec.name}</b>'
+        f' &nbsp;&mdash;&nbsp; Total runs: <b>{total_runs}</b></td></tr>'
+    )
+    rows += (
+        f'<tr><td colspan="3" style="padding:8px;font-style:italic;'
+        f'background:{_BG_SURFACE2};color:{_FG_SECONDARY}">'
+        f'{spec.description}</td></tr>'
+    )
 
-    # Header
-    rows += f"""
-    <tr style="background:#2c3e50;color:white">
-      <td colspan="3" style="padding:10px;font-size:16px">
-        <b>{spec.exp_id.upper()}: {spec.name}</b>
-        &nbsp;&mdash;&nbsp; Total runs: <b>{total_runs}</b>
-      </td>
-    </tr>
-    <tr><td colspan="3" style="padding:8px;font-style:italic;background:#ecf0f1">
-      {spec.description}
-    </td></tr>
-    """
-
-    # Task params
-    rows += '<tr style="background:#3498db;color:white"><td colspan="3" style="padding:6px"><b>Task Parameters (Discovery Scenario)</b></td></tr>'
-    for k, v in task.items():
-        rows += f'<tr><td style="padding:4px 12px;font-family:monospace">{k}</td><td style="padding:4px 12px"><b>{v}</b></td><td style="padding:4px 12px;color:#666">{_task_param_desc(k)}</td></tr>'
-
-    # Train params
-    rows += '<tr style="background:#e67e22;color:white"><td colspan="3" style="padding:6px"><b>Training Parameters</b></td></tr>'
-    for k, v in train.items():
+    def _param_row(k, v, desc):
         val = f"{v:,}" if isinstance(v, int) and v > 1000 else str(v)
-        rows += f'<tr><td style="padding:4px 12px;font-family:monospace">{k}</td><td style="padding:4px 12px"><b>{val}</b></td><td style="padding:4px 12px;color:#666">{_train_param_desc(k)}</td></tr>'
+        return (
+            f'<tr style="border-bottom:1px solid {_BORDER}">'
+            f'<td style="padding:4px 12px;font-family:monospace;color:{_FG_PRIMARY}">{k}</td>'
+            f'<td style="padding:4px 12px;color:{_FG_PRIMARY}"><b>{val}</b></td>'
+            f'<td style="padding:4px 12px;color:{_FG_MUTED}">{desc}</td></tr>'
+        )
 
-    # Sweep params
-    rows += '<tr style="background:#27ae60;color:white"><td colspan="3" style="padding:6px"><b>Sweep Dimensions</b></td></tr>'
+    rows += _subheader_row("Task Parameters (Discovery Scenario)")
+    for k, v in task.items():
+        rows += _param_row(k, v, _task_param_desc(k))
+
+    rows += (
+        f'<tr style="background:{_BG_HEADER_ORANGE};color:white">'
+        f'<td colspan="3" style="padding:6px"><b>Training Parameters</b></td></tr>'
+    )
+    for k, v in train.items():
+        rows += _param_row(k, v, _train_param_desc(k))
+
+    rows += (
+        f'<tr style="background:{_BG_HEADER_GREEN};color:white">'
+        f'<td colspan="3" style="padding:6px"><b>Sweep Dimensions</b></td></tr>'
+    )
     for k, v in sweep.items():
-        rows += f'<tr><td style="padding:4px 12px;font-family:monospace">{k}</td><td style="padding:4px 12px"><b>{v}</b></td><td style="padding:4px 12px;color:#666">{len(v)} values</td></tr>'
+        rows += _param_row(k, v, f"{len(v)} values")
 
-    return f'<table style="border-collapse:collapse;width:100%;border:1px solid #ddd;margin:10px 0">{rows}</table>'
+    return f'<table style="{_table_style()}">{rows}</table>'
 
 
 def _print_config_text(spec, task, train, sweep, total_runs):
@@ -169,8 +218,14 @@ def display_metrics(metrics: Dict[str, float], title: str = "Evaluation Metrics"
 
 
 def _display_metrics_html(metrics: Dict[str, float], title: str):
-    rows = f'<tr style="background:#2c3e50;color:white"><td colspan="4" style="padding:8px"><b>{title}</b></td></tr>'
-    rows += '<tr style="background:#ecf0f1"><td style="padding:4px 8px"><b>ID</b></td><td style="padding:4px 8px"><b>Metric</b></td><td style="padding:4px 8px"><b>Value</b></td><td style="padding:4px 8px"><b>Description</b></td></tr>'
+    rows = _header_row(title, colspan=4)
+    rows += (
+        f'<tr style="background:{_BG_SURFACE2};color:{_FG_SECONDARY}">'
+        f'<td style="padding:4px 8px"><b>ID</b></td>'
+        f'<td style="padding:4px 8px"><b>Metric</b></td>'
+        f'<td style="padding:4px 8px"><b>Value</b></td>'
+        f'<td style="padding:4px 8px"><b>Description</b></td></tr>'
+    )
 
     for key, value in metrics.items():
         info = METRIC_INFO.get(key)
@@ -181,9 +236,15 @@ def _display_metrics_html(metrics: Dict[str, float], title: str):
             mid, name, desc = "", key, ""
             formatted = f"{value:.4f}" if isinstance(value, float) else str(value)
 
-        rows += f'<tr><td style="padding:4px 8px;font-family:monospace">{mid}</td><td style="padding:4px 8px">{name}</td><td style="padding:4px 8px;text-align:right"><b>{formatted}</b></td><td style="padding:4px 8px;color:#666">{desc}</td></tr>'
+        rows += (
+            f'<tr style="border-bottom:1px solid {_BORDER}">'
+            f'<td style="padding:4px 8px;font-family:monospace;color:{_FG_MUTED}">{mid}</td>'
+            f'<td style="padding:4px 8px;color:{_FG_PRIMARY}">{name}</td>'
+            f'<td style="padding:4px 8px;text-align:right;color:{_FG_PRIMARY}"><b>{formatted}</b></td>'
+            f'<td style="padding:4px 8px;color:{_FG_MUTED}">{desc}</td></tr>'
+        )
 
-    _html(f'<table style="border-collapse:collapse;width:100%;border:1px solid #ddd;margin:10px 0">{rows}</table>')
+    _html(f'<table style="{_table_style()}">{rows}</table>')
 
 
 def _display_metrics_text(metrics: Dict[str, float], title: str):
@@ -215,7 +276,9 @@ def display_sweep_summary(all_metrics: Dict[str, Dict[str, float]]):
     rows = []
     for run_id, metrics in all_metrics.items():
         row = {"run_id": run_id}
-        for key in ["M1_success_rate", "M2_avg_return", "M3_avg_steps", "M4_avg_collisions", "M6_coverage_progress", "M8_agent_utilization", "M9_spatial_spread"]:
+        for key in ["M1_success_rate", "M2_avg_return", "M3_avg_steps",
+                     "M4_avg_collisions", "M6_coverage_progress",
+                     "M8_agent_utilization", "M9_spatial_spread"]:
             info = METRIC_INFO.get(key)
             if info and key in metrics:
                 _, name, _, fmt = info
@@ -239,39 +302,51 @@ def display_environment_info(spec: ExperimentSpec):
     field_w = 2 * task.x_semidim
     field_h = 2 * task.y_semidim
     diag = math.sqrt(field_w**2 + field_h**2)
-    agent_speed = 0.4  # approximate terminal velocity with drag=0.25
+    agent_speed = 0.4
     crossing_steps = int(diag / agent_speed) + 1
     lidar_frac = task.lidar_range / diag
 
-    rows = [
-        ("Field size", f"{field_w:.1f} x {field_h:.1f}", f"Coords from -{task.x_semidim} to +{task.x_semidim}"),
-        ("Field diagonal", f"~{diag:.2f} units", "Max distance between any two points"),
-        ("Agent speed", f"~{agent_speed} units/step", "Terminal velocity (drag=0.25, force=1.0)"),
-        ("Steps to cross", f"~{crossing_steps} steps", "Diagonal / speed"),
-        ("LiDAR range", f"{task.lidar_range}", f"{lidar_frac:.0%} of diagonal -- very local"),
-        ("Covering range", f"{task.covering_range}", f"K={task.agents_per_target} agents must be this close"),
-        ("Max steps", f"{task.max_steps}", f"~{task.max_steps // crossing_steps}x crossing time"),
+    info_rows = [
+        ("Field size", f"{field_w:.1f} x {field_h:.1f}",
+         f"Coords from -{task.x_semidim} to +{task.x_semidim}"),
+        ("Field diagonal", f"~{diag:.2f} units",
+         "Max distance between any two points"),
+        ("Agent speed", f"~{agent_speed} units/step",
+         "Terminal velocity (drag=0.25, force=1.0)"),
+        ("Steps to cross", f"~{crossing_steps} steps",
+         "Diagonal / speed"),
+        ("LiDAR range", f"{task.lidar_range}",
+         f"{lidar_frac:.0%} of diagonal -- very local"),
+        ("Covering range", f"{task.covering_range}",
+         f"K={task.agents_per_target} agents must be this close"),
+        ("Max steps", f"{task.max_steps}",
+         f"~{task.max_steps // crossing_steps}x crossing time"),
     ]
 
     if _in_notebook():
         html_rows = ""
-        for label, value, note in rows:
+        for label, value, note in info_rows:
             html_rows += (
-                f'<tr><td style="padding:4px 12px;font-weight:bold">{label}</td>'
-                f'<td style="padding:4px 12px;font-family:monospace">{value}</td>'
-                f'<td style="padding:4px 12px;color:#666">{note}</td></tr>'
+                f'<tr style="border-bottom:1px solid {_BORDER}">'
+                f'<td style="padding:4px 12px;font-weight:bold;'
+                f'color:{_FG_PRIMARY}">{label}</td>'
+                f'<td style="padding:4px 12px;font-family:monospace;'
+                f'color:{_FG_PRIMARY}">{value}</td>'
+                f'<td style="padding:4px 12px;color:{_FG_MUTED}">'
+                f'{note}</td></tr>'
             )
         _html(
-            '<table style="border-collapse:collapse;width:100%;border:1px solid #3498db;'
-            'margin:10px 0;border-radius:4px;overflow:hidden">'
-            '<tr style="background:#3498db;color:white">'
-            '<td colspan="3" style="padding:8px"><b>Environment Dimensions</b></td></tr>'
+            f'<table style="{_table_style()};border-radius:4px;'
+            f'overflow:hidden">'
+            f'<tr style="background:{_BG_HEADER_BLUE};color:white">'
+            f'<td colspan="3" style="padding:8px">'
+            f'<b>Environment Dimensions</b></td></tr>'
             f'{html_rows}</table>'
         )
     else:
         print("\n  ENVIRONMENT DIMENSIONS")
         print("  " + "-" * 50)
-        for label, value, note in rows:
+        for label, value, note in info_rows:
             print(f"    {label:<20} {value:<20} {note}")
 
 
@@ -283,16 +358,19 @@ def scrollable(text: str, height: int = 300, title: str = ""):
     header = ""
     if title:
         header = (
-            f'<div style="padding:6px 10px;background:#34495e;color:white;'
-            f'font-size:12px;font-weight:bold;border-radius:4px 4px 0 0">{title}</div>'
+            f'<div style="padding:6px 10px;background:{_BG_HEADER};'
+            f'color:white;font-size:12px;font-weight:bold;'
+            f'border-radius:4px 4px 0 0">{title}</div>'
         )
     if _in_notebook():
         _html(
             f'{header}'
             f'<div style="max-height:{height}px;overflow-y:auto;'
-            f'border:1px solid #ddd;padding:10px;font-family:monospace;'
-            f'font-size:11px;background:#1e1e1e;color:#d4d4d4;white-space:pre-wrap;'
-            f'line-height:1.5;border-radius:0 0 4px 4px">{escaped}</div>'
+            f'border:1px solid {_BORDER};padding:10px;'
+            f'font-family:monospace;font-size:11px;'
+            f'background:{_BG_SURFACE};color:{_FG_PRIMARY};'
+            f'white-space:pre-wrap;line-height:1.5;'
+            f'border-radius:0 0 4px 4px">{escaped}</div>'
         )
     else:
         if title:
@@ -301,17 +379,46 @@ def scrollable(text: str, height: int = 300, title: str = ""):
         print(text)
 
 
+def scrollable_md(md_text: str, height: int = 400, title: str = ""):
+    """Display markdown report using IPython.display.Markdown.
+
+    Uses native notebook markdown rendering which VS Code supports.
+    """
+    if _in_notebook():
+        from IPython.display import display, Markdown, HTML
+
+        if title:
+            display(HTML(
+                f'<div style="padding:6px 10px;background:{_BG_HEADER};'
+                f'color:white;font-size:12px;font-weight:bold;'
+                f'border-radius:4px">{title}</div>'
+            ))
+        display(Markdown(md_text))
+    else:
+        if title:
+            print(f"\n  {title}")
+            print("  " + "=" * 60)
+        print(md_text)
+
+
 # ── Metric cards ──────────────────────────────────────────────────
 
-def display_metric_cards(metrics: Dict[str, float], title: str = ""):
+def display_metric_cards(
+    metrics: Dict[str, float], title: str = ""
+):
     """Display key metrics as large colored KPI cards."""
     card_specs = [
         ("M1_success_rate", "Success Rate", ".0%", _m1_color),
-        ("M6_coverage_progress", "Coverage", ".0%", lambda v: "#27ae60" if v > 0.7 else "#e67e22" if v > 0.3 else "#e74c3c"),
-        ("M3_avg_steps", "Avg Steps", ".0f", lambda v: "#27ae60" if v < 100 else "#e67e22" if v < 150 else "#e74c3c"),
-        ("M9_spatial_spread", "Spatial Spread", ".2f", lambda _: "#3498db"),
-        ("M8_agent_utilization", "Agent Util (CV)", ".2f", lambda v: "#27ae60" if v < 0.5 else "#e67e22"),
-        ("M4_avg_collisions", "Collisions", ".1f", lambda v: "#27ae60" if v < 5 else "#e67e22"),
+        ("M6_coverage_progress", "Coverage", ".0%",
+         lambda v: _GREEN if v > 0.7 else _ORANGE if v > 0.3 else _RED),
+        ("M3_avg_steps", "Avg Steps", ".0f",
+         lambda v: _GREEN if v < 100 else _ORANGE if v < 150 else _RED),
+        ("M9_spatial_spread", "Spatial Spread", ".2f",
+         lambda _: _BLUE),
+        ("M8_agent_utilization", "Agent Util (CV)", ".2f",
+         lambda v: _GREEN if v < 0.5 else _ORANGE),
+        ("M4_avg_collisions", "Collisions", ".1f",
+         lambda v: _GREEN if v < 5 else _ORANGE),
     ]
 
     if not _in_notebook():
@@ -329,23 +436,28 @@ def display_metric_cards(metrics: Dict[str, float], title: str = ""):
         val = metrics[key]
         color = color_fn(val)
         cards_html += (
-            f'<div style="display:inline-block;width:145px;margin:6px;padding:14px 10px;'
-            f'border-radius:8px;background:{color};color:white;text-align:center;'
-            f'vertical-align:top">'
-            f'<div style="font-size:24px;font-weight:bold">{val:{fmt}}</div>'
-            f'<div style="font-size:11px;margin-top:4px;opacity:0.9">{label}</div></div>'
+            f'<div style="display:inline-block;width:145px;margin:6px;'
+            f'padding:14px 10px;border-radius:8px;background:{color};'
+            f'color:white;text-align:center;vertical-align:top">'
+            f'<div style="font-size:24px;font-weight:bold">'
+            f'{val:{fmt}}</div>'
+            f'<div style="font-size:11px;margin-top:4px;opacity:0.9">'
+            f'{label}</div></div>'
         )
 
-    header = f'<div style="font-size:14px;font-weight:bold;margin-bottom:4px">{title}</div>' if title else ""
+    header = (
+        f'<div style="font-size:14px;font-weight:bold;margin-bottom:4px;'
+        f'color:{_FG_PRIMARY}">{title}</div>' if title else ""
+    )
     _html(f'{header}<div>{cards_html}</div>')
 
 
 def _m1_color(v):
     if v > 0.8:
-        return "#27ae60"
+        return _GREEN
     if v > 0.4:
-        return "#e67e22"
-    return "#e74c3c"
+        return _ORANGE
+    return _RED
 
 
 # ── Verdict box ───────────────────────────────────────────────────
@@ -353,23 +465,28 @@ def _m1_color(v):
 def display_verdict(success_rate: float, avg_return: float):
     """Display a color-coded verdict box based on success rate."""
     if success_rate > 0.50:
-        color, verdict = "#e67e22", "TASK TOO EASY"
-        msg = "Floor is >50%. Increase difficulty (more targets, smaller LiDAR, higher K) before running ER2+."
+        color, verdict = _ORANGE, "TASK TOO EASY"
+        msg = ("Floor is >50%. Increase difficulty (more targets, "
+               "smaller LiDAR, higher K) before running ER2+.")
     elif success_rate >= 0.20:
-        color, verdict = "#27ae60", "FLOOR ESTABLISHED"
-        msg = "Proceed to ER2+. Any communication method must beat this floor to justify its complexity."
+        color, verdict = _GREEN, "FLOOR ESTABLISHED"
+        msg = ("Proceed to ER2+. Any communication method must beat "
+               "this floor to justify its complexity.")
     else:
-        color, verdict = "#e74c3c", "TASK TOO HARD"
-        msg = "Floor is <20%. Consider easier configs or more training frames, or try the complete config."
+        color, verdict = _RED, "TASK TOO HARD"
+        msg = ("Floor is <20%. Consider easier configs or more "
+               "training frames, or try the complete config.")
 
     if _in_notebook():
         _html(
             f'<div style="padding:16px;border-left:6px solid {color};'
-            f'background:#f9f9f9;margin:10px 0;border-radius:4px">'
-            f'<div style="font-size:18px;font-weight:bold;color:{color}">{verdict}</div>'
-            f'<div style="margin-top:8px">{msg}</div>'
-            f'<div style="margin-top:10px;font-size:13px;color:#666">'
-            f'Success Rate: {success_rate:.0%} &nbsp;|&nbsp; Avg Return: {avg_return:.2f}</div></div>'
+            f'background:{_BG_SURFACE};margin:10px 0;border-radius:4px">'
+            f'<div style="font-size:18px;font-weight:bold;color:{color}">'
+            f'{verdict}</div>'
+            f'<div style="margin-top:8px;color:{_FG_PRIMARY}">{msg}</div>'
+            f'<div style="margin-top:10px;font-size:13px;color:{_FG_MUTED}">'
+            f'Success Rate: {success_rate:.0%} &nbsp;|&nbsp; '
+            f'Avg Return: {avg_return:.2f}</div></div>'
         )
     else:
         print(f"\n  {verdict}")
@@ -391,29 +508,49 @@ def display_run_status(spec: ExperimentSpec):
     pending = total - done
 
     if _in_notebook():
-        color = "#27ae60" if done == total else "#e67e22"
-        _html(f'<div style="padding:10px;border:1px solid #ddd;margin:10px 0;border-radius:4px">'
-              f'<b>Run Status:</b> <span style="color:{color}">{done}/{total} complete</span>'
-              f' &mdash; {pending} pending</div>')
+        color = _GREEN if done == total else _ORANGE
+        _html(
+            f'<div style="padding:10px;border:1px solid {_BORDER};'
+            f'margin:10px 0;border-radius:4px;background:{_BG_SURFACE};'
+            f'color:{_FG_PRIMARY}">'
+            f'<b>Run Status:</b> '
+            f'<span style="color:{color}">{done}/{total} complete</span>'
+            f' &mdash; {pending} pending</div>'
+        )
     else:
-        print(f"\n  Run Status: {done}/{total} complete, {pending} pending\n")
+        print(
+            f"\n  Run Status: {done}/{total} complete, "
+            f"{pending} pending\n"
+        )
 
 
 # ── Config selector ──────────────────────────────────────────────
 
 _FRESHNESS_BADGE = {
-    "valid": ('<span style="background:#27ae60;color:white;padding:2px 8px;'
-              'border-radius:3px;font-size:11px">VALID</span>'),
-    "config_changed": ('<span style="background:#e74c3c;color:white;padding:2px 8px;'
-                       'border-radius:3px;font-size:11px">CONFIG CHANGED</span>'),
-    "code_changed": ('<span style="background:#e67e22;color:white;padding:2px 8px;'
-                     'border-radius:3px;font-size:11px">CODE CHANGED</span>'),
-    "both_changed": ('<span style="background:#e74c3c;color:white;padding:2px 8px;'
-                     'border-radius:3px;font-size:11px">STALE</span>'),
-    "no_provenance": ('<span style="background:#95a5a6;color:white;padding:2px 8px;'
-                      'border-radius:3px;font-size:11px">NO PROVENANCE</span>'),
-    "new": ('<span style="background:#3498db;color:white;padding:2px 8px;'
-            'border-radius:3px;font-size:11px">NEW</span>'),
+    "valid": (
+        f'<span style="background:{_GREEN};color:white;padding:2px 8px;'
+        'border-radius:3px;font-size:11px">VALID</span>'
+    ),
+    "config_changed": (
+        f'<span style="background:{_RED};color:white;padding:2px 8px;'
+        'border-radius:3px;font-size:11px">CONFIG CHANGED</span>'
+    ),
+    "code_changed": (
+        f'<span style="background:{_ORANGE};color:white;padding:2px 8px;'
+        'border-radius:3px;font-size:11px">CODE CHANGED</span>'
+    ),
+    "both_changed": (
+        f'<span style="background:{_RED};color:white;padding:2px 8px;'
+        'border-radius:3px;font-size:11px">STALE</span>'
+    ),
+    "no_provenance": (
+        '<span style="background:#95a5a6;color:white;padding:2px 8px;'
+        'border-radius:3px;font-size:11px">NO PROVENANCE</span>'
+    ),
+    "new": (
+        f'<span style="background:{_BLUE};color:white;padding:2px 8px;'
+        'border-radius:3px;font-size:11px">NEW</span>'
+    ),
 }
 
 _FRESHNESS_TEXT = {
@@ -427,14 +564,7 @@ _FRESHNESS_TEXT = {
 
 
 def display_config_selector(exp_id: str):
-    """Display available configs for an experiment with freshness status.
-
-    Shows a table of all YAML configs in configs/<exp_id>/ with:
-    - Config filename and key parameters
-    - Number of runs defined
-    - Completion status (done/total)
-    - Freshness check against current config+code
-    """
+    """Display available configs with freshness status."""
     from .config import find_configs
     from .provenance import check_freshness, Freshness
     from .storage import ExperimentStorage
@@ -451,13 +581,13 @@ def display_config_selector(exp_id: str):
     for i, (yaml_path, spec) in enumerate(configs):
         all_runs = list(spec.iter_runs())
         total = len(all_runs)
-        done = sum(1 for rid, _, _, _ in all_runs if rid in completed_runs)
+        done = sum(
+            1 for rid, _, _, _ in all_runs if rid in completed_runs
+        )
 
-        # Freshness: check all completed runs
         if done == 0:
             freshness_key = "new"
         else:
-            # Check freshness of first completed run
             worst = Freshness.VALID
             for rid, _, _, _ in all_runs:
                 if rid in completed_runs:
@@ -471,9 +601,15 @@ def display_config_selector(exp_id: str):
 
         algos = ", ".join(a.upper() for a in spec.sweep.algorithms)
         agents = spec.sweep.n_agents
-        agents_str = str(agents[0]) if len(agents) == 1 else f"{agents[0]}-{agents[-1]}"
+        agents_str = (
+            str(agents[0]) if len(agents) == 1
+            else f"{agents[0]}-{agents[-1]}"
+        )
         lidar = spec.sweep.lidar_range
-        lidar_str = str(lidar[0]) if len(lidar) == 1 else f"{lidar[0]}-{lidar[-1]}"
+        lidar_str = (
+            str(lidar[0]) if len(lidar) == 1
+            else f"{lidar[0]}-{lidar[-1]}"
+        )
 
         rows_data.append({
             "idx": i + 1,
@@ -496,38 +632,50 @@ def display_config_selector(exp_id: str):
 def _display_selector_html(exp_id, rows_data):
     table_rows = ""
     for r in rows_data:
-        done_color = "#27ae60" if r["done"] == r["total"] else "#e67e22" if r["done"] > 0 else "#999"
+        done_color = (
+            _GREEN if r["done"] == r["total"]
+            else _ORANGE if r["done"] > 0 else _FG_MUTED
+        )
         badge = _FRESHNESS_BADGE[r["freshness"]]
-        table_rows += f"""
-        <tr>
-          <td style="padding:6px 10px;text-align:center">{r["idx"]}</td>
-          <td style="padding:6px 10px;font-family:monospace;font-weight:bold">{r["filename"]}</td>
-          <td style="padding:6px 10px">{r["algos"]}</td>
-          <td style="padding:6px 10px;text-align:center">{r["agents"]}</td>
-          <td style="padding:6px 10px;text-align:center">{r["lidar"]}</td>
-          <td style="padding:6px 10px;text-align:center">{r["total"]}</td>
-          <td style="padding:6px 10px;text-align:center;color:{done_color};font-weight:bold">
-            {r["done"]}/{r["total"]}
-          </td>
-          <td style="padding:6px 10px;text-align:center">{badge}</td>
-        </tr>"""
+        table_rows += (
+            f'<tr style="border-bottom:1px solid {_BORDER}">'
+            f'<td style="padding:6px 10px;text-align:center;'
+            f'color:{_FG_PRIMARY}">{r["idx"]}</td>'
+            f'<td style="padding:6px 10px;text-align:left;font-family:monospace;'
+            f'font-weight:bold;color:{_FG_PRIMARY}">'
+            f'{r["filename"]}</td>'
+            f'<td style="padding:6px 10px;text-align:left;color:{_FG_PRIMARY}">'
+            f'{r["algos"]}</td>'
+            f'<td style="padding:6px 10px;text-align:center;'
+            f'color:{_FG_PRIMARY}">{r["agents"]}</td>'
+            f'<td style="padding:6px 10px;text-align:center;'
+            f'color:{_FG_PRIMARY}">{r["lidar"]}</td>'
+            f'<td style="padding:6px 10px;text-align:center;'
+            f'color:{_FG_PRIMARY}">{r["total"]}</td>'
+            f'<td style="padding:6px 10px;text-align:center;'
+            f'color:{done_color};font-weight:bold">'
+            f'{r["done"]}/{r["total"]}</td>'
+            f'<td style="padding:6px 10px;text-align:center">'
+            f'{badge}</td></tr>'
+        )
 
     _html(f"""
     <div style="margin:10px 0">
-      <div style="padding:8px 12px;background:#2c3e50;color:white;border-radius:4px 4px 0 0;
-                  font-size:14px;font-weight:bold">
+      <div style="padding:8px 12px;background:{_BG_HEADER};color:white;
+                  border-radius:4px 4px 0 0;font-size:14px;
+                  font-weight:bold">
         Available Configs: {exp_id.upper()}
       </div>
-      <table style="border-collapse:collapse;width:100%;border:1px solid #ddd">
-        <tr style="background:#ecf0f1">
-          <th style="padding:6px 10px">#</th>
+      <table style="{_table_style()}">
+        <tr style="background:{_BG_SURFACE2};color:{_FG_SECONDARY}">
+          <th style="padding:6px 10px;text-align:center">#</th>
           <th style="padding:6px 10px;text-align:left">Config</th>
           <th style="padding:6px 10px;text-align:left">Algo</th>
-          <th style="padding:6px 10px">N agents</th>
-          <th style="padding:6px 10px">LiDAR</th>
-          <th style="padding:6px 10px">Runs</th>
-          <th style="padding:6px 10px">Complete</th>
-          <th style="padding:6px 10px">Freshness</th>
+          <th style="padding:6px 10px;text-align:center">N agents</th>
+          <th style="padding:6px 10px;text-align:center">LiDAR</th>
+          <th style="padding:6px 10px;text-align:center">Runs</th>
+          <th style="padding:6px 10px;text-align:center">Complete</th>
+          <th style="padding:6px 10px;text-align:center">Freshness</th>
         </tr>
         {table_rows}
       </table>
@@ -537,21 +685,26 @@ def _display_selector_html(exp_id, rows_data):
 def _display_selector_text(exp_id, rows_data):
     print(f"\n  Available Configs: {exp_id.upper()}")
     print(f"  {'=' * 80}")
-    print(f"  {'#':<4} {'Config':<40} {'Algo':<12} {'N':<6} {'L':<8} "
-          f"{'Runs':<6} {'Done':<8} {'Status'}")
+    print(
+        f"  {'#':<4} {'Config':<40} {'Algo':<12} {'N':<6} "
+        f"{'L':<8} {'Runs':<6} {'Done':<8} {'Status'}"
+    )
     print(f"  {'-' * 80}")
     for r in rows_data:
         status = _FRESHNESS_TEXT[r["freshness"]]
-        print(f"  {r['idx']:<4} {r['filename']:<40} {r['algos']:<12} "
-              f"{r['agents']:<6} {r['lidar']:<8} {r['total']:<6} "
-              f"{r['done']}/{r['total']:<6} {status}")
+        print(
+            f"  {r['idx']:<4} {r['filename']:<40} {r['algos']:<12} "
+            f"{r['agents']:<6} {r['lidar']:<8} {r['total']:<6} "
+            f"{r['done']}/{r['total']:<6} {status}"
+        )
     print()
 
 
 def select_config(exp_id: str, force_retrain: bool = False):
-    """Interactive config selector. Returns (config_path, force_retrain).
+    """Interactive config selector with ipywidgets dropdown.
 
-    Uses ipywidgets if available, falls back to input().
+    Returns a result object with .path and .retrain attributes
+    that update live when the user changes the widget.
     """
     from pathlib import Path
     from .config import find_configs
@@ -571,6 +724,7 @@ def select_config(exp_id: str, force_retrain: bool = False):
             options=options,
             description="Config:",
             style={"description_width": "60px"},
+            layout=widgets.Layout(width="400px"),
         )
         retrain_cb = widgets.Checkbox(
             value=force_retrain,
@@ -596,17 +750,294 @@ def select_config(exp_id: str, force_retrain: bool = False):
         return _Result
 
     except ImportError:
-        # Fallback: numbered input
         if len(configs) == 1:
-            print(f"  → Using: {configs[0][0].name}")
+            print(f"  -> Using: {configs[0][0].name}")
             return configs[0][0], force_retrain
 
-        choice = input(f"  Select config [1-{len(configs)}]: ").strip()
+        choice = input(
+            f"  Select config [1-{len(configs)}]: "
+        ).strip()
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(configs):
                 return configs[idx][0], force_retrain
         except ValueError:
             pass
-        print(f"  → Default: {configs[0][0].name}")
+        print(f"  -> Default: {configs[0][0].name}")
         return configs[0][0], force_retrain
+
+
+# ── Baseline comparison (chart + table side-by-side) ─────────────
+
+def display_baseline_comparison(
+    heuristic_metrics: Dict[str, float],
+    random_metrics: Dict[str, float],
+    fig=None,
+):
+    """Display baseline comparison as side-by-side chart + table.
+
+    Args:
+        heuristic_metrics: metrics from heuristic policy
+        random_metrics: metrics from random policy
+        fig: matplotlib figure (from plot_baseline_grouped_bars)
+    """
+    if not _in_notebook():
+        display_metrics(heuristic_metrics, "Heuristic Baseline")
+        display_metrics(random_metrics, "Random Baseline")
+        return
+
+    import matplotlib.pyplot as plt
+    from io import BytesIO
+
+    img_html = ""
+    if fig is not None:
+        buf = BytesIO()
+        fig.savefig(
+            buf, format="png", dpi=120, bbox_inches="tight",
+            facecolor="white", edgecolor="none",
+        )
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+        img_html = (
+            f'<img src="data:image/png;base64,{b64}" '
+            f'style="max-width:100%;border-radius:4px">'
+        )
+        plt.close(fig)
+
+    keys = [
+        "M1_success_rate", "M6_coverage_progress", "M2_avg_return",
+        "M3_avg_steps", "M4_avg_collisions", "M9_spatial_spread",
+    ]
+    table_rows = ""
+    for k in keys:
+        info = METRIC_INFO.get(k)
+        if not info:
+            continue
+        mid, name, _, fmt = info
+        h_val = heuristic_metrics.get(k, 0)
+        r_val = random_metrics.get(k, 0)
+        table_rows += (
+            f'<tr style="border-bottom:1px solid {_BORDER}">'
+            f'<td style="padding:4px 8px;color:{_FG_MUTED};'
+            f'font-family:monospace">{mid}</td>'
+            f'<td style="padding:4px 8px;color:{_FG_PRIMARY}">'
+            f'{name}</td>'
+            f'<td style="padding:4px 8px;text-align:right;'
+            f'color:{_GREEN}"><b>{h_val:{fmt}}</b></td>'
+            f'<td style="padding:4px 8px;text-align:right;'
+            f'color:{_RED}"><b>{r_val:{fmt}}</b></td></tr>'
+        )
+
+    table_html = (
+        f'<table style="border-collapse:collapse;width:100%;'
+        f'background:{_BG_SURFACE};color:{_FG_PRIMARY}">'
+        f'<tr style="background:{_BG_SURFACE2}">'
+        f'<th style="padding:6px 8px;color:{_FG_SECONDARY}">ID</th>'
+        f'<th style="padding:6px 8px;text-align:left;'
+        f'color:{_FG_SECONDARY}">Metric</th>'
+        f'<th style="padding:6px 8px;text-align:right;'
+        f'color:{_GREEN}">Heuristic</th>'
+        f'<th style="padding:6px 8px;text-align:right;'
+        f'color:{_RED}">Random</th>'
+        f'</tr>{table_rows}</table>'
+    )
+
+    _html(f"""
+    <div style="margin:10px 0">
+      <div>{img_html}</div>
+      <div style="margin-top:12px">{table_html}</div>
+    </div>""")
+
+
+# ── Results dashboard (KPI cards + consolidated chart) ────────────
+
+def display_results_dashboard(
+    trained_metrics: Dict[str, float],
+    comparison_fig=None,
+    run_id: str = "",
+):
+    """Display results: KPI cards on top, consolidated chart below.
+
+    Args:
+        trained_metrics: metrics from trained policy
+        comparison_fig: matplotlib figure (from plot_results_comparison)
+        run_id: run identifier for title
+    """
+    display_metric_cards(
+        trained_metrics, title=f"Trained Policy — {run_id}"
+    )
+
+    if comparison_fig is not None and _in_notebook():
+        import matplotlib.pyplot as plt
+        from io import BytesIO
+
+        buf = BytesIO()
+        comparison_fig.savefig(
+            buf, format="png", dpi=120, bbox_inches="tight",
+            facecolor="white", edgecolor="none",
+        )
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+        _html(
+            f'<div style="margin:10px 0">'
+            f'<img src="data:image/png;base64,{b64}" '
+            f'style="max-width:100%;border-radius:4px"></div>'
+        )
+        plt.close(comparison_fig)
+
+
+# ── Training videos (first + last side-by-side) ──────────────────
+
+def display_training_videos(run_storage):
+    """Embed first and last eval videos side-by-side as HTML5 video.
+
+    Args:
+        run_storage: RunStorage instance
+    """
+    video_dir = None
+    for d in run_storage.output_dir.rglob("videos"):
+        if d.is_dir():
+            video_dir = d
+            break
+
+    if not video_dir:
+        print("No training videos found.")
+        return
+
+    videos = sorted(video_dir.glob("eval_video_*.mp4"))
+    if len(videos) < 2:
+        print(f"Only {len(videos)} video(s) found, need at least 2.")
+        return
+
+    first_video = videos[0]
+    last_video = videos[-1]
+
+    if not _in_notebook():
+        print(f"First video: {first_video}")
+        print(f"Last video:  {last_video}")
+        return
+
+    def _video_tag(path: Path, label: str) -> str:
+        data = path.read_bytes()
+        b64 = base64.b64encode(data).decode()
+        return (
+            f'<div style="flex:1;min-width:300px;text-align:center">'
+            f'<div style="font-weight:bold;margin-bottom:6px;'
+            f'color:{_FG_PRIMARY}">{label}</div>'
+            f'<video controls loop autoplay muted '
+            f'style="width:100%;border-radius:4px;'
+            f'border:1px solid {_BORDER}">'
+            f'<source src="data:video/mp4;base64,{b64}" '
+            f'type="video/mp4"></video>'
+            f'<div style="font-size:11px;color:{_FG_MUTED};'
+            f'margin-top:4px">{path.name}</div></div>'
+        )
+
+    first_iter = first_video.stem.replace("eval_video_", "iter ")
+    last_iter = last_video.stem.replace("eval_video_", "iter ")
+
+    _html(f"""
+    <div style="margin:10px 0">
+      <div style="padding:8px 12px;background:{_BG_HEADER};color:white;
+                  border-radius:4px 4px 0 0;font-size:14px;
+                  font-weight:bold">
+        Training Progress: First vs Last Evaluation
+      </div>
+      <div style="display:flex;gap:16px;padding:12px;
+                  background:{_BG_SURFACE};border:1px solid {_BORDER};
+                  border-radius:0 0 4px 4px">
+        {_video_tag(first_video, f"Early ({first_iter})")}
+        {_video_tag(last_video, f"Final ({last_iter})")}
+      </div>
+    </div>""")
+
+
+# ── Artifact tree ─────────────────────────────────────────────────
+
+def display_artifact_tree(run_storage):
+    """Display output artifacts as a styled HTML tree.
+
+    Args:
+        run_storage: RunStorage instance
+    """
+    base = run_storage.run_dir
+
+    if not _in_notebook():
+        for f in sorted(base.rglob("*")):
+            if f.is_file():
+                size = f.stat().st_size
+                sz = (
+                    f"{size / 1024:.1f} KB" if size > 1024
+                    else f"{size} B"
+                )
+                print(f"  {f.relative_to(base)}  ({sz})")
+        return
+
+    entries = []
+    for f in sorted(base.rglob("*")):
+        if f.is_file():
+            size = f.stat().st_size
+            if size > 1024 * 1024:
+                sz = f"{size / (1024 * 1024):.1f} MB"
+            elif size > 1024:
+                sz = f"{size / 1024:.1f} KB"
+            else:
+                sz = f"{size} B"
+            rel = f.relative_to(base)
+            entries.append((str(rel), sz, f.suffix))
+
+    _icons = {
+        ".pt": "&#x1F9E0;",
+        ".json": "&#x1F4CB;",
+        ".yaml": "&#x2699;",
+        ".md": "&#x1F4DD;",
+        ".png": "&#x1F5BC;",
+        ".mp4": "&#x1F3AC;",
+        ".csv": "&#x1F4CA;",
+        ".log": "&#x1F4C3;",
+        ".pkl": "&#x1F4E6;",
+        ".txt": "&#x1F4C4;",
+    }
+
+    items = ""
+    prev_dir = ""
+    for rel_path, sz, ext in entries:
+        parts = rel_path.split("/")
+        filename = parts[-1]
+        dirname = "/".join(parts[:-1]) if len(parts) > 1 else ""
+
+        if dirname != prev_dir:
+            icon = "&#x1F4C1;"
+            items += (
+                f'<div style="margin-top:8px;padding:2px 0;'
+                f'color:{_FG_SECONDARY};font-weight:bold">'
+                f'{icon} {dirname}/</div>'
+            )
+            prev_dir = dirname
+
+        file_icon = _icons.get(ext, "&#x1F4C4;")
+        indent = "24px" if dirname else "0"
+        items += (
+            f'<div style="padding:2px 0 2px {indent};'
+            f'font-family:monospace;font-size:12px">'
+            f'{file_icon} <span style="color:{_FG_PRIMARY}">'
+            f'{filename}</span>'
+            f' <span style="color:{_FG_MUTED};font-size:11px">'
+            f'({sz})</span></div>'
+        )
+
+    _html(f"""
+    <div style="margin:10px 0">
+      <div style="padding:8px 12px;background:{_BG_HEADER};color:white;
+                  border-radius:4px 4px 0 0;font-size:14px;
+                  font-weight:bold">
+        Output Artifacts
+      </div>
+      <div style="padding:10px 14px;background:{_BG_SURFACE};
+                  border:1px solid {_BORDER};border-radius:0 0 4px 4px;
+                  max-height:400px;overflow-y:auto">
+        <div style="color:{_FG_MUTED};font-size:11px;
+                    margin-bottom:8px">{base.name}/</div>
+        {items}
+      </div>
+    </div>""")

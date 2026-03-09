@@ -1,8 +1,26 @@
 # Dependencies for rendezvous_comm experiments
 # Install via: pip install -r rendezvous_comm/requirements.txt
-# Or from repo root: pip install -e ".[rendezvous]"
+
+# Core ML stack
+torch>=2.0
+torchrl
+tensordict
+
+# Multi-agent training
 benchmarl
+vmas
+
+# Data & visualization
 matplotlib
+numpy
 pandas
+
+# Config & serialization
 pyyaml
+
+# Notebook display
+ipywidgets
+markdown
+
+# Utilities
 tqdm
