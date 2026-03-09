@@ -122,6 +122,24 @@ class RunStorage:
         import torch
         return torch.load(path, map_location="cpu", weights_only=True)
 
+    def load_benchmarl_scalars(self) -> dict:
+        """Load all BenchMARL CSV scalars as {name: [(step, value), ...]}."""
+        import csv as csv_mod
+        scalars = {}
+        for sd in self.benchmarl_dir.glob("**/scalars"):
+            for csv_file in sorted(sd.glob("*.csv")):
+                rows = []
+                with open(csv_file) as f:
+                    for row in csv_mod.reader(f):
+                        if len(row) >= 2:
+                            try:
+                                rows.append((int(row[0]), float(row[1])))
+                            except ValueError:
+                                continue
+                if rows:
+                    scalars[csv_file.stem] = rows
+        return scalars
+
     def is_complete(self) -> bool:
         return (self.output_dir / "metrics.json").exists()
 

@@ -1,9 +1,9 @@
-exp_id: er1
-name: "No-Comm Control"
+exp_id: er3
+name: "Symbolic Intent Broadcast"
 description: >
-  Isolates baseline task difficulty by removing ALL communication.
-  Establishes the floor that any comm method must beat.
-  Train IPPO + MAPPO with zero comm channels.
+  Minimal symbolic comm (discrete intent tokens, no NL).
+  Tests whether a tiny alphabet suffices for K-of-N synchronisation.
+  Full sweep: N ∈ {2,3,4,6} × 5 seeds.
 
 task:
   n_agents: 4
@@ -11,7 +11,8 @@ task:
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
-  use_agent_lidar: false
+  use_agent_lidar: true
+  n_lidar_rays_agents: 12
   targets_respawn: false
   shared_reward: false
   agent_collision_penalty: -0.1
@@ -39,5 +40,5 @@ sweep:
   n_agents: [2, 3, 4, 6]
   n_targets: [7]
   agents_per_target: [2]
-  lidar_range: [0.25, 0.35, 0.45]
-  algorithms: [mappo, ippo]
+  lidar_range: [0.35]
+  algorithms: [mappo]

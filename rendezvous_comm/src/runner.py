@@ -12,7 +12,8 @@ import torch
 
 from .config import ExperimentSpec, TaskConfig, TrainConfig
 from .logging_setup import setup_run_logger, teardown_run_logger
-from .metrics import EpisodeMetrics
+from .metrics import EpisodeMetrics, compute_m7_sample_efficiency
+from .provenance import save_provenance
 from .report import generate_run_report, generate_sweep_report
 from .storage import ExperimentStorage, RunStorage
 
@@ -146,7 +147,7 @@ def run_single(
             logger.info(f"SKIP  {run_id} — already complete")
             return run_storage.load_metrics()
 
-        # Save config snapshot
+        # Save config snapshot + provenance
         run_storage.save_config({
             "exp_id": spec.exp_id,
             "run_id": run_id,
@@ -156,6 +157,8 @@ def run_single(
             "task": spec.task.to_dict(),
             "train": {k: v for k, v in spec.train.__dict__.items()},
         })
+        if spec.source_path:
+            save_provenance(run_storage.run_dir, spec.source_path)
 
         if dry_run:
             logger.info(f"DRY RUN  {run_id}")
@@ -190,18 +193,24 @@ def run_single(
         # Post-training evaluation
         logger.info(f"Evaluating trained policy ({spec.train.evaluation_episodes} episodes)...")
         metrics = evaluate_trained(spec, experiment, task_overrides)
+
+        # M7: Sample Efficiency (from training CSVs)
+        m7 = compute_m7_sample_efficiency(run_storage.run_dir)
+        if m7 is not None:
+            metrics["M7_sample_efficiency"] = m7
+
         run_storage.save_metrics(metrics)
 
         for key, val in metrics.items():
             if key != "n_envs":
                 logger.info(f"  {key}: {val:.4f}")
 
-        # Generate date-prefixed report
+        # Generate report
         report = generate_run_report(
             run_storage.run_dir, run_id, spec, metrics,
             elapsed_seconds=elapsed, task_overrides=task_overrides,
         )
-        logger.info(f"DONE  {run_id} — report saved to {run_storage.run_dir / 'report.txt'}")
+        logger.info(f"DONE  {run_id} — report saved to {run_storage.run_dir / 'report.md'}")
 
         return metrics
 
@@ -218,7 +227,7 @@ def evaluate_trained(
     """Run evaluation episodes using BenchMARL's own eval env and trained policy.
 
     Uses TorchRL rollout on the experiment's test_env with the trained policy
-    in deterministic mode, then extracts our custom metrics.
+    in deterministic mode, then extracts our custom metrics (M1-M6, M8-M9).
     """
     from torchrl.envs.utils import ExplorationType, set_exploration_type
 
@@ -226,7 +235,15 @@ def evaluate_trained(
     policy = experiment.policy
     max_steps = experiment.max_steps
 
+    n_targets = task_overrides.get("n_targets", 7) if task_overrides else 7
+    n_agents = task_overrides.get("n_agents", 5) if task_overrides else 5
+
     all_returns = []
+    all_steps = []
+    all_collisions = []
+    all_targets_covered = []
+    all_agent_covering = []  # list of (n_agents,) tensors
+    all_spatial_spread = []
     n_done = 0
     total_episodes = 0
 
@@ -240,7 +257,10 @@ def evaluate_trained(
             )
             total_episodes += 1
 
-            # Extract rewards: sum across agents and steps
+            ep_steps = rollout_td.batch_size[0]
+            all_steps.append(ep_steps)
+
+            # M2: Extract rewards
             episode_return = 0.0
             for group in experiment.group_map.keys():
                 reward_key = ("next", group, "reward")
@@ -248,19 +268,121 @@ def evaluate_trained(
                     episode_return += rollout_td[reward_key].sum().item()
             all_returns.append(episode_return)
 
-            # Check if episode completed (done fired)
+            # M1: Check if episode completed
             done_key = ("next", "done")
+            episode_done = False
             if done_key in rollout_td.keys(True):
                 if rollout_td[done_key].any().item():
                     n_done += 1
+                    episode_done = True
+            if not episode_done:
+                all_steps[-1] = max_steps
+
+            # M4: Collisions
+            ep_collisions = 0.0
+            for group in experiment.group_map.keys():
+                collision_key = ("next", group, "info", "collision_rew")
+                if collision_key in rollout_td.keys(True):
+                    coll_rew = rollout_td[collision_key]
+                    ep_collisions += (coll_rew < 0).sum().item()
+            all_collisions.append(ep_collisions)
+
+            # M6: Coverage progress
+            ep_targets = 0.0
+            for group in experiment.group_map.keys():
+                tc_key = ("next", group, "info", "targets_covered")
+                if tc_key in rollout_td.keys(True):
+                    tc = rollout_td[tc_key]
+                    # Sum across time steps; divide by n_agents if stacked
+                    ep_targets = tc.sum().item()
+                    if tc.dim() > 1 and tc.shape[-1] > 1:
+                        ep_targets /= tc.shape[-1]
+                    break
+            all_targets_covered.append(min(ep_targets, n_targets))
+
+            # M8: Per-agent covering counts
+            ep_agent_covering = torch.zeros(n_agents)
+            for group in experiment.group_map.keys():
+                cov_key = ("next", group, "info", "covering_reward")
+                if cov_key in rollout_td.keys(True):
+                    cov_rew = rollout_td[cov_key]  # (T, n_agents) or (T,)
+                    if cov_rew.dim() >= 2:
+                        for i in range(min(cov_rew.shape[-1], n_agents)):
+                            ep_agent_covering[i] = (
+                                cov_rew[..., i] > 0
+                            ).sum().item()
+                    else:
+                        ep_agent_covering[0] = (cov_rew > 0).sum().item()
+                    break
+            all_agent_covering.append(ep_agent_covering)
+
+            # M9: Spatial spread from observations
+            # Discovery obs layout: [pos_x, pos_y, vel_x, vel_y, lidar...]
+            ep_spread = 0.0
+            spread_steps = 0
+            for group in experiment.group_map.keys():
+                obs_key = (group, "observation")
+                if obs_key in rollout_td.keys(True):
+                    obs = rollout_td[obs_key]
+                    # obs shape: (T, n_agents, obs_dim) with shared policy
+                    # or (T, obs_dim) without. Need exactly 3 dims.
+                    if obs.dim() == 2:
+                        # Single agent or stacked — can't compute pairwise
+                        break
+                    if obs.dim() >= 3:
+                        # Take last 3 dims as (T, n_agents, obs_dim)
+                        # Flatten any leading batch dims
+                        while obs.dim() > 3:
+                            obs = obs.reshape(-1, *obs.shape[-2:])
+                        T_steps, n_ag, obs_dim = obs.shape
+                        if n_ag >= 2 and obs_dim >= 2:
+                            positions = obs[:, :, :2]  # (T, n_agents, 2)
+                            # Vectorized pairwise distances
+                            dists = torch.cdist(positions, positions)  # (T, n_ag, n_ag)
+                            mask = torch.triu(
+                                torch.ones(n_ag, n_ag, device=obs.device), diagonal=1
+                            ).bool()
+                            for t in range(T_steps):
+                                d = dists[t]  # (n_ag, n_ag)
+                                if mask.sum() > 0:
+                                    ep_spread += d[mask].mean().item()
+                                    spread_steps += 1
+                    break
+            if spread_steps > 0:
+                all_spatial_spread.append(ep_spread / spread_steps)
+            else:
+                all_spatial_spread.append(0.0)
+
+    # Aggregate
+    avg_coverage = (
+        sum(t / n_targets for t in all_targets_covered)
+        / max(len(all_targets_covered), 1)
+    )
+
+    # M8: Average CV of per-agent covering
+    if all_agent_covering:
+        covering_stack = torch.stack(all_agent_covering)  # (n_ep, n_agents)
+        mean_cov = covering_stack.mean(dim=-1)
+        std_cov = covering_stack.std(dim=-1)
+        cv = torch.where(
+            mean_cov > 0, std_cov / mean_cov,
+            torch.zeros_like(mean_cov),
+        )
+        agent_util = cv.mean().item()
+    else:
+        agent_util = 0.0
 
     metrics = {
         "M1_success_rate": n_done / max(total_episodes, 1),
-        "M1b_avg_targets_covered_per_step": 0.0,
         "M2_avg_return": sum(all_returns) / max(len(all_returns), 1),
-        "M3_avg_steps": max_steps,
-        "M4_avg_collisions": 0.0,
+        "M3_avg_steps": sum(all_steps) / max(len(all_steps), 1),
+        "M4_avg_collisions": sum(all_collisions) / max(len(all_collisions), 1),
         "M5_avg_tokens": 0.0,
+        "M6_coverage_progress": avg_coverage,
+        "M8_agent_utilization": agent_util,
+        "M9_spatial_spread": (
+            sum(all_spatial_spread) / max(len(all_spatial_spread), 1)
+        ),
         "n_envs": n_eval_episodes,
     }
 
@@ -300,9 +422,13 @@ def evaluate_with_vmas(
 
     all_metrics = []
     n_batches = max(1, (n_eval_episodes + n_envs - 1) // n_envs)
+    n_targets = config.get("n_targets", 7)
+    n_agents = config.get("n_agents", 5)
 
     for batch in range(n_batches):
-        episode_metrics = EpisodeMetrics().init(n_envs)
+        episode_metrics = EpisodeMetrics().init(
+            n_envs, n_targets=n_targets, n_agents=n_agents,
+        )
         obs = env.reset()
 
         for step in range(max_steps):
@@ -313,7 +439,16 @@ def evaluate_with_vmas(
                     env.get_random_action(agent) for agent in env.agents
                 ]
             obs, rews, dones, info = env.step(actions)
-            episode_metrics.update_step(rews, dones, info, step)
+
+            # Get agent positions for M9
+            agent_positions = torch.stack(
+                [a.state.pos for a in env.agents], dim=1
+            )  # (n_envs, n_agents, 2)
+
+            episode_metrics.update_step(
+                rews, dones, info, step,
+                agent_positions=agent_positions,
+            )
 
         all_metrics.append(episode_metrics.compute(max_steps))
 
@@ -379,6 +514,6 @@ def run_sweep(
     # Generate sweep report
     report = generate_sweep_report(spec, results, elapsed_seconds=elapsed)
     _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")
-    _log.info(f"Sweep report: {spec.results_dir / 'sweep_report.txt'}")
+    _log.info(f"Sweep report: {spec.results_dir / 'sweep_report.md'}")
 
     return results

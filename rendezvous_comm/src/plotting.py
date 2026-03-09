@@ -33,6 +33,9 @@ METRIC_LABELS = {
     "M3_avg_steps": "Avg Steps to Complete",
     "M4_avg_collisions": "Collisions / Episode",
     "M5_avg_tokens": "Tokens / Episode",
+    "M6_coverage_progress": "Coverage Progress",
+    "M8_agent_utilization": "Agent Utilization",
+    "M9_spatial_spread": "Spatial Spread",
 }
 
 
@@ -236,6 +239,94 @@ def plot_success_vs_tokens(
     ax.set_ylabel("Success Rate")
     ax.set_title(title or "Success vs Communication Cost")
     ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def plot_training_dashboard(
+    scalars: Dict[str, list],
+    title: str = "Training Progress",
+    heuristic_reward: Optional[float] = None,
+) -> plt.Figure:
+    """2x2 dashboard of training curves from BenchMARL CSV scalars.
+
+    Args:
+        scalars: {csv_name: [(step, value), ...]} from RunStorage.load_benchmarl_scalars()
+        title: figure suptitle
+        heuristic_reward: if given, draw horizontal reference line on reward plot
+    """
+    set_style()
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+
+    panels = [
+        ("eval_reward_episode_reward_mean", "Eval Reward", axes[0, 0], "#1f77b4"),
+        ("collection_agents_info_targets_covered", "Targets Covered / Step", axes[0, 1], "#2ca02c"),
+        ("collection_agents_info_covering_reward", "Covering Reward", axes[1, 0], "#ff7f0e"),
+        ("train_agents_entropy", "Policy Entropy", axes[1, 1], "#9467bd"),
+    ]
+
+    for csv_name, label, ax, color in panels:
+        data = scalars.get(csv_name)
+        if data:
+            steps, values = zip(*data)
+            ax.plot(steps, values, color=color, linewidth=1.8)
+            ax.fill_between(steps, values, alpha=0.1, color=color)
+        ax.set_title(label, fontsize=11)
+        ax.set_xlabel("Iteration", fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    # Add heuristic reference line on reward plot
+    if heuristic_reward is not None:
+        axes[0, 0].axhline(
+            y=heuristic_reward, color="#e74c3c", linestyle="--",
+            linewidth=1.5, alpha=0.7, label=f"Heuristic ({heuristic_reward:.1f})",
+        )
+        axes[0, 0].legend(fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_baseline_comparison_bars(
+    metrics_dict: Dict[str, Dict[str, float]],
+    metric_key: str = "M1_success_rate",
+    title: Optional[str] = None,
+    colors: Optional[Dict[str, str]] = None,
+) -> plt.Figure:
+    """Horizontal bar chart comparing multiple policies on one metric.
+
+    Args:
+        metrics_dict: {"Random": {...}, "Trained": {...}, "Heuristic": {...}}
+        metric_key: which metric to compare
+    """
+    set_style()
+    default_colors = {"Random": "#e74c3c", "Trained": "#1f77b4", "Heuristic": "#27ae60"}
+    if colors is None:
+        colors = default_colors
+
+    labels = list(metrics_dict.keys())
+    values = [metrics_dict[k].get(metric_key, 0) for k in labels]
+    bar_colors = [colors.get(k, "#999") for k in labels]
+
+    fig, ax = plt.subplots(figsize=(8, max(2.5, len(labels) * 0.8)))
+    bars = ax.barh(labels, values, color=bar_colors, height=0.5, edgecolor="white")
+
+    is_pct = "rate" in metric_key or "progress" in metric_key
+    for bar, v in zip(bars, values):
+        label = f"{v:.0%}" if is_pct else f"{v:.2f}"
+        ax.text(
+            max(v + 0.02, 0.05) if is_pct else v + abs(v) * 0.05,
+            bar.get_y() + bar.get_height() / 2,
+            label, va="center", fontsize=11, fontweight="bold",
+        )
+
+    if is_pct:
+        ax.set_xlim(0, 1.15)
+    metric_label = METRIC_LABELS.get(metric_key, metric_key)
+    ax.set_xlabel(metric_label)
+    ax.set_title(title or f"Comparison: {metric_label}", fontsize=13)
+    ax.grid(True, alpha=0.2, axis="x")
     fig.tight_layout()
     return fig
 

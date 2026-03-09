@@ -3,7 +3,7 @@ name: "Event-Triggered Schema"
 description: >
   Sends schema only on events (target change, disagreement, near-arrival).
   Strongest non-learned baseline for BW-efficient comm.
-  E6 VoI gating must beat this.
+  Full sweep: N ∈ {2,3,4,6} × 5 seeds.
 
 task:
   n_agents: 4

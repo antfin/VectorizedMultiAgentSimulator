@@ -1,9 +1,8 @@
 """Experiment configuration loading and management."""
-import copy
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -12,28 +11,6 @@ RENDEZVOUS_ROOT = Path(__file__).parent.parent
 CONFIGS_DIR = RENDEZVOUS_ROOT / "configs"
 RESULTS_DIR = RENDEZVOUS_ROOT / "results"
 CHECKPOINTS_DIR = RENDEZVOUS_ROOT / "checkpoints"
-
-# ── Profiles ───────────────────────────────────────────────────────
-# "fast" runs 1 config with 100 training iterations (~15 min on CPU).
-# "complete" uses the YAML as-is (full sweep).
-
-PROFILES = {
-    "fast": {
-        "train": {
-            "max_n_frames": 6_000_000,
-            "on_policy_n_envs_per_worker": 60,
-            "evaluation_interval": 600_000,
-            "evaluation_episodes": 50,
-        },
-        "sweep": {
-            "seeds": [0],
-            "n_agents": [4],
-            "lidar_range": [0.35],
-            "algorithms": ["mappo"],
-        },
-    },
-    "complete": {},  # no overrides
-}
 
 # ── Short names for run IDs ───────────────────────────────────────
 _SHORT = {
@@ -111,6 +88,7 @@ class ExperimentSpec:
     task: TaskConfig = field(default_factory=TaskConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     sweep: SweepConfig = field(default_factory=SweepConfig)
+    source_path: Optional[Path] = None
 
     @property
     def results_dir(self) -> Path:
@@ -123,6 +101,36 @@ class ExperimentSpec:
     def ensure_dirs(self):
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    def config_tag(self) -> str:
+        """Generate a descriptive filename tag from sweep dimensions.
+
+        Examples:
+            single_mappo_n4_l035        (1 run)
+            sweep_mappo-ippo_n2-6_l025-045  (120 runs)
+        """
+        sweep = self.sweep
+        total = sum(1 for _ in self.iter_runs())
+        prefix = "single" if total == 1 else "sweep"
+
+        # Algorithms
+        algos = "-".join(sweep.algorithms)
+
+        # Only include dimensions with variation or non-default values
+        parts = [prefix, algos]
+
+        def _range_str(vals, fmt=str):
+            if len(vals) == 1:
+                return fmt(vals[0])
+            return f"{fmt(vals[0])}-{fmt(vals[-1])}"
+
+        def _lidar_fmt(v):
+            return str(v).replace(".", "")
+
+        parts.append(f"n{_range_str(sweep.n_agents)}")
+        parts.append(f"l{_range_str(sweep.lidar_range, _lidar_fmt)}")
+
+        return "_".join(parts)
 
     def iter_runs(self):
         """Yield (run_id, task_overrides, algorithm, seed) for each sweep combo.
@@ -145,7 +153,6 @@ class ExperimentSpec:
                     parts = []
                     for k, v in overrides.items():
                         short = _SHORT.get(k, k)
-                        # Format lidar_range without dot: 0.35 → 035
                         if k == "lidar_range":
                             v_str = str(v).replace(".", "")
                         else:
@@ -155,25 +162,17 @@ class ExperimentSpec:
                     yield run_id, overrides, algo, seed
 
 
-def load_experiment(
-    yaml_path: str,
-    profile: str = "complete",
-) -> ExperimentSpec:
+def load_experiment(yaml_path) -> ExperimentSpec:
     """Load an experiment spec from a YAML config file.
 
-    Args:
-        yaml_path: path to the experiment YAML
-        profile: "fast" for quick validation (~15 min), "complete" for full sweep
+    Config layout:
+        configs/<exp_id>/<config_tag>.yaml
+
+    Each YAML contains all parameters directly.
     """
+    yaml_path = Path(yaml_path)
     with open(yaml_path) as f:
         raw = yaml.safe_load(f)
-
-    # Apply profile overrides
-    overrides = PROFILES.get(profile, {})
-    if overrides:
-        for section in ("task", "train", "sweep"):
-            if section in overrides:
-                raw.setdefault(section, {}).update(overrides[section])
 
     task = TaskConfig(**raw.get("task", {}))
     train = TrainConfig(**raw.get("train", {}))
@@ -186,4 +185,23 @@ def load_experiment(
         task=task,
         train=train,
         sweep=sweep,
+        source_path=yaml_path.resolve(),
     )
+
+
+def find_configs(exp_id: str) -> List[Tuple[Path, ExperimentSpec]]:
+    """Find all config YAMLs for an experiment.
+
+    Returns [(yaml_path, spec), ...] sorted by filename.
+    """
+    config_dir = CONFIGS_DIR / exp_id.lower()
+    if not config_dir.exists():
+        return []
+    results = []
+    for yaml_file in sorted(config_dir.glob("*.yaml")):
+        try:
+            spec = load_experiment(yaml_file)
+            results.append((yaml_file, spec))
+        except Exception:
+            continue
+    return results

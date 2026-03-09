@@ -1,9 +1,9 @@
-exp_id: er2
-name: "Engineered Schema"
+exp_id: er1
+name: "No-Comm Control"
 description: >
-  Hand-designed structured messages {target_id, ETA, mode, conf}
-  broadcast always (or every t steps). No learning on the comm channel.
-  If near-optimal, LLM-based methods must beat this to justify complexity.
+  Isolates baseline task difficulty by removing ALL communication.
+  Establishes the floor that any comm method must beat.
+  Full sweep: N ∈ {2,3,4,6} × lidar ∈ {0.25,0.35,0.45} × {MAPPO,IPPO} × 5 seeds = 120 runs.
 
 task:
   n_agents: 4
@@ -11,7 +11,8 @@ task:
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
-  use_agent_lidar: true
+  use_agent_lidar: false
+  n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
   targets_respawn: false
   shared_reward: false
@@ -40,5 +41,5 @@ sweep:
   n_agents: [2, 3, 4, 6]
   n_targets: [7]
   agents_per_target: [2]
-  lidar_range: [0.35]
-  algorithms: [mappo]
+  lidar_range: [0.25, 0.35, 0.45]
+  algorithms: [mappo, ippo]
