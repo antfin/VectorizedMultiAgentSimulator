@@ -12,7 +12,7 @@ task:
   lidar_range: 0.35
   covering_range: 0.25
   use_agent_lidar: false
-  targets_respawn: true
+  targets_respawn: false
   shared_reward: false
   agent_collision_penalty: -0.1
   covering_rew_coeff: 1.0

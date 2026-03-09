@@ -14,17 +14,16 @@ RESULTS_DIR = RENDEZVOUS_ROOT / "results"
 CHECKPOINTS_DIR = RENDEZVOUS_ROOT / "checkpoints"
 
 # ── Profiles ───────────────────────────────────────────────────────
-# "fast" cuts everything down for quick validation (~5 min).
+# "fast" runs 1 config with 100 training iterations (~15 min on CPU).
 # "complete" uses the YAML as-is (full sweep).
 
 PROFILES = {
     "fast": {
         "train": {
-            "max_n_frames": 120_000,
+            "max_n_frames": 6_000_000,
             "on_policy_n_envs_per_worker": 60,
-            "on_policy_n_minibatch_iters": 4,
-            "evaluation_interval": 60_000,
-            "evaluation_episodes": 20,
+            "evaluation_interval": 600_000,
+            "evaluation_episodes": 50,
         },
         "sweep": {
             "seeds": [0],
@@ -34,6 +33,14 @@ PROFILES = {
         },
     },
     "complete": {},  # no overrides
+}
+
+# ── Short names for run IDs ───────────────────────────────────────
+_SHORT = {
+    "n_agents": "n",
+    "n_targets": "t",
+    "agents_per_target": "k",
+    "lidar_range": "l",
 }
 
 
@@ -49,7 +56,7 @@ class TaskConfig:
     use_agent_lidar: bool = False
     n_lidar_rays_entities: int = 15
     n_lidar_rays_agents: int = 12
-    targets_respawn: bool = True
+    targets_respawn: bool = False
     shared_reward: bool = False
     agent_collision_penalty: float = -0.1
     covering_rew_coeff: float = 1.0
@@ -118,7 +125,11 @@ class ExperimentSpec:
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     def iter_runs(self):
-        """Yield (run_id, task_overrides, algorithm, seed) for each sweep combo."""
+        """Yield (run_id, task_overrides, algorithm, seed) for each sweep combo.
+
+        Run IDs use short param names: n=agents, t=targets, k=agents_per_target, l=lidar.
+        Example: er1_mappo_n4_t7_k2_l035_s0
+        """
         sweep = self.sweep
         param_names = [
             "n_agents", "n_targets", "agents_per_target", "lidar_range"
@@ -131,7 +142,15 @@ class ExperimentSpec:
             for combo in itertools.product(*param_values):
                 overrides = dict(zip(param_names, combo))
                 for seed in sweep.seeds:
-                    parts = [f"{k}{v}" for k, v in overrides.items()]
+                    parts = []
+                    for k, v in overrides.items():
+                        short = _SHORT.get(k, k)
+                        # Format lidar_range without dot: 0.35 → 035
+                        if k == "lidar_range":
+                            v_str = str(v).replace(".", "")
+                        else:
+                            v_str = str(v)
+                        parts.append(f"{short}{v_str}")
                     run_id = f"{self.exp_id}_{algo}_{'_'.join(parts)}_s{seed}"
                     yield run_id, overrides, algo, seed
 
@@ -144,7 +163,7 @@ def load_experiment(
 
     Args:
         yaml_path: path to the experiment YAML
-        profile: "fast" for quick validation, "complete" for full sweep
+        profile: "fast" for quick validation (~15 min), "complete" for full sweep
     """
     with open(yaml_path) as f:
         raw = yaml.safe_load(f)

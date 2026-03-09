@@ -182,6 +182,11 @@ def run_single(
         h, m = divmod(m, 60)
         logger.info(f"TRAINING COMPLETE  {run_id}  ({h}h {m}m {s}s)")
 
+        # Save trained policy for export/import
+        logger.info("Saving trained policy...")
+        run_storage.save_policy(experiment.policy)
+        logger.info(f"  Policy saved to {run_storage.output_dir / 'policy.pt'}")
+
         # Post-training evaluation
         logger.info(f"Evaluating trained policy ({spec.train.evaluation_episodes} episodes)...")
         metrics = evaluate_trained(spec, experiment, task_overrides)
@@ -191,7 +196,7 @@ def run_single(
             if key != "n_envs":
                 logger.info(f"  {key}: {val:.4f}")
 
-        # Generate report
+        # Generate date-prefixed report
         report = generate_run_report(
             run_storage.run_dir, run_id, spec, metrics,
             elapsed_seconds=elapsed, task_overrides=task_overrides,
