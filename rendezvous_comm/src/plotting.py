@@ -248,7 +248,10 @@ def plot_training_dashboard(
     title: str = "Training Progress",
     heuristic_reward: Optional[float] = None,
 ) -> plt.Figure:
-    """2x2 dashboard of training curves from BenchMARL CSV scalars.
+    """3x2 dashboard of training curves from BenchMARL CSV scalars.
+
+    Shows 6 panels: Eval Reward, Targets Covered, Covering Reward,
+    Collisions, Episode Length, and Policy Entropy.
 
     Args:
         scalars: {csv_name: [(step, value), ...]} from RunStorage.load_benchmarl_scalars()
@@ -256,14 +259,16 @@ def plot_training_dashboard(
         heuristic_reward: if given, draw horizontal reference line on reward plot
     """
     set_style()
-    fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+    fig, axes = plt.subplots(3, 2, figsize=(12, 10))
     fig.suptitle(title, fontsize=14, fontweight="bold")
 
     panels = [
         ("eval_reward_episode_reward_mean", "Eval Reward", axes[0, 0], "#1f77b4"),
         ("collection_agents_info_targets_covered", "Targets Covered / Step", axes[0, 1], "#2ca02c"),
         ("collection_agents_info_covering_reward", "Covering Reward", axes[1, 0], "#ff7f0e"),
-        ("train_agents_entropy", "Policy Entropy", axes[1, 1], "#9467bd"),
+        ("collection_agents_info_collision_rew", "Collision Penalty", axes[1, 1], "#e74c3c"),
+        ("eval_reward_episode_len_mean", "Eval Episode Length", axes[2, 0], "#17becf"),
+        ("train_agents_entropy", "Policy Entropy", axes[2, 1], "#9467bd"),
     ]
 
     for csv_name, label, ax, color in panels:

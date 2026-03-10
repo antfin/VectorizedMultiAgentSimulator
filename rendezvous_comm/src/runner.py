@@ -97,6 +97,7 @@ def build_experiment(
     experiment_config.evaluation_interval = train_config.evaluation_interval
     experiment_config.evaluation_episodes = train_config.evaluation_episodes
     experiment_config.loggers = ["csv"]
+    experiment_config.render = False  # disable pyglet video (crashes headless)
 
     # Direct BenchMARL outputs into our results structure
     if save_folder is not None:
