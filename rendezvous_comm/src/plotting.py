@@ -551,4 +551,3 @@ def save_figure(fig: plt.Figure, path: str, dpi: int = 150):
     """Save figure to file."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=dpi, bbox_inches="tight")
-    print(f"Saved: {path}")

@@ -1067,3 +1067,44 @@ def display_artifact_tree(run_storage):
         {items}
       </div>
     </div>""")
+
+
+# ── Run selector widget ──────────────────────────────────────────
+
+
+def make_run_selector(run_ids, render_fn):
+    """Create a dropdown + output widget for browsing runs.
+
+    Returns a VBox widget that is fully self-contained — no global
+    observers that leak across cell re-executions.
+
+    Args:
+        run_ids: list of run_id strings (shown in dropdown)
+        render_fn: callable(run_id) that renders output for a run.
+            Called inside an Output widget context.
+
+    Returns:
+        ipywidgets.VBox ready to display
+    """
+    import ipywidgets as widgets
+    from IPython.display import clear_output
+
+    dropdown = widgets.Dropdown(
+        options=run_ids,
+        value=run_ids[0],
+        description="Run:",
+        style={"description_width": "40px"},
+        layout=widgets.Layout(width="450px"),
+    )
+    output = widgets.Output()
+
+    def _render(run_id):
+        with output:
+            clear_output(wait=True)
+            render_fn(run_id)
+
+    dropdown.observe(
+        lambda change: _render(change["new"]), names="value",
+    )
+    _render(run_ids[0])
+    return widgets.VBox([dropdown, output])

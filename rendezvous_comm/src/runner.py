@@ -3,8 +3,12 @@
 Handles training, evaluation, and metric collection for each run
 in an experiment sweep.
 """
+import contextlib
 import logging
+import os
+import sys
 import time
+import warnings
 from typing import Any, Callable, Dict, Optional
 
 import torch
@@ -18,6 +22,34 @@ from .storage import ExperimentStorage
 
 
 _log = logging.getLogger("rendezvous")
+
+
+@contextlib.contextmanager
+def _suppress_noise():
+    """Suppress BenchMARL/TorchRL stdout, loggers and warnings.
+
+    Keeps stderr open so tqdm progress bars still render.
+    """
+    devnull = open(os.devnull, "w")
+    old_out = sys.stdout
+    # Silence torchrl/benchmarl loggers
+    noisy = ["torchrl", "benchmarl", "tensordict"]
+    saved = {}
+    for name in noisy:
+        lg = logging.getLogger(name)
+        saved[name] = lg.level
+        lg.setLevel(logging.ERROR)
+    try:
+        sys.stdout = devnull
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            yield
+    finally:
+        sys.stdout = old_out
+        devnull.close()
+        for name in noisy:
+            logging.getLogger(name).setLevel(saved[name])
+
 
 # Track whether pyglet rendering is safe. First run in a process works;
 # subsequent runs crash because pyglet's display state goes stale.
@@ -67,6 +99,81 @@ class _TqdmProgressCallback(_BenchMARLCallback):
     def close(self):
         if hasattr(self, "_pbar"):
             self._pbar.close()
+
+
+class _EvalMetricsCallback(_BenchMARLCallback):
+    """BenchMARL Callback that computes M1 and M4 at each eval checkpoint.
+
+    Uses on_evaluation_end(rollouts) to compute real success rate (M1)
+    and collision count (M4) from evaluation episode rollouts.
+    Results stored as lists of (iteration, value) tuples.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._iter = 0
+        self.m1_history = []  # [(iter, success_rate), ...]
+        self.m4_history = []  # [(iter, avg_collisions), ...]
+
+    def __getstate__(self):
+        return {"_dummy": True}
+
+    def __setstate__(self, state):
+        pass
+
+    def on_batch_collected(self, batch):
+        self._iter += 1
+
+    def on_evaluation_end(self, rollouts):
+        if not hasattr(self, "m1_history"):
+            return
+        n_done = 0
+        total_collisions = 0.0
+        n_episodes = len(rollouts)
+        group_map = self.experiment.group_map
+
+        for rollout_td in rollouts:
+            # M1: check if episode completed (done fired)
+            done_key = ("next", "done")
+            if done_key in rollout_td.keys(True):
+                if rollout_td[done_key].any().item():
+                    n_done += 1
+
+            # M4: count collision events
+            for group in group_map.keys():
+                coll_key = ("next", group, "info", "collision_rew")
+                if coll_key in rollout_td.keys(True):
+                    coll_rew = rollout_td[coll_key]
+                    total_collisions += (coll_rew < 0).sum().item()
+
+        m1 = n_done / max(n_episodes, 1)
+        m4 = total_collisions / max(n_episodes, 1)
+        self.m1_history.append((self._iter, m1))
+        self.m4_history.append((self._iter, m4))
+
+    def save_csvs(self, benchmarl_dir):
+        """Save M1/M4 history into BenchMARL scalars dirs."""
+        import csv
+        from pathlib import Path
+        bdir = Path(benchmarl_dir)
+        # Find the scalars dir inside benchmarl output
+        scalars_dirs = list(bdir.glob("**/scalars"))
+        if not scalars_dirs:
+            # Create one if none exists
+            scalars_dirs = [bdir / "eval_metrics" / "scalars"]
+            scalars_dirs[0].mkdir(parents=True, exist_ok=True)
+        for sd in scalars_dirs:
+            for name, history in [
+                ("eval_M1_success_rate", self.m1_history),
+                ("eval_M4_avg_collisions", self.m4_history),
+            ]:
+                if not history:
+                    continue
+                path = sd / f"{name}.csv"
+                with open(path, "w", newline="") as f:
+                    w = csv.writer(f)
+                    for row in history:
+                        w.writerow(row)
 
 
 def get_algorithm_config(algorithm: str):
@@ -227,8 +334,12 @@ def run_single(
         logger.info(f"  Task overrides: {task_overrides}")
         logger.info(f"  Output dir:    {run_storage.run_dir}")
 
-        # Create iteration progress bar in notebooks
+        # Callbacks: progress bar (notebook) + M1/M4 eval tracker
+        callbacks = []
         progress_cb = None
+        eval_cb = _EvalMetricsCallback()
+        callbacks.append(eval_cb)
+
         if quiet and _in_notebook():
             progress_cb = _TqdmProgressCallback(
                 total_frames=spec.train.max_n_frames,
@@ -237,22 +348,29 @@ def run_single(
                 ),
                 run_id=run_id,
             )
+            callbacks.append(progress_cb)
 
-        experiment = build_experiment(
-            spec.task, spec.train, algorithm, seed, task_overrides,
-            save_folder=str(run_storage.benchmarl_dir),
-            callbacks=[progress_cb] if progress_cb else None,
-        )
+        # Suppress noisy BenchMARL/TorchRL output in notebooks
+        noise_ctx = _suppress_noise() if quiet else contextlib.nullcontext()
+        with noise_ctx:
+            experiment = build_experiment(
+                spec.task, spec.train, algorithm, seed, task_overrides,
+                save_folder=str(run_storage.benchmarl_dir),
+                callbacks=callbacks,
+            )
 
-        global _render_available
-        t0 = time.monotonic()
-        experiment.run()
-        elapsed = time.monotonic() - t0
-        # Disable rendering for subsequent runs — pyglet display goes stale
-        _render_available = False
+            global _render_available
+            t0 = time.monotonic()
+            experiment.run()
+            elapsed = time.monotonic() - t0
+            # Disable rendering for subsequent runs — pyglet display goes stale
+            _render_available = False
 
         if progress_cb is not None:
             progress_cb.close()
+
+        # Save M1/M4 eval history for training curve plots
+        eval_cb.save_csvs(run_storage.benchmarl_dir)
 
         m, s = divmod(int(elapsed), 60)
         h, m = divmod(m, 60)
