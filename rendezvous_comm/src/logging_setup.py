@@ -12,14 +12,16 @@ def setup_run_logger(
     name: str = "rendezvous",
     console_level: int = logging.INFO,
     file_level: int = logging.DEBUG,
+    console: bool = True,
 ) -> logging.Logger:
-    """Create a logger that writes to both console and a log file.
+    """Create a logger that writes to file and optionally console.
 
     Args:
         run_dir: run directory; log file goes to run_dir/logs/run.log
         name: logger name
         console_level: minimum level for console output
         file_level: minimum level for file output
+        console: if False, skip console handler (quiet mode for notebooks)
 
     Returns:
         Configured logger instance.
@@ -27,18 +29,19 @@ def setup_run_logger(
     logger = logging.getLogger(name)
     # Remove existing handlers (safe for notebook re-runs)
     teardown_run_logger(logger)
-    logger.setLevel(min(console_level, file_level))
+    logger.setLevel(file_level if not console else min(console_level, file_level))
 
     fmt = logging.Formatter(
         "%(asctime)s %(levelname)-8s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(console_level)
-    ch.setFormatter(fmt)
-    logger.addHandler(ch)
+    # Console handler (optional)
+    if console:
+        ch = logging.StreamHandler()
+        ch.setLevel(console_level)
+        ch.setFormatter(fmt)
+        logger.addHandler(ch)
 
     # File handler
     logs_dir = run_dir / "logs"

@@ -128,6 +128,7 @@ def run_single(
     seed: int,
     skip_complete: bool = True,
     dry_run: bool = False,
+    quiet: bool = False,
 ) -> Dict[str, float]:
     """Run a single training run and save results.
 
@@ -139,6 +140,7 @@ def run_single(
         seed: random seed
         skip_complete: skip if results already exist
         dry_run: if True, build experiment but don't train
+        quiet: if True, log only to file (no console output)
 
     Returns:
         metrics dict
@@ -146,8 +148,8 @@ def run_single(
     storage = ExperimentStorage(spec.exp_id)
     run_storage = storage.get_run(run_id)
 
-    # Setup logging to file + console
-    logger = setup_run_logger(run_storage.run_dir)
+    # Setup logging — file only when quiet (notebook progress bars instead)
+    logger = setup_run_logger(run_storage.run_dir, console=not quiet)
 
     try:
         if skip_complete and run_storage.is_complete():
@@ -211,9 +213,13 @@ def run_single(
 
         run_storage.save_metrics(metrics)
 
+        from .report import METRIC_DETAILS
         for key, val in metrics.items():
             if key != "n_envs":
-                logger.info(f"  {key}: {val:.4f}")
+                detail = METRIC_DETAILS.get(key)
+                label = detail["label"] if detail else key
+                fmt = detail["fmt"] if detail else ".4f"
+                logger.info(f"  {label}: {val:{fmt}}")
 
         # Generate report
         report = generate_run_report(
@@ -485,6 +491,25 @@ def make_heuristic_policy_fn(scenario_name: str = "discovery"):
     return policy_fn
 
 
+def _in_notebook() -> bool:
+    """Detect if running inside a Jupyter/IPython notebook."""
+    try:
+        from IPython import get_ipython
+        return get_ipython() is not None
+    except ImportError:
+        return False
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}h{m:02d}m"
+    if m:
+        return f"{m}m{s:02d}s"
+    return f"{s}s"
+
+
 def run_sweep(
     spec: ExperimentSpec,
     skip_complete: bool = True,
@@ -492,6 +517,9 @@ def run_sweep(
     max_runs: Optional[int] = None,
 ) -> Dict[str, Dict[str, float]]:
     """Run all parameter combinations in a sweep.
+
+    In notebooks, shows progress bars instead of log spam.
+    Detailed logs are always written to each run's logs/run.log.
 
     Args:
         spec: experiment specification
@@ -502,28 +530,99 @@ def run_sweep(
     Returns:
         {run_id: metrics} for all runs
     """
-    total = sum(1 for _ in spec.iter_runs())
+    notebook = _in_notebook()
+    all_runs = list(spec.iter_runs())
+    total = len(all_runs)
     if max_runs:
         total = min(total, max_runs)
-    _log.info(f"Starting sweep: {spec.exp_id} — {total} runs")
+        all_runs = all_runs[:total]
+
+    # Pre-scan run status for progress display
+    storage = ExperimentStorage(spec.exp_id)
+    n_already_done = 0
+    if skip_complete:
+        for run_id, _, _, _ in all_runs:
+            rs = storage.get_run(run_id)
+            if rs.is_complete():
+                n_already_done += 1
+
+    if not notebook:
+        _log.info(
+            f"Starting sweep: {spec.exp_id} — {total} runs "
+            f"({n_already_done} already complete)"
+        )
 
     t0 = time.monotonic()
     results = {}
-    for i, (run_id, overrides, algo, seed) in enumerate(spec.iter_runs()):
-        if max_runs and i >= max_runs:
-            break
-        _log.info(f"Run {i + 1}/{total}: {run_id}")
+    n_skip = 0
+    n_train = 0
+
+    pbar = None
+    if notebook:
+        from tqdm.auto import tqdm
+        pbar = tqdm(
+            total=total,
+            desc=f"{spec.exp_id.upper()} sweep",
+            unit="run",
+            bar_format=(
+                "{l_bar}{bar}| {n_fmt}/{total_fmt} "
+                "[{elapsed}<{remaining}, {postfix}]"
+            ),
+        )
+        pbar.set_postfix_str(
+            f"done: {n_already_done}/{total} prior"
+        )
+
+    for i, (run_id, overrides, algo, seed) in enumerate(all_runs):
+        is_complete = (
+            skip_complete and storage.get_run(run_id).is_complete()
+        )
+
+        if notebook and pbar is not None:
+            if is_complete:
+                status = f"skip {run_id}"
+            else:
+                status = f"training {run_id}"
+            pbar.set_postfix_str(status)
+
+        if not notebook:
+            _log.info(f"Run {i + 1}/{total}: {run_id}")
+
         metrics = run_single(
             spec, run_id, overrides, algo, seed,
             skip_complete=skip_complete, dry_run=dry_run,
+            quiet=notebook,
         )
         results[run_id] = metrics
 
+        if is_complete:
+            n_skip += 1
+        else:
+            n_train += 1
+
+        if notebook and pbar is not None:
+            pbar.update(1)
+            pbar.set_postfix_str(
+                f"trained: {n_train}  skipped: {n_skip}"
+            )
+
     elapsed = time.monotonic() - t0
+
+    if notebook and pbar is not None:
+        pbar.set_postfix_str(
+            f"done — trained: {n_train}  "
+            f"skipped: {n_skip}  "
+            f"time: {_fmt_elapsed(elapsed)}"
+        )
+        pbar.close()
 
     # Generate sweep report
     report = generate_sweep_report(spec, results, elapsed_seconds=elapsed)
-    _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")
-    _log.info(f"Sweep report: {spec.results_dir / 'sweep_report.md'}")
+
+    if not notebook:
+        _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")
+        _log.info(
+            f"Sweep report: {spec.results_dir / 'sweep_report.md'}"
+        )
 
     return results

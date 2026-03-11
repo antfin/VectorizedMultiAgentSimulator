@@ -28,14 +28,14 @@ LABELS = {
 }
 
 METRIC_LABELS = {
-    "M1_success_rate": "Success Rate",
-    "M2_avg_return": "Avg Return",
-    "M3_avg_steps": "Avg Steps to Complete",
-    "M4_avg_collisions": "Collisions / Episode",
-    "M5_avg_tokens": "Tokens / Episode",
-    "M6_coverage_progress": "Coverage Progress",
-    "M8_agent_utilization": "Agent Utilization",
-    "M9_spatial_spread": "Spatial Spread",
+    "M1_success_rate": "M1: Success Rate",
+    "M2_avg_return": "M2: Avg Return",
+    "M3_avg_steps": "M3: Avg Steps to Complete",
+    "M4_avg_collisions": "M4: Collisions / Episode",
+    "M5_avg_tokens": "M5: Tokens / Episode",
+    "M6_coverage_progress": "M6: Coverage Progress",
+    "M8_agent_utilization": "M8: Agent Utilization",
+    "M9_spatial_spread": "M9: Spatial Spread",
 }
 
 
@@ -235,9 +235,9 @@ def plot_success_vs_tokens(
             c=color, s=150, label=label, zorder=5, edgecolors="white",
         )
 
-    ax.set_xlabel("Tokens / Episode")
-    ax.set_ylabel("Success Rate")
-    ax.set_title(title or "Success vs Communication Cost")
+    ax.set_xlabel("M5: Tokens / Episode")
+    ax.set_ylabel("M1: Success Rate")
+    ax.set_title(title or "M1 vs M5: Success vs Communication Cost")
     ax.legend()
     fig.tight_layout()
     return fig

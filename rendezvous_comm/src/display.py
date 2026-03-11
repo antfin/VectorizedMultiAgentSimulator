@@ -119,8 +119,18 @@ def _build_config_html(spec, task, train, sweep, total_runs):
             f'<td style="padding:4px 12px;color:{_FG_MUTED}">{desc}</td></tr>'
         )
 
+    # Parameters that are swept — skip from task, show only in sweep
+    swept_keys = {
+        k for k, v in sweep.items()
+        if isinstance(v, list) and len(v) > 1
+    }
+    # Also include sweep keys that overlap with task even if single-valued
+    sweep_task_keys = set(sweep.keys()) - {"seeds", "algorithms"}
+
     rows += _subheader_row("Task Parameters (Discovery Scenario)")
     for k, v in task.items():
+        if k in sweep_task_keys:
+            continue  # shown in sweep section
         rows += _param_row(k, v, _task_param_desc(k))
 
     rows += (
@@ -132,10 +142,15 @@ def _build_config_html(spec, task, train, sweep, total_runs):
 
     rows += (
         f'<tr style="background:{_BG_HEADER_GREEN};color:white">'
-        f'<td colspan="3" style="padding:6px"><b>Sweep Dimensions</b></td></tr>'
+        f'<td colspan="3" style="padding:6px">'
+        f'<b>Sweep Dimensions</b></td></tr>'
     )
     for k, v in sweep.items():
-        rows += _param_row(k, v, f"{len(v)} values")
+        desc = _task_param_desc(k) or _sweep_param_desc(k)
+        n_vals = len(v) if isinstance(v, list) else 1
+        if n_vals > 1:
+            desc += f" ({n_vals} values)"
+        rows += _param_row(k, v, desc)
 
     return f'<table style="{_table_style()}">{rows}</table>'
 
@@ -147,9 +162,13 @@ def _print_config_text(spec, task, train, sweep, total_runs):
     print(f"{sep}")
     print(f"  {spec.description}\n")
 
+    sweep_task_keys = set(sweep.keys()) - {"seeds", "algorithms"}
+
     print("  TASK PARAMETERS")
     print("  " + "-" * 40)
     for k, v in task.items():
+        if k in sweep_task_keys:
+            continue
         print(f"    {k:<35} {v}")
 
     print("\n  TRAINING PARAMETERS")
@@ -184,6 +203,14 @@ def _task_param_desc(key: str) -> str:
         "x_semidim": "World half-width",
         "y_semidim": "World half-height",
         "min_dist_between_entities": "Min spawn distance",
+    }
+    return descs.get(key, "")
+
+
+def _sweep_param_desc(key: str) -> str:
+    descs = {
+        "seeds": "Random seeds for reproducibility",
+        "algorithms": "RL algorithms to compare",
     }
     return descs.get(key, "")
 
@@ -281,8 +308,9 @@ def display_sweep_summary(all_metrics: Dict[str, Dict[str, float]]):
                      "M8_agent_utilization", "M9_spatial_spread"]:
             info = METRIC_INFO.get(key)
             if info and key in metrics:
-                _, name, _, fmt = info
-                row[name] = f"{metrics[key]:{fmt}}"
+                mid, name, _, fmt = info
+                col_name = f"{mid}: {name}" if mid else name
+                row[col_name] = f"{metrics[key]:{fmt}}"
         rows.append(row)
 
     df = pd.DataFrame(rows).set_index("run_id")
@@ -408,16 +436,16 @@ def display_metric_cards(
 ):
     """Display key metrics as large colored KPI cards."""
     card_specs = [
-        ("M1_success_rate", "Success Rate", ".0%", _m1_color),
-        ("M6_coverage_progress", "Coverage", ".0%",
+        ("M1_success_rate", "M1: Success Rate", ".0%", _m1_color),
+        ("M6_coverage_progress", "M6: Coverage", ".0%",
          lambda v: _GREEN if v > 0.7 else _ORANGE if v > 0.3 else _RED),
-        ("M3_avg_steps", "Avg Steps", ".0f",
+        ("M3_avg_steps", "M3: Avg Steps", ".0f",
          lambda v: _GREEN if v < 100 else _ORANGE if v < 150 else _RED),
-        ("M9_spatial_spread", "Spatial Spread", ".2f",
+        ("M9_spatial_spread", "M9: Spatial Spread", ".2f",
          lambda _: _BLUE),
-        ("M8_agent_utilization", "Agent Util (CV)", ".2f",
+        ("M8_agent_utilization", "M8: Agent Util (CV)", ".2f",
          lambda v: _GREEN if v < 0.5 else _ORANGE),
-        ("M4_avg_collisions", "Collisions", ".1f",
+        ("M4_avg_collisions", "M4: Collisions", ".1f",
          lambda v: _GREEN if v < 5 else _ORANGE),
     ]
 
@@ -485,13 +513,13 @@ def display_verdict(success_rate: float, avg_return: float):
             f'{verdict}</div>'
             f'<div style="margin-top:8px;color:{_FG_PRIMARY}">{msg}</div>'
             f'<div style="margin-top:10px;font-size:13px;color:{_FG_MUTED}">'
-            f'Success Rate: {success_rate:.0%} &nbsp;|&nbsp; '
-            f'Avg Return: {avg_return:.2f}</div></div>'
+            f'M1 Success Rate: {success_rate:.0%} &nbsp;|&nbsp; '
+            f'M2 Avg Return: {avg_return:.2f}</div></div>'
         )
     else:
         print(f"\n  {verdict}")
         print(f"  {msg}")
-        print(f"  Success: {success_rate:.0%}  |  Return: {avg_return:.2f}")
+        print(f"  M1 Success: {success_rate:.0%}  |  M2 Return: {avg_return:.2f}")
 
 
 # ── Run status ─────────────────────────────────────────────────────
@@ -832,7 +860,8 @@ def display_baseline_comparison(
         f'<table style="border-collapse:collapse;width:100%;'
         f'background:{_BG_SURFACE};color:{_FG_PRIMARY}">'
         f'<tr style="background:{_BG_SURFACE2}">'
-        f'<th style="padding:6px 8px;color:{_FG_SECONDARY}">ID</th>'
+        f'<th style="padding:6px 8px;text-align:left;'
+        f'color:{_FG_SECONDARY}">ID</th>'
         f'<th style="padding:6px 8px;text-align:left;'
         f'color:{_FG_SECONDARY}">Metric</th>'
         f'<th style="padding:6px 8px;text-align:right;'

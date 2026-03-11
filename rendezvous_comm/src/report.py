@@ -13,7 +13,7 @@ from .config import ExperimentSpec
 
 METRIC_DETAILS = {
     "M1_success_rate": {
-        "label": "Success Rate",
+        "label": "M1: Success Rate",
         "fmt": ".1%",
         "description": (
             "Fraction of evaluation episodes where ALL targets were covered. "
@@ -22,7 +22,7 @@ METRIC_DETAILS = {
         ),
     },
     "M2_avg_return": {
-        "label": "Avg Return",
+        "label": "M2: Avg Return",
         "fmt": ".4f",
         "description": (
             "Mean cumulative reward per episode (covering + collision penalty + time penalty). "
@@ -30,7 +30,7 @@ METRIC_DETAILS = {
         ),
     },
     "M3_avg_steps": {
-        "label": "Avg Steps to Completion",
+        "label": "M3: Avg Steps to Completion",
         "fmt": ".1f",
         "description": (
             "Mean steps until all targets covered. "
@@ -38,19 +38,19 @@ METRIC_DETAILS = {
         ),
     },
     "M4_avg_collisions": {
-        "label": "Collisions/Episode",
+        "label": "M4: Collisions/Episode",
         "fmt": ".2f",
         "description": "Mean agent-agent collisions per episode.",
     },
     "M5_avg_tokens": {
-        "label": "Tokens/Episode",
+        "label": "M5: Tokens/Episode",
         "fmt": ".1f",
         "description": (
             "Communication tokens per episode. Always 0 for no-comm baselines (ER1)."
         ),
     },
     "M6_coverage_progress": {
-        "label": "Coverage Progress",
+        "label": "M6: Coverage Progress",
         "fmt": ".1%",
         "description": (
             "Fraction of targets covered by episode end (partial credit). "
@@ -58,7 +58,7 @@ METRIC_DETAILS = {
         ),
     },
     "M7_sample_efficiency": {
-        "label": "Sample Efficiency",
+        "label": "M7: Sample Efficiency",
         "fmt": ",.0f",
         "description": (
             "Training frames to reach 80% of final eval reward. "
@@ -66,7 +66,7 @@ METRIC_DETAILS = {
         ),
     },
     "M8_agent_utilization": {
-        "label": "Agent Utilization",
+        "label": "M8: Agent Utilization",
         "fmt": ".3f",
         "description": (
             "Coefficient of variation of per-agent covering counts. "
@@ -74,7 +74,7 @@ METRIC_DETAILS = {
         ),
     },
     "M9_spatial_spread": {
-        "label": "Spatial Spread",
+        "label": "M9: Spatial Spread",
         "fmt": ".3f",
         "description": (
             "Mean pairwise agent distance. "
@@ -344,8 +344,10 @@ def generate_sweep_report(
         values = [m[key] for m in all_metrics.values() if key in m]
         if not values:
             continue
-        detail = METRIC_DETAILS.get(key, {"label": key, "fmt": ".4f"})
-        label = detail["label"]
+        detail = METRIC_DETAILS.get(
+            key, {"label": key, "fmt": ".4f"}
+        )
+        label = detail["label"]  # already includes M-ID prefix
         mean = statistics.mean(values)
         std = statistics.stdev(values) if len(values) > 1 else 0.0
         if "rate" in key or "progress" in key:
@@ -366,14 +368,27 @@ def generate_sweep_report(
     # Per-run table
     L.append("## Per-Run Results")
     L.append("")
-    L.append("| Run ID | M1 | M2 | M3 | M4 |")
-    L.append("|--------|----|----|----|----|")
+    L.append(
+        "| Run ID | M1: Success | M2: Return "
+        "| M3: Steps | M4: Collisions "
+        "| M6: Coverage | M8: Util | M9: Spread |"
+    )
+    L.append("|--------|------------|--------"
+             "|----------|---------------"
+             "|------------|---------|-----------|")
     for run_id, metrics in sorted(all_metrics.items()):
         m1 = f"{metrics.get('M1_success_rate', 0):.1%}"
         m2 = f"{metrics.get('M2_avg_return', 0):.2f}"
         m3 = f"{metrics.get('M3_avg_steps', 0):.0f}"
         m4 = f"{metrics.get('M4_avg_collisions', 0):.2f}"
-        L.append(f"| `{run_id}` | {m1} | {m2} | {m3} | {m4} |")
+        m6 = f"{metrics.get('M6_coverage_progress', 0):.1%}"
+        m8 = f"{metrics.get('M8_agent_utilization', 0):.3f}"
+        m9 = f"{metrics.get('M9_spatial_spread', 0):.3f}"
+        L.append(
+            f"| `{run_id}` | {m1} | {m2} "
+            f"| {m3} | {m4} "
+            f"| {m6} | {m8} | {m9} |"
+        )
     L.append("")
 
     L.append("---")
