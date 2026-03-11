@@ -830,8 +830,8 @@ def display_baseline_comparison(
         plt.close(fig)
 
     keys = [
-        "M1_success_rate", "M6_coverage_progress", "M2_avg_return",
-        "M3_avg_steps", "M4_avg_collisions", "M9_spatial_spread",
+        "M1_success_rate", "M2_avg_return", "M3_avg_steps",
+        "M4_avg_collisions", "M6_coverage_progress", "M9_spatial_spread",
     ]
     table_rows = ""
     for k in keys:

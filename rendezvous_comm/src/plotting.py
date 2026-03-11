@@ -357,8 +357,8 @@ def plot_baseline_grouped_bars(
     set_style()
     metrics = [
         "M1_success_rate",
-        "M6_coverage_progress",
         "M2_avg_return",
+        "M6_coverage_progress",
         "M9_spatial_spread",
     ]
     labels = [METRIC_LABELS.get(m, m) for m in metrics]
@@ -424,7 +424,7 @@ def plot_results_comparison(
         colors = {
             "Random": "#e74c3c",
             "Heuristic": "#27ae60",
-            "Trained (MAPPO)": "#1f77b4",
+            "Trained": "#1f77b4",
         }
 
     metrics = ["M1_success_rate", "M2_avg_return", "M6_coverage_progress"]

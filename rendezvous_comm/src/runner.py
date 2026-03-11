@@ -24,6 +24,35 @@ _log = logging.getLogger("rendezvous")
 _render_available = True
 
 
+def _make_progress_callback(total_frames, frames_per_batch, run_id):
+    """Create a BenchMARL Callback that drives a tqdm progress bar."""
+    from benchmarl.experiment import Callback
+    from tqdm.auto import tqdm
+
+    class _TqdmProgress(Callback):
+        def __init__(self):
+            super().__init__()
+            self.total_iters = max(1, total_frames // frames_per_batch)
+            self.pbar = tqdm(
+                total=self.total_iters,
+                desc=f"  {run_id}",
+                unit="iter",
+                bar_format=(
+                    "{l_bar}{bar}| {n_fmt}/{total_fmt} "
+                    "[{elapsed}<{remaining}]"
+                ),
+                leave=True,
+            )
+
+        def on_batch_collected(self, batch):
+            self.pbar.update(1)
+
+        def close(self):
+            self.pbar.close()
+
+    return _TqdmProgress()
+
+
 def get_algorithm_config(algorithm: str):
     """Get BenchMARL algorithm config by name."""
     if algorithm == "mappo":
@@ -49,6 +78,7 @@ def build_experiment(
     seed: int,
     task_overrides: Optional[Dict[str, Any]] = None,
     save_folder: Optional[str] = None,
+    callbacks: Optional[list] = None,
 ):
     """Build a BenchMARL Experiment object.
 
@@ -115,6 +145,7 @@ def build_experiment(
         critic_model_config=critic_model_config,
         seed=seed,
         config=experiment_config,
+        callbacks=callbacks or None,
     )
     return experiment
 
@@ -180,9 +211,21 @@ def run_single(
         logger.info(f"  Task overrides: {task_overrides}")
         logger.info(f"  Output dir:    {run_storage.run_dir}")
 
+        # Create iteration progress bar in notebooks
+        progress_cb = None
+        if quiet and _in_notebook():
+            progress_cb = _make_progress_callback(
+                total_frames=spec.train.max_n_frames,
+                frames_per_batch=(
+                    spec.train.on_policy_collected_frames_per_batch
+                ),
+                run_id=run_id,
+            )
+
         experiment = build_experiment(
             spec.task, spec.train, algorithm, seed, task_overrides,
             save_folder=str(run_storage.benchmarl_dir),
+            callbacks=[progress_cb] if progress_cb else None,
         )
 
         global _render_available
@@ -191,6 +234,9 @@ def run_single(
         elapsed = time.monotonic() - t0
         # Disable rendering for subsequent runs — pyglet display goes stale
         _render_available = False
+
+        if progress_cb is not None:
+            progress_cb.close()
 
         m, s = divmod(int(elapsed), 60)
         h, m = divmod(m, 60)
@@ -568,9 +614,6 @@ def run_sweep(
                 "[{elapsed}<{remaining}, {postfix}]"
             ),
         )
-        pbar.set_postfix_str(
-            f"done: {n_already_done}/{total} prior"
-        )
 
     for i, (run_id, overrides, algo, seed) in enumerate(all_runs):
         is_complete = (
@@ -579,10 +622,9 @@ def run_sweep(
 
         if notebook and pbar is not None:
             if is_complete:
-                status = f"skip {run_id}"
+                pbar.set_postfix_str(f"skip {run_id}")
             else:
-                status = f"training {run_id}"
-            pbar.set_postfix_str(status)
+                pbar.set_postfix_str(f"training {run_id}")
 
         if not notebook:
             _log.info(f"Run {i + 1}/{total}: {run_id}")
