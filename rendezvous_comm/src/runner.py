@@ -20,6 +20,10 @@ from .storage import ExperimentStorage, RunStorage
 
 _log = logging.getLogger("rendezvous")
 
+# Track whether pyglet rendering is safe. First run in a process works;
+# subsequent runs crash because pyglet's display state goes stale.
+_render_available = True
+
 
 def get_algorithm_config(algorithm: str):
     """Get BenchMARL algorithm config by name."""
@@ -97,7 +101,9 @@ def build_experiment(
     experiment_config.evaluation_interval = train_config.evaluation_interval
     experiment_config.evaluation_episodes = train_config.evaluation_episodes
     experiment_config.loggers = ["csv"]
-    experiment_config.render = False  # disable pyglet video (crashes headless)
+    # Pyglet rendering works for the first run in a process but crashes
+    # on subsequent runs (stale display state). Enable only when safe.
+    experiment_config.render = _render_available
 
     # Direct BenchMARL outputs into our results structure
     if save_folder is not None:
@@ -178,9 +184,12 @@ def run_single(
             save_folder=str(run_storage.benchmarl_dir),
         )
 
+        global _render_available
         t0 = time.monotonic()
         experiment.run()
         elapsed = time.monotonic() - t0
+        # Disable rendering for subsequent runs — pyglet display goes stale
+        _render_available = False
 
         m, s = divmod(int(elapsed), 60)
         h, m = divmod(m, 60)

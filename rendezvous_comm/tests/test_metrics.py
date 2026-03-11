@@ -69,13 +69,17 @@ class TestMetricKeys:
 
 
 class TestM1SuccessRate:
-    def test_all_done(self):
+    def test_all_targets_covered(self):
+        """M1=1.0 when all envs have covered all targets."""
         n_envs = 10
-        m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
-        dones = torch.ones(n_envs, dtype=torch.bool)
+        n_targets = 3
+        m = EpisodeMetrics().init(n_envs, n_targets=n_targets, n_agents=2)
         rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
-        info = _make_agent_info_list(2, n_envs)
-        m.update_step(rewards, dones, info, step=5)
+        dones = torch.zeros(n_envs, dtype=torch.bool)
+        # Cover all 3 targets across 3 steps
+        for step in range(n_targets):
+            info = _make_agent_info_list(2, n_envs, targets_covered=1)
+            m.update_step(rewards, dones, info, step)
         result = m.compute(max_steps=100)
         assert result["M1_success_rate"] == pytest.approx(1.0)
 
@@ -84,21 +88,43 @@ class TestM1SuccessRate:
         m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
         dones = torch.zeros(n_envs, dtype=torch.bool)
         rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
-        info = _make_agent_info_list(2, n_envs)
+        info = _make_agent_info_list(2, n_envs, targets_covered=0)
         m.update_step(rewards, dones, info, step=5)
         result = m.compute(max_steps=100)
         assert result["M1_success_rate"] == pytest.approx(0.0)
 
-    def test_half_done(self):
+    def test_half_covered(self):
+        """M1=0.5 when half the envs cover all targets."""
         n_envs = 10
-        m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
-        dones = torch.zeros(n_envs, dtype=torch.bool)
-        dones[:5] = True
+        n_targets = 3
+        m = EpisodeMetrics().init(n_envs, n_targets=n_targets, n_agents=2)
         rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
-        info = _make_agent_info_list(2, n_envs)
-        m.update_step(rewards, dones, info, step=5)
+        dones = torch.zeros(n_envs, dtype=torch.bool)
+        # Cover all 3 targets in first 5 envs only
+        for step in range(n_targets):
+            tc = torch.zeros(n_envs)
+            tc[:5] = 1
+            info = [
+                {"covering_reward": torch.zeros(n_envs),
+                 "collision_rew": torch.zeros(n_envs),
+                 "targets_covered": tc},
+            ] * 2
+            m.update_step(rewards, dones, info, step)
         result = m.compute(max_steps=100)
         assert result["M1_success_rate"] == pytest.approx(0.5)
+
+    def test_truncation_not_counted(self):
+        """dones=True without target coverage must NOT count as M1 success."""
+        n_envs = 10
+        m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
+        dones = torch.ones(n_envs, dtype=torch.bool)
+        rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
+        info = _make_agent_info_list(2, n_envs, targets_covered=0)
+        m.update_step(rewards, dones, info, step=5)
+        result = m.compute(max_steps=100)
+        assert result["M1_success_rate"] == pytest.approx(0.0), (
+            "dones=True without target coverage was counted as success"
+        )
 
 
 # ── Test M2: Average Return ──────────────────────────────────────
@@ -127,24 +153,25 @@ class TestM2AvgReturn:
 class TestM3Steps:
     def test_completed_episodes(self):
         n_envs = 4
-        m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
-        info = _make_agent_info_list(2, n_envs)
+        n_targets = 3
+        m = EpisodeMetrics().init(n_envs, n_targets=n_targets, n_agents=2)
         rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
 
-        # Run 10 steps, done at step 5 for all envs
+        # Cover targets progressively, all covered at step 5
         for step in range(10):
             dones = torch.zeros(n_envs, dtype=torch.bool)
-            if step == 5:
-                dones[:] = True
+            tc = 1 if step < n_targets else 0
+            info = _make_agent_info_list(2, n_envs, targets_covered=tc)
             m.update_step(rewards, dones, info, step)
 
         result = m.compute(max_steps=200)
-        assert result["M3_avg_steps"] == pytest.approx(5.0)
+        # All n_targets covered by step 2 (steps 0,1,2) → done_at_step=2
+        assert result["M3_avg_steps"] == pytest.approx(2.0)
 
     def test_incomplete_episodes_use_max_steps(self):
         n_envs = 4
         m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
-        info = _make_agent_info_list(2, n_envs)
+        info = _make_agent_info_list(2, n_envs, targets_covered=0)
         rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
 
         for step in range(10):
@@ -156,19 +183,27 @@ class TestM3Steps:
 
     def test_mixed_completion(self):
         n_envs = 4
-        m = EpisodeMetrics().init(n_envs, n_targets=3, n_agents=2)
-        info = _make_agent_info_list(2, n_envs)
+        n_targets = 3
+        m = EpisodeMetrics().init(n_envs, n_targets=n_targets, n_agents=2)
         rewards = [torch.zeros(n_envs), torch.zeros(n_envs)]
 
+        # Cover targets in first 2 envs only
         for step in range(10):
             dones = torch.zeros(n_envs, dtype=torch.bool)
-            if step == 3:
-                dones[:2] = True  # first 2 envs done at step 3
+            tc = torch.zeros(n_envs)
+            if step < n_targets:
+                tc[:2] = 1  # first 2 envs cover 1 target per step
+            info = [
+                {"covering_reward": torch.zeros(n_envs),
+                 "collision_rew": torch.zeros(n_envs),
+                 "targets_covered": tc},
+            ] * 2
             m.update_step(rewards, dones, info, step)
 
         result = m.compute(max_steps=200)
-        # 2 envs at step 3, 2 envs at 200 → avg = (3+3+200+200)/4 = 101.5
-        assert result["M3_avg_steps"] == pytest.approx(101.5)
+        # First 2 envs: all covered at step 2; last 2: max_steps=200
+        # avg = (2+2+200+200)/4 = 101.0
+        assert result["M3_avg_steps"] == pytest.approx(101.0)
 
 
 # ── Test M4: Collisions ──────────────────────────────────────────
@@ -501,13 +536,9 @@ class TestMultiStepEpisode:
 
         for step in range(max_steps):
             rewards = [torch.randn(n_envs) * 0.5 for _ in range(n_agents)]
-
-            # Some envs complete at step 20
             dones = torch.zeros(n_envs, dtype=torch.bool)
-            if step == 20:
-                dones[:4] = True
 
-            # Covering: 1 target per step for first 5 steps
+            # Covering: 1 target per step for first 5 steps in ALL envs
             tc = 1 if step < n_targets else 0
             cov_rewards = [1.0 if step < n_targets else 0.0] * n_agents
             info = _make_agent_info_list(
@@ -530,8 +561,10 @@ class TestMultiStepEpisode:
 
         # Verify all metrics are present and reasonable
         assert 0.0 <= result["M1_success_rate"] <= 1.0
-        assert result["M1_success_rate"] == pytest.approx(0.5)  # 4/8 envs done
-        assert result["M3_avg_steps"] < max_steps  # Some completed early
+        # All envs cover 5 targets (1 per step for steps 0-4) → M1=1.0
+        assert result["M1_success_rate"] == pytest.approx(1.0)
+        # All completed at step 4 (5th target covered) → M3=4
+        assert result["M3_avg_steps"] == pytest.approx(4.0)
         assert result["M4_avg_collisions"] > 0  # We injected collisions
         assert result["M6_coverage_progress"] == pytest.approx(1.0)  # 5/5 covered
         assert result["M8_agent_utilization"] == pytest.approx(0.0, abs=1e-6)  # All equal

@@ -129,10 +129,13 @@ class EpisodeMetrics:
                 pairwise_mean = dists[:, mask].mean(dim=-1)
                 self.pairwise_dist_sum += pairwise_mean
 
-        # Track completion step
-        newly_done = dones & ~self.is_done
+        # Track completion step.
+        # Use cumulative target coverage to determine true task completion,
+        # NOT the done signal from VMAS which includes time-limit truncation.
+        task_done = self.targets_covered_total >= self.n_targets
+        newly_done = task_done & ~self.is_done
         self.done_at_step[newly_done] = step
-        self.is_done |= dones
+        self.is_done = task_done
 
         # M5: Tokens
         self.total_tokens += tokens_this_step
