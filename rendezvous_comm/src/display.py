@@ -7,7 +7,7 @@ All HTML uses dark-first styling for notebook compatibility.
 import base64
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict
 
 from .config import ExperimentSpec
 
@@ -120,11 +120,7 @@ def _build_config_html(spec, task, train, sweep, total_runs):
         )
 
     # Parameters that are swept — skip from task, show only in sweep
-    swept_keys = {
-        k for k, v in sweep.items()
-        if isinstance(v, list) and len(v) > 1
-    }
-    # Also include sweep keys that overlap with task even if single-valued
+    # Sweep keys that overlap with task — show only in sweep section
     sweep_task_keys = set(sweep.keys()) - {"seeds", "algorithms"}
 
     rows += _subheader_row("Task Parameters (Discovery Scenario)")
@@ -303,9 +299,11 @@ def display_sweep_summary(all_metrics: Dict[str, Dict[str, float]]):
     rows = []
     for run_id, metrics in all_metrics.items():
         row = {"run_id": run_id}
-        for key in ["M1_success_rate", "M2_avg_return", "M3_avg_steps",
-                     "M4_avg_collisions", "M6_coverage_progress",
-                     "M8_agent_utilization", "M9_spatial_spread"]:
+        for key in [
+            "M1_success_rate", "M2_avg_return", "M3_avg_steps",
+            "M4_avg_collisions", "M6_coverage_progress",
+            "M8_agent_utilization", "M9_spatial_spread",
+        ]:
             info = METRIC_INFO.get(key)
             if info and key in metrics:
                 mid, name, _, fmt = info
@@ -734,7 +732,6 @@ def select_config(exp_id: str, force_retrain: bool = False):
     Returns a result object with .path and .retrain attributes
     that update live when the user changes the widget.
     """
-    from pathlib import Path
     from .config import find_configs
 
     configs = find_configs(exp_id)

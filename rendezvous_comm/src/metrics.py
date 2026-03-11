@@ -23,7 +23,7 @@ Cross-experiment analysis utilities (unnumbered, used for ER2+):
   compute_delta_return_per_msg - Marginal return improvement per message
 """
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -226,7 +226,7 @@ def compute_m7_sample_efficiency(
         rows = []
         with open(path) as f:
             reader = csv.reader(f)
-            header = next(reader, None)
+            next(reader, None)  # skip header
             for row in reader:
                 if len(row) >= 2:
                     try:

@@ -3,7 +3,6 @@
 Produces human-readable report.md files summarizing
 configuration, training, and results for each run.
 """
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -109,8 +108,8 @@ def generate_run_report(
     # ── Header ──
     L.append(f"# Experiment Report: {spec.exp_id.upper()} — {spec.name}")
     L.append("")
-    L.append(f"| | |")
-    L.append(f"|---|---|")
+    L.append("| | |")
+    L.append("|---|---|")
     L.append(f"| **Run ID** | `{run_id}` |")
     L.append(f"| **Folder** | `{run_dir.name}` |")
     L.append(f"| **Generated** | {now.strftime('%Y-%m-%d %H:%M:%S')} |")
@@ -302,22 +301,37 @@ def generate_sweep_report(
     elapsed_seconds: float = 0.0,
     results_dir: Optional[Path] = None,
 ) -> str:
-    """Generate a summary report for a full sweep."""
+    """Generate a comprehensive sweep report.
+
+    Structure:
+      1. Header & overview
+      2. Configuration summary (task + training + sweep dims)
+      3. Aggregate results (mean ± std across all runs)
+      4. Best & worst runs
+      5. Metric glossary
+      6. Visualizations (sweep-level PNGs)
+      7. Per-run results table (all metrics)
+    """
     if results_dir is None:
         results_dir = spec.results_dir
 
     now = datetime.now()
-    L = []
+    L = []  # lines accumulator
 
+    # ── 1. Header ──
     L.append(f"# Sweep Report: {spec.exp_id.upper()} — {spec.name}")
     L.append("")
-    L.append(f"- **Generated:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
-    L.append(f"- **Total runs:** {len(all_metrics)}")
+    L.append(f"> {spec.description.strip()}")
+    L.append("")
+    L.append("| | |")
+    L.append("|---|---|")
+    L.append(f"| **Generated** | {now.strftime('%Y-%m-%d %H:%M:%S')} |")
+    L.append(f"| **Total runs** | {len(all_metrics)} |")
     if elapsed_seconds > 0:
         m, s = divmod(int(elapsed_seconds), 60)
         h, m = divmod(m, 60)
-        L.append(f"- **Wall time:** {h}h {m}m {s}s")
-    L.append(f"- **Results dir:** `{results_dir}`")
+        L.append(f"| **Wall time** | {h}h {m}m {s}s |")
+    L.append(f"| **Results dir** | `{results_dir}` |")
     L.append("")
 
     if not all_metrics:
@@ -327,7 +341,49 @@ def generate_sweep_report(
         (results_dir / "sweep_report.md").write_text(report_text)
         return report_text
 
-    # Aggregate stats
+    # ── 2. Configuration ──
+    L.append("## Configuration")
+    L.append("")
+    task = spec.task.to_dict()
+    train = spec.train.__dict__
+    sweep = spec.sweep.__dict__
+    iterations = (
+        train["max_n_frames"]
+        // train["on_policy_collected_frames_per_batch"]
+    )
+
+    L.append("### Sweep Dimensions")
+    L.append("")
+    L.append("| Parameter | Values |")
+    L.append("|-----------|--------|")
+    for k, v in sweep.items():
+        L.append(f"| `{k}` | {v} |")
+    L.append("")
+
+    L.append("### Fixed Task Parameters")
+    L.append("")
+    sweep_keys = set(sweep.keys()) - {"seeds", "algorithms"}
+    L.append("| Parameter | Value |")
+    L.append("|-----------|-------|")
+    for k, v in task.items():
+        if k not in sweep_keys:
+            L.append(f"| `{k}` | {v} |")
+    L.append("")
+
+    L.append("### Training")
+    L.append("")
+    L.append(
+        f"Algorithm: **{train['algorithm'].upper()}** | "
+        f"Frames: **{train['max_n_frames']:,}** ({iterations} iters) | "
+        f"LR: {train['lr']} | "
+        f"Gamma: {train['gamma']} | "
+        f"Batch: {train['on_policy_collected_frames_per_batch']:,} | "
+        f"Envs: {train['on_policy_n_envs_per_worker']} | "
+        f"Device: {train['train_device']}"
+    )
+    L.append("")
+
+    # ── 3. Aggregate Results ──
     import statistics
 
     metric_keys = [
@@ -338,8 +394,8 @@ def generate_sweep_report(
 
     L.append("## Aggregate Results")
     L.append("")
-    L.append("| Metric | Mean | Std |")
-    L.append("|--------|------|-----|")
+    L.append("| Metric | Mean | Std | Min | Max |")
+    L.append("|--------|------|-----|-----|-----|")
     for key in metric_keys:
         values = [m[key] for m in all_metrics.values() if key in m]
         if not values:
@@ -347,16 +403,64 @@ def generate_sweep_report(
         detail = METRIC_DETAILS.get(
             key, {"label": key, "fmt": ".4f"}
         )
-        label = detail["label"]  # already includes M-ID prefix
+        label = detail["label"]
         mean = statistics.mean(values)
         std = statistics.stdev(values) if len(values) > 1 else 0.0
+        v_min = min(values)
+        v_max = max(values)
         if "rate" in key or "progress" in key:
-            L.append(f"| {label} | {mean:.1%} | ±{std:.1%} |")
+            L.append(
+                f"| {label} | {mean:.1%} | "
+                f"±{std:.1%} | {v_min:.1%} | {v_max:.1%} |"
+            )
         else:
-            L.append(f"| {label} | {mean:.4f} | ±{std:.4f} |")
+            L.append(
+                f"| {label} | {mean:.4f} | "
+                f"±{std:.4f} | {v_min:.4f} | {v_max:.4f} |"
+            )
     L.append("")
 
-    # Sweep images
+    # ── 4. Best & Worst Runs ──
+    L.append("## Best & Worst Runs")
+    L.append("")
+    highlight_metrics = [
+        ("M1_success_rate", True),   # higher is better
+        ("M2_avg_return", True),
+        ("M3_avg_steps", False),     # lower is better
+        ("M4_avg_collisions", False),
+    ]
+    for key, higher_better in highlight_metrics:
+        detail = METRIC_DETAILS.get(key, {"label": key, "fmt": ".4f"})
+        label = detail["label"]
+        fmt = detail["fmt"]
+        ranked = sorted(
+            all_metrics.items(),
+            key=lambda x: x[1].get(key, 0),
+            reverse=higher_better,
+        )
+        best_id, best_m = ranked[0]
+        worst_id, worst_m = ranked[-1]
+        L.append(
+            f"- **{label}**: "
+            f"best = `{best_id}` ({best_m[key]:{fmt}}) | "
+            f"worst = `{worst_id}` ({worst_m[key]:{fmt}})"
+        )
+    L.append("")
+
+    # ── 5. Metric Glossary ──
+    L.append("## Metric Glossary")
+    L.append("")
+    L.append("| Metric | Description |")
+    L.append("|--------|-------------|")
+    for key in metric_keys:
+        detail = METRIC_DETAILS.get(key)
+        if detail:
+            L.append(
+                f"| **{detail['label']}** | {detail['description']} |"
+            )
+    L.append("")
+
+    # ── 6. Visualizations ──
     images = sorted(results_dir.glob("*.png"))
     if images:
         L.append("## Visualizations")
@@ -365,7 +469,7 @@ def generate_sweep_report(
             L.append(f"![{img.stem}]({img.name})")
             L.append("")
 
-    # Per-run table
+    # ── 7. Per-Run Results ──
     L.append("## Per-Run Results")
     L.append("")
     L.append(
@@ -373,9 +477,11 @@ def generate_sweep_report(
         "| M3: Steps | M4: Collisions "
         "| M6: Coverage | M8: Util | M9: Spread |"
     )
-    L.append("|--------|------------|--------"
-             "|----------|---------------"
-             "|------------|---------|-----------|")
+    L.append(
+        "|--------|------------|--------"
+        "|----------|---------------"
+        "|------------|---------|-----------|"
+    )
     for run_id, metrics in sorted(all_metrics.items()):
         m1 = f"{metrics.get('M1_success_rate', 0):.1%}"
         m2 = f"{metrics.get('M2_avg_return', 0):.2f}"
@@ -392,7 +498,10 @@ def generate_sweep_report(
     L.append("")
 
     L.append("---")
-    L.append(f"Each run folder contains its own `report.md` with full details.")
+    L.append(
+        "Each run folder contains its own `report.md` "
+        "with full configuration, training stats, and artifacts."
+    )
     L.append("")
 
     report_text = "\n".join(L)

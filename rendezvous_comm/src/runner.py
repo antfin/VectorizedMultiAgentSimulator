@@ -5,8 +5,7 @@ in an experiment sweep.
 """
 import logging
 import time
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import torch
 
@@ -15,7 +14,7 @@ from .logging_setup import setup_run_logger, teardown_run_logger
 from .metrics import EpisodeMetrics, compute_m7_sample_efficiency
 from .provenance import save_provenance
 from .report import generate_run_report, generate_sweep_report
-from .storage import ExperimentStorage, RunStorage
+from .storage import ExperimentStorage
 
 
 _log = logging.getLogger("rendezvous")
@@ -66,7 +65,7 @@ def build_experiment(
     # Task
     task = VmasTask.DISCOVERY.get_from_yaml()
     config = task_config.to_dict()
-    max_steps = config.pop("max_steps")
+    config.pop("max_steps")  # not a VMAS task param; remove before update
     if task_overrides:
         config.update(task_overrides)
     task.config.update(config)
@@ -222,7 +221,7 @@ def run_single(
                 logger.info(f"  {label}: {val:{fmt}}")
 
         # Generate report
-        report = generate_run_report(
+        generate_run_report(
             run_storage.run_dir, run_id, spec, metrics,
             elapsed_seconds=elapsed, task_overrides=task_overrides,
         )
@@ -617,7 +616,7 @@ def run_sweep(
         pbar.close()
 
     # Generate sweep report
-    report = generate_sweep_report(spec, results, elapsed_seconds=elapsed)
+    generate_sweep_report(spec, results, elapsed_seconds=elapsed)
 
     if not notebook:
         _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")

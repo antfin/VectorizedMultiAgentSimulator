@@ -11,10 +11,9 @@ Directory layout per run:
       metrics.json          # Final aggregate metrics
       eval_episodes.json    # Per-episode eval data (optional)
       policy.pt             # Trained policy state dict (for export/import)
-    report.txt              # Human-readable run summary
+    report.md               # Human-readable run summary (markdown)
 """
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path

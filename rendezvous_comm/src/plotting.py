@@ -16,7 +16,7 @@ COLORS = {
     "er2": "#ff7f0e",   # orange - engineered schema
     "er3": "#2ca02c",   # green  - symbolic intent
     "er4": "#d62728",   # red    - event triggered
-    "e1":  "#9467bd",   # purple - static LLM
+    "e1": "#9467bd",    # purple - static LLM
 }
 
 LABELS = {
@@ -24,7 +24,7 @@ LABELS = {
     "er2": "ER2: Eng. Schema",
     "er3": "ER3: Symbolic Intent",
     "er4": "ER4: Event-Triggered",
-    "e1":  "E1: Static LLM",
+    "e1": "E1: Static LLM",
 }
 
 METRIC_LABELS = {
@@ -90,7 +90,7 @@ def plot_sweep_heatmap(
 
 
 def plot_training_curves(
-    training_logs: Dict[str, "pd.DataFrame"],
+    training_logs: Dict[str, object],
     metric: str = "episode_reward_mean",
     title: Optional[str] = None,
 ) -> plt.Figure:
@@ -187,8 +187,10 @@ def plot_metric_radar(
         experiment_metrics: {exp_id: {metric: value}}
     """
     if metrics is None:
-        metrics = ["M1_success_rate", "M2_avg_return", "M3_avg_steps",
-                    "M4_avg_collisions"]
+        metrics = [
+            "M1_success_rate", "M2_avg_return", "M3_avg_steps",
+            "M4_avg_collisions",
+        ]
 
     set_style()
     n_metrics = len(metrics)
@@ -454,13 +456,93 @@ def plot_results_comparison(
                 label, va="center", fontsize=10, fontweight="bold",
             )
 
-        ax.set_xlim(v_min - v_pad * 0.3 if v_min < 0 else 0,
-                     v_max + v_pad)
+        ax.set_xlim(
+            v_min - v_pad * 0.3 if v_min < 0 else 0,
+            v_max + v_pad,
+        )
         ax.set_title(METRIC_LABELS.get(metric, metric), fontsize=12)
         ax.grid(True, alpha=0.2, axis="x")
 
     fig.suptitle("Policy Comparison", fontsize=14, fontweight="bold")
     fig.tight_layout()
+    return fig
+
+
+def plot_sweep_overview(
+    df,
+    title: str = "Sweep Overview",
+) -> plt.Figure:
+    """2x2 multi-metric overview across all runs in a sweep.
+
+    Panels:
+      [0,0] M1 vs M4  — success rate vs collisions (safety tradeoff)
+      [0,1] M1 vs M3  — success rate vs completion speed
+      [1,0] M6 vs M8  — coverage vs agent utilization balance
+      [1,1] M1 vs M9  — success rate vs spatial spread
+
+    Points are colored by n_agents if available, otherwise uniform.
+
+    Args:
+        df: DataFrame from ExperimentStorage.to_dataframe()
+        title: figure suptitle
+    """
+    set_style()
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+
+    # Color by n_agents if available
+    if "n_agents" in df.columns:
+        agents_vals = sorted(df["n_agents"].unique())
+        cmap = plt.cm.viridis
+        norm = plt.Normalize(min(agents_vals), max(agents_vals))
+        colors = [cmap(norm(n)) for n in df["n_agents"]]
+        # Build legend handles
+        from matplotlib.lines import Line2D
+        handles = [
+            Line2D([0], [0], marker="o", color="w",
+                   markerfacecolor=cmap(norm(n)), markersize=8,
+                   label=f"N={n}")
+            for n in agents_vals
+        ]
+    else:
+        colors = "#1f77b4"
+        handles = None
+
+    panels = [
+        ("M1_success_rate", "M4_avg_collisions", axes[0, 0]),
+        ("M1_success_rate", "M3_avg_steps", axes[0, 1]),
+        ("M6_coverage_progress", "M8_agent_utilization", axes[1, 0]),
+        ("M1_success_rate", "M9_spatial_spread", axes[1, 1]),
+    ]
+
+    for x_key, y_key, ax in panels:
+        if x_key not in df.columns or y_key not in df.columns:
+            ax.set_visible(False)
+            continue
+
+        ax.scatter(
+            df[x_key], df[y_key],
+            c=colors, s=60, alpha=0.7, edgecolors="white",
+            linewidth=0.5,
+        )
+        ax.set_xlabel(METRIC_LABELS.get(x_key, x_key), fontsize=10)
+        ax.set_ylabel(METRIC_LABELS.get(y_key, y_key), fontsize=10)
+        ax.grid(True, alpha=0.2)
+
+        # Format percentage axes
+        if "rate" in x_key or "progress" in x_key:
+            ax.set_xlim(-0.05, 1.05)
+        if "rate" in y_key or "progress" in y_key:
+            ax.set_ylim(-0.05, 1.05)
+
+    if handles:
+        fig.legend(
+            handles=handles, loc="upper right",
+            bbox_to_anchor=(0.99, 0.99), fontsize=9,
+            title="Agents", title_fontsize=10,
+        )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     return fig
 
 
