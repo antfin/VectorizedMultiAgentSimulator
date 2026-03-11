@@ -24,33 +24,49 @@ _log = logging.getLogger("rendezvous")
 _render_available = True
 
 
-def _make_progress_callback(total_frames, frames_per_batch, run_id):
-    """Create a BenchMARL Callback that drives a tqdm progress bar."""
-    from benchmarl.experiment import Callback
-    from tqdm.auto import tqdm
+try:
+    from benchmarl.experiment import Callback as _BenchMARLCallback
+except ImportError:
+    _BenchMARLCallback = object
 
-    class _TqdmProgress(Callback):
-        def __init__(self):
-            super().__init__()
-            self.total_iters = max(1, total_frames // frames_per_batch)
-            self.pbar = tqdm(
-                total=self.total_iters,
-                desc=f"  {run_id}",
-                unit="iter",
-                bar_format=(
-                    "{l_bar}{bar}| {n_fmt}/{total_fmt} "
-                    "[{elapsed}<{remaining}]"
-                ),
-                leave=True,
-            )
 
-        def on_batch_collected(self, batch):
-            self.pbar.update(1)
+class _TqdmProgressCallback(_BenchMARLCallback):
+    """BenchMARL Callback that drives a tqdm progress bar.
 
-        def close(self):
-            self.pbar.close()
+    Updates on each batch collection step. Supports pickle
+    (BenchMARL pickles callbacks for experiment name hashing)
+    by excluding the non-picklable tqdm bar.
+    """
 
-    return _TqdmProgress()
+    def __init__(self, total_frames=0, frames_per_batch=1,
+                 run_id=""):
+        super().__init__()
+        from tqdm.auto import tqdm
+        self._pbar = tqdm(
+            total=max(1, total_frames // frames_per_batch),
+            desc=f"  {run_id}",
+            unit="iter",
+            bar_format=(
+                "{l_bar}{bar}| {n_fmt}/{total_fmt} "
+                "[{elapsed}<{remaining}]"
+            ),
+            leave=True,
+        )
+
+    def __getstate__(self):
+        # Exclude tqdm bar from pickle (BenchMARL name hashing)
+        return {"_dummy": True}
+
+    def __setstate__(self, state):
+        pass
+
+    def on_batch_collected(self, batch):
+        if hasattr(self, "_pbar"):
+            self._pbar.update(1)
+
+    def close(self):
+        if hasattr(self, "_pbar"):
+            self._pbar.close()
 
 
 def get_algorithm_config(algorithm: str):
@@ -214,7 +230,7 @@ def run_single(
         # Create iteration progress bar in notebooks
         progress_cb = None
         if quiet and _in_notebook():
-            progress_cb = _make_progress_callback(
+            progress_cb = _TqdmProgressCallback(
                 total_frames=spec.train.max_n_frames,
                 frames_per_batch=(
                     spec.train.on_policy_collected_frames_per_batch

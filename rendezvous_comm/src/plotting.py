@@ -395,6 +395,7 @@ def plot_baseline_grouped_bars(
     ax.set_xlim(x_min - x_pad * 0.3, x_max + x_pad)
     ax.set_yticks(y)
     ax.set_yticklabels(labels)
+    ax.invert_yaxis()  # M1 at top
     ax.set_title("Baseline Comparison: Heuristic vs Random", fontsize=13)
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.2, axis="x")
