@@ -59,6 +59,31 @@ def _html(content: str):
         print(content)
 
 
+def display_figure(fig, close=True):
+    """Render a matplotlib figure as an inline HTML image.
+
+    Uses base64 encoding to bypass matplotlib's display backend,
+    which avoids double-rendering in VS Code Output widgets.
+    """
+    import matplotlib.pyplot as plt
+    from io import BytesIO
+
+    buf = BytesIO()
+    fig.savefig(
+        buf, format="png", dpi=150, bbox_inches="tight",
+        facecolor="white", edgecolor="none",
+    )
+    buf.seek(0)
+    b64 = base64.b64encode(buf.read()).decode()
+    _html(
+        f'<div style="margin:8px 0">'
+        f'<img src="data:image/png;base64,{b64}" '
+        f'style="max-width:100%;border-radius:4px"></div>'
+    )
+    if close:
+        plt.close(fig)
+
+
 def _table_style():
     return (
         f"border-collapse:collapse;width:100%;border:1px solid {_BORDER};"
@@ -405,11 +430,47 @@ def scrollable(text: str, height: int = 300, title: str = ""):
         print(text)
 
 
-def scrollable_md(md_text: str, height: int = 400, title: str = ""):
+def _embed_md_images(md_text: str, base_dir: Path) -> str:
+    """Replace relative image paths in markdown with base64 data URIs."""
+    import re
+
+    def _replace(m):
+        alt, src = m.group(1), m.group(2)
+        # Skip already-embedded or absolute URLs
+        if src.startswith(("data:", "http://", "https://", "/")):
+            return m.group(0)
+        img_path = base_dir / src
+        if not img_path.exists():
+            return m.group(0)
+        b64 = base64.b64encode(img_path.read_bytes()).decode()
+        ext = img_path.suffix.lstrip(".")
+        mime = {"png": "image/png", "jpg": "image/jpeg",
+                "jpeg": "image/jpeg", "svg": "image/svg+xml"}.get(
+            ext, f"image/{ext}"
+        )
+        return f"![{alt}](data:{mime};base64,{b64})"
+
+    return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _replace, md_text)
+
+
+def scrollable_md(
+    md_text: str, height: int = 400, title: str = "",
+    image_base: "Path | None" = None,
+):
     """Display markdown report using IPython.display.Markdown.
 
     Uses native notebook markdown rendering which VS Code supports.
+
+    Args:
+        md_text: markdown string
+        height: ignored (kept for API compat)
+        title: optional header bar
+        image_base: if set, resolve relative image paths in markdown
+            against this directory and embed them as base64 data URIs.
     """
+    if image_base is not None:
+        md_text = _embed_md_images(md_text, Path(image_base))
+
     if _in_notebook():
         from IPython.display import display, Markdown, HTML
 
@@ -920,11 +981,16 @@ def display_training_videos(run_storage):
     Args:
         run_storage: RunStorage instance
     """
+    # Pick the videos directory with the most files (in case of
+    # multiple BenchMARL experiment folders from retries).
     video_dir = None
+    best_count = 0
     for d in run_storage.output_dir.rglob("videos"):
         if d.is_dir():
-            video_dir = d
-            break
+            count = len(list(d.glob("eval_video_*.mp4")))
+            if count > best_count:
+                best_count = count
+                video_dir = d
 
     if not video_dir:
         print("No training videos found.")
@@ -1075,19 +1141,18 @@ def display_artifact_tree(run_storage):
 def make_run_selector(run_ids, render_fn):
     """Create a dropdown + output widget for browsing runs.
 
-    Returns a VBox widget that is fully self-contained — no global
-    observers that leak across cell re-executions.
+    Uses interactive_output to avoid VS Code Output widget capture
+    bugs (vscode-jupyter #14498) where display() calls leak to the
+    cell output when the Output widget isn't yet attached to the DOM.
 
     Args:
         run_ids: list of run_id strings (shown in dropdown)
         render_fn: callable(run_id) that renders output for a run.
-            Called inside an Output widget context.
 
     Returns:
         ipywidgets.VBox ready to display
     """
     import ipywidgets as widgets
-    from IPython.display import clear_output
 
     dropdown = widgets.Dropdown(
         options=run_ids,
@@ -1096,15 +1161,8 @@ def make_run_selector(run_ids, render_fn):
         style={"description_width": "40px"},
         layout=widgets.Layout(width="450px"),
     )
-    output = widgets.Output()
-
-    def _render(run_id):
-        with output:
-            clear_output(wait=True)
-            render_fn(run_id)
-
-    dropdown.observe(
-        lambda change: _render(change["new"]), names="value",
+    output = widgets.interactive_output(
+        lambda run_id: render_fn(run_id),
+        {"run_id": dropdown},
     )
-    _render(run_ids[0])
     return widgets.VBox([dropdown, output])
