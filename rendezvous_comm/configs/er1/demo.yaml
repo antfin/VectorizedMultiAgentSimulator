@@ -42,4 +42,4 @@ sweep:
   n_targets: [7]
   agents_per_target: [2, 3]
   lidar_range: [0.35]
-  algorithms: [mappo, ippo]
+  algorithms: [mappo]

@@ -26,12 +26,14 @@ _log = logging.getLogger("rendezvous")
 
 @contextlib.contextmanager
 def _suppress_noise():
-    """Suppress BenchMARL/TorchRL stdout, loggers and warnings.
+    """Suppress BenchMARL/TorchRL stdout, stderr, loggers and warnings.
 
-    Keeps stderr open so tqdm progress bars still render.
+    Redirects both stdout and stderr to devnull so BenchMARL's own
+    tqdm bar and log output are hidden. Our progress callback writes
+    to the saved real stderr directly.
     """
     devnull = open(os.devnull, "w")
-    old_out = sys.stdout
+    old_out, old_err = sys.stdout, sys.stderr
     # Silence torchrl/benchmarl loggers
     noisy = ["torchrl", "benchmarl", "tensordict"]
     saved = {}
@@ -41,11 +43,13 @@ def _suppress_noise():
         lg.setLevel(logging.ERROR)
     try:
         sys.stdout = devnull
+        sys.stderr = devnull
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             yield
     finally:
         sys.stdout = old_out
+        sys.stderr = old_err
         devnull.close()
         for name in noisy:
             logging.getLogger(name).setLevel(saved[name])
@@ -74,6 +78,8 @@ class _TqdmProgressCallback(_BenchMARLCallback):
                  run_id=""):
         super().__init__()
         from tqdm.auto import tqdm
+        # Capture real stderr before _suppress_noise redirects it
+        self._real_stderr = sys.stderr
         self._pbar = tqdm(
             total=max(1, total_frames // frames_per_batch),
             desc=f"  {run_id}",
@@ -83,6 +89,7 @@ class _TqdmProgressCallback(_BenchMARLCallback):
                 "[{elapsed}<{remaining}]"
             ),
             leave=True,
+            file=sys.stderr,  # pin to real stderr at creation time
         )
 
     def __getstate__(self):

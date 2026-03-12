@@ -843,10 +843,10 @@ def display_baseline_comparison(
         r_val = random_metrics.get(k, 0)
         table_rows += (
             f'<tr style="border-bottom:1px solid {_BORDER}">'
-            f'<td style="padding:4px 8px;color:{_FG_MUTED};'
+            f'<td style="padding:4px 8px;text-align:left;color:{_FG_MUTED};'
             f'font-family:monospace">{mid}</td>'
-            f'<td style="padding:4px 8px;color:{_FG_PRIMARY}">'
-            f'{name}</td>'
+            f'<td style="padding:4px 8px;text-align:left;'
+            f'color:{_FG_PRIMARY}">{name}</td>'
             f'<td style="padding:4px 8px;text-align:right;'
             f'color:{_GREEN}"><b>{h_val:{fmt}}</b></td>'
             f'<td style="padding:4px 8px;text-align:right;'
