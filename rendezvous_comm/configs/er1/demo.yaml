@@ -40,6 +40,6 @@ sweep:
   seeds: [0]
   n_agents: [4, 8]
   n_targets: [7]
-  agents_per_target: [2, 3]
+  agents_per_target: [2]
   lidar_range: [0.35]
   algorithms: [mappo]

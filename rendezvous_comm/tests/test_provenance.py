@@ -1,6 +1,12 @@
-"""Tests for the provenance module (config+code hashing, freshness detection)."""
+"""Tests for the provenance module (config+code hashing, freshness detection).
+
+Config freshness is based on non-sweep parameters (task + train dicts),
+NOT on the source YAML file. Two different YAML files that produce the
+same task+train params are treated as equivalent.
+"""
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -19,14 +25,29 @@ from src.provenance import (
 # ── Helpers ───────────────────────────────────────────────────────
 
 
-def _write_yaml(path: Path, data: dict):
-    """Dump a dict to a YAML file."""
-    with open(path, "w") as f:
-        yaml.dump(data, f)
+def _sample_task_dict():
+    return {
+        "n_agents": 4, "n_targets": 7, "agents_per_target": 2,
+        "lidar_range": 0.35, "covering_range": 0.25,
+        "max_steps": 200,
+    }
 
 
-def _sample_config():
-    return {"algorithm": "mappo", "n_agents": 4, "lidar_range": 0.35}
+def _sample_train_dict():
+    return {
+        "algorithm": "mappo", "max_n_frames": 6_000_000,
+        "gamma": 0.99, "lr": 5e-5,
+    }
+
+
+def _make_spec(task_dict=None, train_dict=None):
+    """Create a mock ExperimentSpec with task.to_dict() and train.__dict__."""
+    spec = MagicMock()
+    td = task_dict or _sample_task_dict()
+    tr = train_dict or _sample_train_dict()
+    spec.task.to_dict.return_value = td
+    spec.train.__dict__ = tr
+    return spec
 
 
 # ── compute_config_hash ──────────────────────────────────────────
@@ -35,48 +56,43 @@ def _sample_config():
 class TestComputeConfigHash:
     """Verify config hashing behaviour."""
 
-    def test_returns_sha256_prefix(self, tmp_path):
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
-        h = compute_config_hash(cfg)
+    def test_returns_sha256_prefix(self):
+        h = compute_config_hash(_sample_task_dict(), _sample_train_dict())
         assert h.startswith("sha256:")
 
-    def test_hash_length(self, tmp_path):
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
-        h = compute_config_hash(cfg)
+    def test_hash_length(self):
+        h = compute_config_hash(_sample_task_dict(), _sample_train_dict())
         # "sha256:" (7 chars) + 16 hex chars = 23
         assert len(h) == 23
 
-    def test_same_content_same_hash(self, tmp_path):
-        cfg_a = tmp_path / "a.yaml"
-        cfg_b = tmp_path / "b.yaml"
-        data = _sample_config()
-        _write_yaml(cfg_a, data)
-        _write_yaml(cfg_b, data)
-        assert compute_config_hash(cfg_a) == compute_config_hash(cfg_b)
+    def test_same_content_same_hash(self):
+        h1 = compute_config_hash(_sample_task_dict(), _sample_train_dict())
+        h2 = compute_config_hash(_sample_task_dict(), _sample_train_dict())
+        assert h1 == h2
 
-    def test_different_content_different_hash(self, tmp_path):
-        cfg_a = tmp_path / "a.yaml"
-        cfg_b = tmp_path / "b.yaml"
-        _write_yaml(cfg_a, {"x": 1})
-        _write_yaml(cfg_b, {"x": 2})
-        assert compute_config_hash(cfg_a) != compute_config_hash(cfg_b)
+    def test_different_content_different_hash(self):
+        h1 = compute_config_hash(
+            _sample_task_dict(), _sample_train_dict(),
+        )
+        different_train = _sample_train_dict()
+        different_train["lr"] = 1e-3
+        h2 = compute_config_hash(
+            _sample_task_dict(), different_train,
+        )
+        assert h1 != h2
 
-    def test_key_order_independent(self, tmp_path):
-        """YAML normalization means different key order produces same hash."""
-        cfg_a = tmp_path / "a.yaml"
-        cfg_b = tmp_path / "b.yaml"
-        # Write raw strings with deliberately different key order
-        cfg_a.write_text("z_key: 1\na_key: 2\nm_key: 3\n")
-        cfg_b.write_text("a_key: 2\nm_key: 3\nz_key: 1\n")
-        assert compute_config_hash(cfg_a) == compute_config_hash(cfg_b)
+    def test_key_order_independent(self):
+        """Dict order should not matter (YAML normalization)."""
+        task_a = {"z_key": 1, "a_key": 2}
+        task_b = {"a_key": 2, "z_key": 1}
+        train = {"x": 1}
+        assert compute_config_hash(task_a, train) == compute_config_hash(
+            task_b, train,
+        )
 
-    def test_deterministic(self, tmp_path):
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
-        h1 = compute_config_hash(cfg)
-        h2 = compute_config_hash(cfg)
+    def test_deterministic(self):
+        h1 = compute_config_hash(_sample_task_dict(), _sample_train_dict())
+        h2 = compute_config_hash(_sample_task_dict(), _sample_train_dict())
         assert h1 == h2
 
 
@@ -109,34 +125,27 @@ class TestSaveLoadProvenance:
     def test_round_trip(self, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
+        task = _sample_task_dict()
+        train = _sample_train_dict()
 
-        save_provenance(run_dir, cfg)
+        save_provenance(run_dir, task, train)
         prov = load_provenance(run_dir)
 
         assert isinstance(prov, Provenance)
-        assert prov.config_hash == compute_config_hash(cfg)
+        assert prov.config_hash == compute_config_hash(task, train)
         assert prov.code_hash == compute_code_hash()
-        assert prov.source_config_path == str(cfg)
 
     def test_creates_input_dir(self, tmp_path):
         run_dir = tmp_path / "run_no_input"
         # Deliberately do NOT create run_dir/input/
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
-
-        save_provenance(run_dir, cfg)
-
+        save_provenance(run_dir, _sample_task_dict(), _sample_train_dict())
         assert (run_dir / "input" / "provenance.json").exists()
 
     def test_all_fields_populated(self, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
 
-        save_provenance(run_dir, cfg)
+        save_provenance(run_dir, _sample_task_dict(), _sample_train_dict())
         prov = load_provenance(run_dir)
 
         assert prov.config_hash
@@ -144,17 +153,14 @@ class TestSaveLoadProvenance:
         assert prov.git_commit  # at least "unknown"
         assert isinstance(prov.git_dirty, bool)
         assert prov.created_at  # ISO timestamp string
-        assert prov.source_config_path
         assert isinstance(prov.hashed_source_files, list)
         assert len(prov.hashed_source_files) > 0
 
     def test_hashed_source_files_sorted(self, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
 
-        save_provenance(run_dir, cfg)
+        save_provenance(run_dir, _sample_task_dict(), _sample_train_dict())
         prov = load_provenance(run_dir)
 
         assert prov.hashed_source_files == sorted(prov.hashed_source_files)
@@ -165,10 +171,8 @@ class TestSaveLoadProvenance:
     def test_provenance_json_is_valid_json(self, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
 
-        save_provenance(run_dir, cfg)
+        save_provenance(run_dir, _sample_task_dict(), _sample_train_dict())
 
         prov_path = run_dir / "input" / "provenance.json"
         with open(prov_path) as f:
@@ -184,76 +188,94 @@ class TestCheckFreshness:
     """Freshness detection with real and mocked hashes."""
 
     def test_no_provenance(self, tmp_path):
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
-        assert check_freshness(tmp_path, cfg) == Freshness.NO_PROVENANCE
+        spec = _make_spec()
+        assert check_freshness(tmp_path, spec) == Freshness.NO_PROVENANCE
 
     def test_valid_when_unchanged(self, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
+        task = _sample_task_dict()
+        train = _sample_train_dict()
 
-        save_provenance(run_dir, cfg)
-        assert check_freshness(run_dir, cfg) == Freshness.VALID
+        save_provenance(run_dir, task, train)
+        spec = _make_spec(task, train)
+        assert check_freshness(run_dir, spec) == Freshness.VALID
 
     def test_config_changed(self, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
 
-        save_provenance(run_dir, cfg)
+        save_provenance(
+            run_dir, _sample_task_dict(), _sample_train_dict(),
+        )
 
-        # Modify the config file
-        _write_yaml(cfg, {"algorithm": "ippo", "n_agents": 6})
-        assert check_freshness(run_dir, cfg) == Freshness.CONFIG_CHANGED
+        # Check with different task params
+        different_task = _sample_task_dict()
+        different_task["n_agents"] = 8
+        spec = _make_spec(different_task, _sample_train_dict())
+        assert check_freshness(run_dir, spec) == Freshness.CONFIG_CHANGED
 
     def test_code_changed(self, tmp_path, monkeypatch):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
+        task = _sample_task_dict()
+        train = _sample_train_dict()
 
-        save_provenance(run_dir, cfg)
+        save_provenance(run_dir, task, train)
 
         # Fake a different code hash
         monkeypatch.setattr(
             "src.provenance.compute_code_hash",
             lambda: "sha256:aaaaaaaaaaaaaaaa",
         )
-        assert check_freshness(run_dir, cfg) == Freshness.CODE_CHANGED
+        spec = _make_spec(task, train)
+        assert check_freshness(run_dir, spec) == Freshness.CODE_CHANGED
 
     def test_both_changed(self, tmp_path, monkeypatch):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        _write_yaml(cfg, _sample_config())
 
-        save_provenance(run_dir, cfg)
+        save_provenance(
+            run_dir, _sample_task_dict(), _sample_train_dict(),
+        )
 
-        # Modify config
-        _write_yaml(cfg, {"algorithm": "ippo"})
+        # Different task params
+        different_task = _sample_task_dict()
+        different_task["max_steps"] = 500
+        spec = _make_spec(different_task, _sample_train_dict())
         # Fake a different code hash
         monkeypatch.setattr(
             "src.provenance.compute_code_hash",
             lambda: "sha256:bbbbbbbbbbbbbbbb",
         )
-        assert check_freshness(run_dir, cfg) == Freshness.BOTH_CHANGED
+        assert check_freshness(run_dir, spec) == Freshness.BOTH_CHANGED
 
-    def test_valid_after_identical_rewrite(self, tmp_path):
-        """Re-writing identical YAML content still counts as VALID."""
+    def test_valid_with_same_params_different_source(self, tmp_path):
+        """Two configs with identical task+train params → VALID."""
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        cfg = tmp_path / "cfg.yaml"
-        data = _sample_config()
-        _write_yaml(cfg, data)
+        task = _sample_task_dict()
+        train = _sample_train_dict()
 
-        save_provenance(run_dir, cfg)
+        save_provenance(run_dir, task, train)
 
-        # Re-write the same data
-        _write_yaml(cfg, data)
-        assert check_freshness(run_dir, cfg) == Freshness.VALID
+        # "Different YAML" but same params → still valid
+        spec = _make_spec(dict(task), dict(train))
+        assert check_freshness(run_dir, spec) == Freshness.VALID
+
+    def test_train_param_change_detected(self, tmp_path):
+        """Changing a train param (e.g. lr) triggers CONFIG_CHANGED."""
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        save_provenance(
+            run_dir, _sample_task_dict(), _sample_train_dict(),
+        )
+
+        different_train = _sample_train_dict()
+        different_train["lr"] = 1e-3
+        spec = _make_spec(_sample_task_dict(), different_train)
+        assert check_freshness(run_dir, spec) == Freshness.CONFIG_CHANGED
 
 
 # ── Freshness enum ───────────────────────────────────────────────

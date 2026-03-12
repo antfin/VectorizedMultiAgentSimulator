@@ -113,12 +113,18 @@ class _EvalMetricsCallback(_BenchMARLCallback):
 
     Uses on_evaluation_end(rollouts) to compute real success rate (M1)
     and collision count (M4) from evaluation episode rollouts.
+
+    M1 uses targets_covered from the Discovery scenario info dict
+    (not the terminated signal, which conflates task completion with
+    time-limit truncation in TorchRL's VMAS wrapper).
+
     Results stored as lists of (iteration, value) tuples.
     """
 
-    def __init__(self):
+    def __init__(self, n_targets=7):
         super().__init__()
         self._iter = 0
+        self._n_targets = n_targets
         self.m1_history = []  # [(iter, success_rate), ...]
         self.m4_history = []  # [(iter, avg_collisions), ...]
 
@@ -134,27 +140,66 @@ class _EvalMetricsCallback(_BenchMARLCallback):
     def on_evaluation_end(self, rollouts):
         if not hasattr(self, "m1_history"):
             return
-        n_done = 0
+        n_success = 0
         total_collisions = 0.0
-        n_episodes = len(rollouts)
+        n_envs_total = 0
         group_map = self.experiment.group_map
 
         for rollout_td in rollouts:
-            # M1: check if episode completed (done fired)
-            done_key = ("next", "done")
-            if done_key in rollout_td.keys(True):
-                if rollout_td[done_key].any().item():
-                    n_done += 1
+            # Determine n_envs from batch_size
+            bs = rollout_td.batch_size
+            if len(bs) >= 2:
+                n_envs = bs[0]
+            else:
+                n_envs = 1
 
-            # M4: count collision events
+            # M1: success via targets_covered cumsum.
+            # targets_covered = count of newly-covered targets per step.
+            # With targets_respawn=False, cumsum = total unique covered.
+            found_tc = False
+            for group in group_map.keys():
+                tc_key = ("next", group, "info", "targets_covered")
+                if tc_key in rollout_td.keys(True):
+                    tc = rollout_td[tc_key]
+                    if tc.dim() >= 4:
+                        # [n_envs, T, n_agents, 1] → first agent
+                        tc_per_env = tc[:, :, 0, 0]  # [n_envs, T]
+                    elif tc.dim() == 3:
+                        # [n_envs, T, 1]
+                        tc_per_env = tc[:, :, 0]
+                    elif tc.dim() == 2:
+                        # [T, 1] single env
+                        tc_per_env = tc[:, 0].unsqueeze(0)
+                    else:
+                        tc_per_env = tc.unsqueeze(0)
+                    # Cumsum: total unique targets covered over time
+                    cumtc = tc_per_env.cumsum(dim=1)  # [n_envs, T]
+                    # Success: cumulative >= n_targets at any point
+                    per_env_success = (
+                        cumtc >= self._n_targets
+                    ).any(dim=1)  # [n_envs]
+                    n_success += per_env_success.sum().item()
+                    n_envs_total += (
+                        tc_per_env.shape[0]
+                        if tc_per_env.dim() >= 2
+                        else 1
+                    )
+                    found_tc = True
+                    break
+
+            if not found_tc:
+                # Fallback: count envs without targets_covered info
+                n_envs_total += n_envs
+
+            # M4: count collision events, then average per env
             for group in group_map.keys():
                 coll_key = ("next", group, "info", "collision_rew")
                 if coll_key in rollout_td.keys(True):
                     coll_rew = rollout_td[coll_key]
                     total_collisions += (coll_rew < 0).sum().item()
 
-        m1 = n_done / max(n_episodes, 1)
-        m4 = total_collisions / max(n_episodes, 1)
+        m1 = n_success / max(n_envs_total, 1)
+        m4 = total_collisions / max(n_envs_total, 1)
         self.m1_history.append((self._iter, m1))
         self.m4_history.append((self._iter, m4))
 
@@ -326,8 +371,11 @@ def run_single(
             "task": spec.task.to_dict(),
             "train": {k: v for k, v in spec.train.__dict__.items()},
         })
-        if spec.source_path:
-            save_provenance(run_storage.run_dir, spec.source_path)
+        save_provenance(
+            run_storage.run_dir,
+            task_dict=spec.task.to_dict(),
+            train_dict={k: v for k, v in spec.train.__dict__.items()},
+        )
 
         if dry_run:
             logger.info(f"DRY RUN  {run_id}")
@@ -344,7 +392,8 @@ def run_single(
         # Callbacks: progress bar (notebook) + M1/M4 eval tracker
         callbacks = []
         progress_cb = None
-        eval_cb = _EvalMetricsCallback()
+        n_targets = task_overrides.get("n_targets", 7) if task_overrides else 7
+        eval_cb = _EvalMetricsCallback(n_targets=n_targets)
         callbacks.append(eval_cb)
 
         if quiet and _in_notebook():
@@ -430,136 +479,186 @@ def evaluate_trained(
 
     Uses TorchRL rollout on the experiment's test_env with the trained policy
     in deterministic mode, then extracts our custom metrics (M1-M6, M8-M9).
+
+    The test_env is vectorized (num_envs parallel environments), so each
+    rollout produces num_envs episodes. We run enough rollouts to collect
+    at least n_eval_episodes total, then process per-env metrics.
     """
     from torchrl.envs.utils import ExplorationType, set_exploration_type
 
     test_env = experiment.test_env
     policy = experiment.policy
     max_steps = experiment.max_steps
+    num_envs = test_env.batch_size[0] if test_env.batch_size else 1
 
     n_targets = task_overrides.get("n_targets", 7) if task_overrides else 7
     n_agents = task_overrides.get("n_agents", 5) if task_overrides else 5
 
-    all_returns = []
-    all_steps = []
-    all_collisions = []
-    all_targets_covered = []
-    all_agent_covering = []  # list of (n_agents,) tensors
-    all_spatial_spread = []
-    n_done = 0
-    total_episodes = 0
+    # Per-env accumulators
+    all_returns = []       # float per env
+    all_steps = []         # int per env
+    all_collisions = []    # float per env
+    all_coverage = []      # float per env (fraction of targets)
+    all_agent_covering = []  # (n_agents,) per env
+    all_spatial_spread = []  # float per env
+    n_success = 0
+    n_envs_total = 0
+
+    # Run enough rollouts to get >= n_eval_episodes
+    n_rollouts = max(1, (n_eval_episodes + num_envs - 1) // num_envs)
 
     with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
-        for _ in range(n_eval_episodes):
+        for _ in range(n_rollouts):
             rollout_td = test_env.rollout(
                 max_steps=max_steps,
                 policy=policy,
                 auto_cast_to_device=True,
-                break_when_any_done=True,
+                break_when_any_done=False,
             )
-            total_episodes += 1
+            # rollout_td shape: [n_envs, T, ...]
+            ne = rollout_td.batch_size[0]  # actual num_envs
+            T = rollout_td.batch_size[1] if len(rollout_td.batch_size) > 1 else 1
+            n_envs_total += ne
 
-            ep_steps = rollout_td.batch_size[0]
-            all_steps.append(ep_steps)
-
-            # M2: Extract rewards
-            episode_return = 0.0
-            for group in experiment.group_map.keys():
-                reward_key = ("next", group, "reward")
-                if reward_key in rollout_td.keys(True):
-                    episode_return += rollout_td[reward_key].sum().item()
-            all_returns.append(episode_return)
-
-            # M1: Check if episode completed
-            done_key = ("next", "done")
-            episode_done = False
-            if done_key in rollout_td.keys(True):
-                if rollout_td[done_key].any().item():
-                    n_done += 1
-                    episode_done = True
-            if not episode_done:
-                all_steps[-1] = max_steps
-
-            # M4: Collisions
-            ep_collisions = 0.0
-            for group in experiment.group_map.keys():
-                collision_key = ("next", group, "info", "collision_rew")
-                if collision_key in rollout_td.keys(True):
-                    coll_rew = rollout_td[collision_key]
-                    ep_collisions += (coll_rew < 0).sum().item()
-            all_collisions.append(ep_collisions)
-
-            # M6: Coverage progress
-            ep_targets = 0.0
+            # M1/M3/M6: Use targets_covered from info dict.
+            # targets_covered = count of newly-covered targets per step.
+            # With targets_respawn=False, cumsum = total unique covered.
+            # Do NOT use terminated signal (conflates task completion
+            # with time-limit truncation in TorchRL VMAS wrapper).
             for group in experiment.group_map.keys():
                 tc_key = ("next", group, "info", "targets_covered")
                 if tc_key in rollout_td.keys(True):
                     tc = rollout_td[tc_key]
-                    # Sum across time steps; divide by n_agents if stacked
-                    ep_targets = tc.sum().item()
-                    if tc.dim() > 1 and tc.shape[-1] > 1:
-                        ep_targets /= tc.shape[-1]
-                    break
-            all_targets_covered.append(min(ep_targets, n_targets))
+                    # Shape: [ne, T, n_agents, 1] or [ne, T, 1]
+                    if tc.dim() >= 4:
+                        tc_per_env = tc[:, :, 0, 0]  # [ne, T]
+                    elif tc.dim() == 3:
+                        tc_per_env = tc[:, :, 0]
+                    else:
+                        tc_per_env = tc.unsqueeze(0)
 
-            # M8: Per-agent covering counts
-            ep_agent_covering = torch.zeros(n_agents)
+                    # Cumsum: total unique targets covered over time
+                    cumtc = tc_per_env.cumsum(dim=1)  # [ne, T]
+
+                    # M1: success = all targets covered at some point
+                    per_env_success = (
+                        cumtc >= n_targets
+                    ).any(dim=1)  # [ne]
+                    n_success += per_env_success.sum().item()
+
+                    # M3: step when all targets first covered
+                    for e in range(ne):
+                        success_steps = (
+                            cumtc[e] >= n_targets
+                        ).nonzero(as_tuple=False)
+                        if len(success_steps) > 0:
+                            all_steps.append(
+                                success_steps[0].item() + 1
+                            )
+                        else:
+                            all_steps.append(max_steps)
+
+                    # M6: coverage progress = fraction of targets
+                    # covered by end of episode
+                    final_coverage = cumtc[:, -1]  # [ne]
+                    for v in final_coverage.tolist():
+                        all_coverage.append(
+                            min(v, n_targets) / n_targets
+                        )
+                    break
+            else:
+                # No targets_covered found — fill steps/coverage
+                for _ in range(ne):
+                    all_steps.append(max_steps)
+                    all_coverage.append(0.0)
+
+            # M2: per-env total reward
+            for group in experiment.group_map.keys():
+                reward_key = ("next", group, "reward")
+                if reward_key in rollout_td.keys(True):
+                    rew = rollout_td[reward_key]  # [ne, T, 1]
+                    if rew.dim() >= 3:
+                        per_env_return = rew.sum(dim=1).flatten()  # [ne]
+                        all_returns.extend(per_env_return.tolist())
+                    else:
+                        all_returns.append(rew.sum().item())
+                    break
+
+            # M4: per-env collision count
+            for group in experiment.group_map.keys():
+                coll_key = ("next", group, "info", "collision_rew")
+                if coll_key in rollout_td.keys(True):
+                    coll = rollout_td[coll_key]  # [ne, T, 1]
+                    if coll.dim() >= 3:
+                        per_env_coll = (coll < 0).sum(dim=1).flatten()
+                        all_collisions.extend(per_env_coll.tolist())
+                    else:
+                        all_collisions.append((coll < 0).sum().item())
+                    break
+
+            # M8: per-env agent covering balance
             for group in experiment.group_map.keys():
                 cov_key = ("next", group, "info", "covering_reward")
                 if cov_key in rollout_td.keys(True):
-                    cov_rew = rollout_td[cov_key]  # (T, n_agents) or (T,)
-                    if cov_rew.dim() >= 2:
-                        for i in range(min(cov_rew.shape[-1], n_agents)):
-                            ep_agent_covering[i] = (
-                                cov_rew[..., i] > 0
-                            ).sum().item()
-                    else:
-                        ep_agent_covering[0] = (cov_rew > 0).sum().item()
+                    cov = rollout_td[cov_key]  # [ne, T, n_agents]
+                    if cov.dim() >= 3:
+                        for e in range(ne):
+                            env_cov = cov[e]  # [T, n_agents] or [T, 1]
+                            if env_cov.dim() >= 2 and env_cov.shape[-1] > 1:
+                                counts = (env_cov > 0).sum(dim=0).float()
+                                all_agent_covering.append(counts)
+                            else:
+                                c = torch.zeros(n_agents)
+                                c[0] = (env_cov > 0).sum().item()
+                                all_agent_covering.append(c)
                     break
-            all_agent_covering.append(ep_agent_covering)
 
-            # M9: Spatial spread from observations
-            # Discovery obs layout: [pos_x, pos_y, vel_x, vel_y, lidar...]
-            ep_spread = 0.0
-            spread_steps = 0
+            # M9: per-env spatial spread
             for group in experiment.group_map.keys():
                 obs_key = (group, "observation")
                 if obs_key in rollout_td.keys(True):
                     obs = rollout_td[obs_key]
-                    # obs shape: (T, n_agents, obs_dim) with shared policy
-                    # or (T, obs_dim) without. Need exactly 3 dims.
-                    if obs.dim() == 2:
-                        # Single agent or stacked — can't compute pairwise
-                        break
-                    if obs.dim() >= 3:
-                        # Take last 3 dims as (T, n_agents, obs_dim)
-                        # Flatten any leading batch dims
-                        while obs.dim() > 3:
-                            obs = obs.reshape(-1, *obs.shape[-2:])
-                        T_steps, n_ag, obs_dim = obs.shape
+                    # obs: [ne, T, n_agents, obs_dim]
+                    if obs.dim() >= 4:
+                        ne_o, T_s, n_ag, obs_dim = obs.shape
                         if n_ag >= 2 and obs_dim >= 2:
-                            positions = obs[:, :, :2]  # (T, n_agents, 2)
-                            # Vectorized pairwise distances
-                            dists = torch.cdist(positions, positions)  # (T, n_ag, n_ag)
+                            pos = obs[:, :, :, :2]  # [ne, T, n_ag, 2]
                             mask = torch.triu(
-                                torch.ones(n_ag, n_ag, device=obs.device), diagonal=1
+                                torch.ones(n_ag, n_ag, device=pos.device),
+                                diagonal=1,
                             ).bool()
-                            for t in range(T_steps):
-                                d = dists[t]  # (n_ag, n_ag)
-                                if mask.sum() > 0:
+                            for e in range(ne_o):
+                                ep_spread = 0.0
+                                for t in range(T_s):
+                                    d = torch.cdist(
+                                        pos[e, t].unsqueeze(0),
+                                        pos[e, t].unsqueeze(0),
+                                    )[0]
                                     ep_spread += d[mask].mean().item()
-                                    spread_steps += 1
+                                all_spatial_spread.append(
+                                    ep_spread / max(T_s, 1)
+                                )
+                    elif obs.dim() == 3:
+                        T_s, n_ag, obs_dim = obs.shape
+                        if n_ag >= 2 and obs_dim >= 2:
+                            pos = obs[:, :, :2]
+                            mask = torch.triu(
+                                torch.ones(n_ag, n_ag, device=pos.device),
+                                diagonal=1,
+                            ).bool()
+                            ep_spread = 0.0
+                            for t in range(T_s):
+                                d = torch.cdist(
+                                    pos[t].unsqueeze(0),
+                                    pos[t].unsqueeze(0),
+                                )[0]
+                                ep_spread += d[mask].mean().item()
+                            all_spatial_spread.append(
+                                ep_spread / max(T_s, 1)
+                            )
                     break
-            if spread_steps > 0:
-                all_spatial_spread.append(ep_spread / spread_steps)
-            else:
-                all_spatial_spread.append(0.0)
 
-    # Aggregate
-    avg_coverage = (
-        sum(t / n_targets for t in all_targets_covered)
-        / max(len(all_targets_covered), 1)
-    )
+    total_episodes = n_envs_total if n_envs_total > 0 else num_envs * n_rollouts
 
     # M8: Average CV of per-agent covering
     if all_agent_covering:
@@ -575,17 +674,25 @@ def evaluate_trained(
         agent_util = 0.0
 
     metrics = {
-        "M1_success_rate": n_done / max(total_episodes, 1),
-        "M2_avg_return": sum(all_returns) / max(len(all_returns), 1),
-        "M3_avg_steps": sum(all_steps) / max(len(all_steps), 1),
-        "M4_avg_collisions": sum(all_collisions) / max(len(all_collisions), 1),
+        "M1_success_rate": n_success / max(total_episodes, 1),
+        "M2_avg_return": (
+            sum(all_returns) / max(len(all_returns), 1)
+        ),
+        "M3_avg_steps": (
+            sum(all_steps) / max(len(all_steps), 1)
+        ),
+        "M4_avg_collisions": (
+            sum(all_collisions) / max(len(all_collisions), 1)
+        ),
         "M5_avg_tokens": 0.0,
-        "M6_coverage_progress": avg_coverage,
+        "M6_coverage_progress": (
+            sum(all_coverage) / max(len(all_coverage), 1)
+        ),
         "M8_agent_utilization": agent_util,
         "M9_spatial_spread": (
             sum(all_spatial_spread) / max(len(all_spatial_spread), 1)
         ),
-        "n_envs": n_eval_episodes,
+        "n_envs": total_episodes,
     }
 
     return metrics

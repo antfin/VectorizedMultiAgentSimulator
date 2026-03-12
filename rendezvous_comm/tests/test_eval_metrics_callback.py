@@ -2,11 +2,12 @@
 
 Verifies:
   1. _EvalMetricsCallback correctly computes M1/M4 from mock rollouts
-  2. CSV files are saved into the correct scalars directory
-  3. Saved CSVs are loadable by RunStorage.load_benchmarl_scalars()
-  4. Pickle support for BenchMARL name hashing
-  5. _TqdmProgressCallback pickle support and iteration counting
-  6. _suppress_noise context manager behavior
+  2. M1 uses targets_covered cumsum (not terminated signal)
+  3. CSV files are saved into the correct scalars directory
+  4. Saved CSVs are loadable by RunStorage.load_benchmarl_scalars()
+  5. Pickle support for BenchMARL name hashing
+  6. _TqdmProgressCallback pickle support and iteration counting
+  7. _suppress_noise context manager behavior
 """
 import csv
 import pickle
@@ -28,14 +29,27 @@ from src.storage import RunStorage
 # ── Helpers ──────────────────────────────────────────────────────
 
 
-def _make_rollout(done=False, n_collisions=0, n_steps=10):
-    """Create a mock evaluation rollout TensorDict."""
+def _make_rollout(
+    n_targets_covered=0, n_collisions=0, n_steps=10, n_targets=7,
+):
+    """Create a mock evaluation rollout TensorDict.
+
+    Args:
+        n_targets_covered: number of unique targets covered during episode.
+            Spread across first n_targets_covered steps (1 per step).
+        n_collisions: number of collision events.
+        n_steps: rollout length (time steps).
+        n_targets: total targets in the task.
+    """
     data = {}
-    # Done signal
-    done_tensor = torch.zeros(n_steps, 1, dtype=torch.bool)
-    if done:
-        done_tensor[-1] = True
-    data[("next", "done")] = done_tensor
+
+    # targets_covered: count of newly-covered targets per step.
+    # With targets_respawn=False, each target contributes exactly 1
+    # to this count across the entire episode.
+    tc = torch.zeros(n_steps, 1)
+    for i in range(min(n_targets_covered, n_steps)):
+        tc[i] = 1.0  # 1 new target covered at step i
+    data[("next", "agents", "info", "targets_covered")] = tc
 
     # Collision reward: negative when collision happens
     coll_rew = torch.zeros(n_steps, 1)
@@ -47,9 +61,11 @@ def _make_rollout(done=False, n_collisions=0, n_steps=10):
     return td
 
 
-def _make_callback_with_experiment(group_name="agents"):
+def _make_callback_with_experiment(
+    group_name="agents", n_targets=7,
+):
     """Create an _EvalMetricsCallback with a mock experiment."""
-    cb = _EvalMetricsCallback()
+    cb = _EvalMetricsCallback(n_targets=n_targets)
     cb.experiment = MagicMock()
     cb.experiment.group_map = {group_name: ["agent_0", "agent_1"]}
     return cb
@@ -66,6 +82,14 @@ class TestEvalMetricsCallbackInit:
         assert cb._iter == 0
         assert cb.m1_history == []
         assert cb.m4_history == []
+
+    def test_default_n_targets(self):
+        cb = _EvalMetricsCallback()
+        assert cb._n_targets == 7
+
+    def test_custom_n_targets(self):
+        cb = _EvalMetricsCallback(n_targets=5)
+        assert cb._n_targets == 5
 
     def test_has_experiment_attr(self):
         cb = _EvalMetricsCallback()
@@ -84,39 +108,67 @@ class TestEvalMetricsCallbackIterCounting:
 
 
 class TestEvalMetricsCallbackM1:
-    """Test M1 (success rate) computation."""
+    """Test M1 (success rate) via targets_covered cumsum."""
 
     def test_all_episodes_done(self):
-        cb = _make_callback_with_experiment()
+        cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 10
-        rollouts = [_make_rollout(done=True) for _ in range(5)]
+        # 5 episodes, all cover all 7 targets
+        rollouts = [
+            _make_rollout(n_targets_covered=7, n_targets=7)
+            for _ in range(5)
+        ]
         cb.on_evaluation_end(rollouts)
         assert len(cb.m1_history) == 1
         assert cb.m1_history[0] == (10, 1.0)
 
     def test_no_episodes_done(self):
-        cb = _make_callback_with_experiment()
+        cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 5
-        rollouts = [_make_rollout(done=False) for _ in range(4)]
+        # 4 episodes, none cover any targets
+        rollouts = [
+            _make_rollout(n_targets_covered=0, n_targets=7)
+            for _ in range(4)
+        ]
         cb.on_evaluation_end(rollouts)
         assert cb.m1_history[0] == (5, 0.0)
 
     def test_partial_success(self):
-        cb = _make_callback_with_experiment()
+        cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 20
         rollouts = [
-            _make_rollout(done=True),
-            _make_rollout(done=False),
-            _make_rollout(done=True),
-            _make_rollout(done=False),
+            _make_rollout(n_targets_covered=7, n_targets=7),
+            _make_rollout(n_targets_covered=3, n_targets=7),
+            _make_rollout(n_targets_covered=7, n_targets=7),
+            _make_rollout(n_targets_covered=0, n_targets=7),
         ]
         cb.on_evaluation_end(rollouts)
         assert cb.m1_history[0] == (20, 0.5)
 
     def test_single_episode(self):
-        cb = _make_callback_with_experiment()
+        cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 1
-        cb.on_evaluation_end([_make_rollout(done=True)])
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=7, n_targets=7),
+        ])
+        assert cb.m1_history[0] == (1, 1.0)
+
+    def test_partial_coverage_not_success(self):
+        """Covering 6 of 7 targets is NOT success."""
+        cb = _make_callback_with_experiment(n_targets=7)
+        cb._iter = 1
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=6, n_targets=7),
+        ])
+        assert cb.m1_history[0] == (1, 0.0)
+
+    def test_small_n_targets(self):
+        """Test with fewer targets."""
+        cb = _make_callback_with_experiment(n_targets=2)
+        cb._iter = 1
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=2, n_targets=2),
+        ])
         assert cb.m1_history[0] == (1, 1.0)
 
 
@@ -152,14 +204,20 @@ class TestEvalMetricsCallbackMultipleEvals:
     """Test accumulation across multiple evaluation checkpoints."""
 
     def test_history_grows(self):
-        cb = _make_callback_with_experiment()
+        cb = _make_callback_with_experiment(n_targets=7)
 
         cb._iter = 10
-        cb.on_evaluation_end([_make_rollout(done=True, n_collisions=2)])
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=7, n_collisions=2),
+        ])
         cb._iter = 20
-        cb.on_evaluation_end([_make_rollout(done=False, n_collisions=5)])
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=3, n_collisions=5),
+        ])
         cb._iter = 30
-        cb.on_evaluation_end([_make_rollout(done=True, n_collisions=0)])
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=7, n_collisions=0),
+        ])
 
         assert len(cb.m1_history) == 3
         assert len(cb.m4_history) == 3
@@ -168,9 +226,11 @@ class TestEvalMetricsCallbackMultipleEvals:
         assert cb.m1_history[2][0] == 30
 
     def test_m1_and_m4_recorded_together(self):
-        cb = _make_callback_with_experiment()
+        cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 42
-        cb.on_evaluation_end([_make_rollout(done=True, n_collisions=3)])
+        cb.on_evaluation_end([
+            _make_rollout(n_targets_covered=7, n_collisions=3),
+        ])
         assert len(cb.m1_history) == 1
         assert len(cb.m4_history) == 1
         assert cb.m1_history[0][0] == cb.m4_history[0][0] == 42

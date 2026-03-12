@@ -97,7 +97,7 @@ class TestRunFolderStructure:
 
     def test_provenance_in_input_dir(self, tmp_path, spec):
         rs = RunStorage(tmp_path / "run1", "run1")
-        save_provenance(rs.run_dir, spec.source_path)
+        save_provenance(rs.run_dir, spec.task.to_dict(), {k: v for k, v in spec.train.__dict__.items()})
 
         prov_path = rs.run_dir / "input" / "provenance.json"
         assert prov_path.exists()
@@ -255,7 +255,7 @@ class TestFullRunLifecycle:
         })
 
         # 2. Save provenance
-        save_provenance(rs.run_dir, spec.source_path)
+        save_provenance(rs.run_dir, spec.task.to_dict(), {k: v for k, v in spec.train.__dict__.items()})
 
         # 3. Setup logger
         logger = setup_run_logger(
@@ -380,7 +380,7 @@ class TestCrossModulePathConsistency:
 
     def test_provenance_and_storage_share_input_dir(self, tmp_path, spec):
         rs = RunStorage(tmp_path / "run1", "run1")
-        save_provenance(rs.run_dir, spec.source_path)
+        save_provenance(rs.run_dir, spec.task.to_dict(), {k: v for k, v in spec.train.__dict__.items()})
 
         # provenance.py writes to run_dir/input/provenance.json
         # storage.py defines input_dir as run_dir/input/

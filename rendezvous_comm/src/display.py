@@ -680,7 +680,7 @@ def display_config_selector(exp_id: str):
                 if rid in completed_runs:
                     run_dir = storage._find_run_dir(rid)
                     if run_dir:
-                        f = check_freshness(run_dir, yaml_path)
+                        f = check_freshness(run_dir, spec)
                         if f.value != "valid":
                             worst = f
                             break
