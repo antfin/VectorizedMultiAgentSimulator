@@ -7,7 +7,7 @@ description: >
 
 task:
   n_agents: 4
-  n_targets: 7
+  n_targets: 4
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
