@@ -3,11 +3,10 @@ name: "No-Comm Control"
 description: >
   Isolates baseline task difficulty by removing ALL communication.
   Establishes the floor that any comm method must beat.
-  Single config run for quick validation (~15 min on CPU).
 
 task:
   n_agents: 4
-  n_targets: 7
+  n_targets: 4
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
@@ -38,8 +37,8 @@ train:
 
 sweep:
   seeds: [0]
-  n_agents: [4, 8]
-  n_targets: [7]
-  agents_per_target: [2]
+  n_agents: [4, 6]
+  n_targets: [3, 4]
+  agents_per_target: [1, 2]
   lidar_range: [0.35]
   algorithms: [mappo]
