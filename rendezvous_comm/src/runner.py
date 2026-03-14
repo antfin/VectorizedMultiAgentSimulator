@@ -146,12 +146,9 @@ class _EvalMetricsCallback(_BenchMARLCallback):
         group_map = self.experiment.group_map
 
         for rollout_td in rollouts:
-            # Determine n_envs from batch_size
-            bs = rollout_td.batch_size
-            if len(bs) >= 2:
-                n_envs = bs[0]
-            else:
-                n_envs = 1
+            # BenchMARL unbinds vectorized rollouts: each TD here is
+            # a SINGLE env with batch_size=[T]. Tensors at info keys
+            # have shape [T, n_agents, 1] (not [n_envs, T, ...]).
 
             # M1: success via targets_covered cumsum.
             # targets_covered = count of newly-covered targets per step.
@@ -161,37 +158,22 @@ class _EvalMetricsCallback(_BenchMARLCallback):
                 tc_key = ("next", group, "info", "targets_covered")
                 if tc_key in rollout_td.keys(True):
                     tc = rollout_td[tc_key]
-                    if tc.dim() >= 4:
-                        # [n_envs, T, n_agents, 1] → first agent
-                        tc_per_env = tc[:, :, 0, 0]  # [n_envs, T]
-                    elif tc.dim() == 3:
-                        # [n_envs, T, 1]
-                        tc_per_env = tc[:, :, 0]
-                    elif tc.dim() == 2:
-                        # [T, 1] single env
-                        tc_per_env = tc[:, 0].unsqueeze(0)
-                    else:
-                        tc_per_env = tc.unsqueeze(0)
-                    # Cumsum: total unique targets covered over time
-                    cumtc = tc_per_env.cumsum(dim=1)  # [n_envs, T]
-                    # Success: cumulative >= n_targets at any point
-                    per_env_success = (
-                        cumtc >= self._n_targets
-                    ).any(dim=1)  # [n_envs]
-                    n_success += per_env_success.sum().item()
-                    n_envs_total += (
-                        tc_per_env.shape[0]
-                        if tc_per_env.dim() >= 2
-                        else 1
-                    )
+                    # After unbind: [T, n_agents, 1] → take first
+                    # agent (all identical), squeeze → [T]
+                    while tc.dim() > 1:
+                        tc = tc[..., 0]
+                    # tc is now [T] — per-step newly-covered count
+                    cumtc = tc.cumsum(dim=0)  # [T]
+                    success = (cumtc >= self._n_targets).any().item()
+                    n_success += int(success)
+                    n_envs_total += 1
                     found_tc = True
                     break
 
             if not found_tc:
-                # Fallback: count envs without targets_covered info
-                n_envs_total += n_envs
+                n_envs_total += 1
 
-            # M4: count collision events, then average per env
+            # M4: count collision events for this env
             for group in group_map.keys():
                 coll_key = ("next", group, "info", "collision_rew")
                 if coll_key in rollout_td.keys(True):
@@ -585,27 +567,40 @@ def evaluate_trained(
                     break
 
             # M4: per-env collision count
+            # collision_rew shape: [ne, T, n_agents, 1] — per-agent
+            # boolean. Sum all agent-collision-steps per env.
             for group in experiment.group_map.keys():
                 coll_key = ("next", group, "info", "collision_rew")
                 if coll_key in rollout_td.keys(True):
-                    coll = rollout_td[coll_key]  # [ne, T, 1]
-                    if coll.dim() >= 3:
-                        per_env_coll = (coll < 0).sum(dim=1).flatten()
-                        all_collisions.extend(per_env_coll.tolist())
-                    else:
-                        all_collisions.append((coll < 0).sum().item())
+                    coll = rollout_td[coll_key]
+                    # Reshape to [ne, everything_else] and sum
+                    per_env_coll = (coll < 0).reshape(ne, -1).sum(
+                        dim=1,
+                    )  # [ne]
+                    all_collisions.extend(per_env_coll.tolist())
                     break
 
             # M8: per-env agent covering balance
+            # covering_reward shape: [ne, T, n_agents, 1]
+            # Squeeze trailing 1 to get [ne, T, n_agents].
             for group in experiment.group_map.keys():
                 cov_key = ("next", group, "info", "covering_reward")
                 if cov_key in rollout_td.keys(True):
-                    cov = rollout_td[cov_key]  # [ne, T, n_agents]
+                    cov = rollout_td[cov_key]
+                    # Remove trailing dims of size 1
+                    while cov.dim() > 3 and cov.shape[-1] == 1:
+                        cov = cov.squeeze(-1)
+                    # cov: [ne, T, n_agents]
                     if cov.dim() >= 3:
                         for e in range(ne):
-                            env_cov = cov[e]  # [T, n_agents] or [T, 1]
-                            if env_cov.dim() >= 2 and env_cov.shape[-1] > 1:
-                                counts = (env_cov > 0).sum(dim=0).float()
+                            env_cov = cov[e]  # [T, n_agents]
+                            if (
+                                env_cov.dim() >= 2
+                                and env_cov.shape[-1] > 1
+                            ):
+                                counts = (
+                                    (env_cov > 0).sum(dim=0).float()
+                                )
                                 all_agent_covering.append(counts)
                             else:
                                 c = torch.zeros(n_agents)

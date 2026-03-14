@@ -31,8 +31,13 @@ from src.storage import RunStorage
 
 def _make_rollout(
     n_targets_covered=0, n_collisions=0, n_steps=10, n_targets=7,
+    n_agents=4,
 ):
-    """Create a mock evaluation rollout TensorDict.
+    """Create a mock per-env evaluation rollout TensorDict.
+
+    Simulates BenchMARL's unbind(0) output: each rollout is a single
+    env with batch_size=[T]. Info tensors have shape [T, n_agents, 1]
+    (targets_covered is identical across agents).
 
     Args:
         n_targets_covered: number of unique targets covered during episode.
@@ -40,21 +45,25 @@ def _make_rollout(
         n_collisions: number of collision events.
         n_steps: rollout length (time steps).
         n_targets: total targets in the task.
+        n_agents: number of agents (all see same targets_covered).
     """
     data = {}
 
-    # targets_covered: count of newly-covered targets per step.
-    # With targets_respawn=False, each target contributes exactly 1
-    # to this count across the entire episode.
-    tc = torch.zeros(n_steps, 1)
+    # targets_covered: [T, n_agents, 1] — identical across agents.
+    # count of newly-covered targets per step.
+    tc_1d = torch.zeros(n_steps)
     for i in range(min(n_targets_covered, n_steps)):
-        tc[i] = 1.0  # 1 new target covered at step i
+        tc_1d[i] = 1.0  # 1 new target covered at step i
+    # Broadcast to [T, n_agents, 1]
+    tc = tc_1d.unsqueeze(-1).unsqueeze(-1).expand(
+        n_steps, n_agents, 1,
+    ).clone()
     data[("next", "agents", "info", "targets_covered")] = tc
 
-    # Collision reward: negative when collision happens
-    coll_rew = torch.zeros(n_steps, 1)
+    # Collision reward: [T, n_agents, 1]
+    coll_rew = torch.zeros(n_steps, n_agents, 1)
     for i in range(min(n_collisions, n_steps)):
-        coll_rew[i] = -0.1
+        coll_rew[i, 0, 0] = -0.1  # collision on first agent
     data[("next", "agents", "info", "collision_rew")] = coll_rew
 
     td = TensorDict(data, batch_size=[n_steps])
