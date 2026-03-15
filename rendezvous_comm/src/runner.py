@@ -284,7 +284,20 @@ def build_experiment(
     experiment_config.sampling_device = train_config.sampling_device
     experiment_config.share_policy_params = train_config.share_policy_params
     experiment_config.evaluation = True
-    experiment_config.evaluation_interval = train_config.evaluation_interval
+    eval_interval = train_config.evaluation_interval
+    batch_size = train_config.on_policy_collected_frames_per_batch
+    if eval_interval % batch_size != 0:
+        old = eval_interval
+        eval_interval = max(
+            batch_size,
+            (eval_interval // batch_size) * batch_size,
+        )
+        _log.warning(
+            f"evaluation_interval ({old}) is not a multiple of "
+            f"collected_frames_per_batch ({batch_size}). "
+            f"Rounding down to {eval_interval}."
+        )
+    experiment_config.evaluation_interval = eval_interval
     experiment_config.evaluation_episodes = train_config.evaluation_episodes
     experiment_config.loggers = ["csv"]
     # Pyglet rendering works for the first run in a process but crashes

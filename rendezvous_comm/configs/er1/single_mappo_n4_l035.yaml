@@ -23,7 +23,7 @@ task:
 
 train:
   algorithm: mappo
-  max_n_frames: 6_000_000
+  max_n_frames: 10_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
   on_policy_n_envs_per_worker: 60
@@ -31,7 +31,7 @@ train:
   on_policy_minibatch_size: 4096
   lr: 0.00005
   share_policy_params: true
-  evaluation_interval: 600_000
+  evaluation_interval: 960_000
   evaluation_episodes: 50
   train_device: cpu
   sampling_device: cpu
