@@ -1,0 +1,35 @@
+# OVH Public Cloud defaults for AI Training jobs.
+#
+# Edit this file to match your OVH project setup.
+# Sensitive data (tokens, passwords) should NEVER go here —
+# use `ovhai login` for authentication.
+
+# ── S3 Object Storage ─────────────────────────────────────────
+storage:
+  bucket_code: "rendezvous-code"        # Bucket for uploading source code
+  bucket_results: "rendezvous-results"  # Bucket for training output
+  region: "GRA"                         # OVH region (GRA, BHS, SBG, WAW, ...)
+
+# ── AI Training ───────────────────────────────────────────────
+training:
+  default_gpu: "L4"                     # Default GPU model for new jobs
+  n_gpu: 1                              # GPUs per job
+  image: "pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime"
+
+# ── GPU catalog (OVH startup program) ────────────────────────
+# Pricing as of 2026-03. Update if OVH changes rates.
+gpu_models:
+  L4:
+    vram_gb: 24
+    eur_per_hr: 0.75
+  L40S:
+    vram_gb: 48
+    eur_per_hr: 1.40
+  H100:
+    vram_gb: 80
+    eur_per_hr: 3.10
+
+# ── Mount paths inside the container ─────────────────────────
+mounts:
+  code: "/workspace/code"               # Read-only code mount
+  results: "/workspace/results"         # Read-write results mount

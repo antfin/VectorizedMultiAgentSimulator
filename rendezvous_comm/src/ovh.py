@@ -3,29 +3,111 @@
 Wraps `ovhai` CLI commands via subprocess. Requires `ovhai` to be installed
 and authenticated (`ovhai login`).
 
-GPU pricing (EUR/hr, OVH Public Cloud / startup program):
-    L4 (24GB):   ~0.75
-    L40S (48GB): ~1.40
-    H100 (80GB): ~3.10
+Configuration is loaded from configs/ovh.yaml (edit that file to change
+defaults for buckets, region, GPU model, etc.). Sensitive data (tokens,
+passwords) should NEVER go in the config — use `ovhai login`.
 """
 import json
 import logging
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
+import yaml
 
 _log = logging.getLogger("rendezvous.ovh")
 
-# GPU models available in OVH Public Cloud (startup program)
-GPU_MODELS = {
-    "L4": {"vram_gb": 24, "eur_per_hr": 0.75},
-    "L40S": {"vram_gb": 48, "eur_per_hr": 1.40},
-    "H100": {"vram_gb": 80, "eur_per_hr": 3.10},
-}
+# ── Load OVH config from YAML ───────────────────────────────────
 
-DEFAULT_REGION = "GRA"
-DEFAULT_IMAGE = "pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime"
+_OVH_CONFIG_PATH = Path(__file__).parent.parent / "configs" / "ovh.yaml"
+
+
+def load_ovh_config() -> Dict[str, Any]:
+    """Load OVH configuration from configs/ovh.yaml.
+
+    Returns the parsed dict, or sensible defaults if file is missing.
+    """
+    if _OVH_CONFIG_PATH.exists():
+        with open(_OVH_CONFIG_PATH) as f:
+            return yaml.safe_load(f) or {}
+    _log.warning(f"OVH config not found: {_OVH_CONFIG_PATH}")
+    return {}
+
+
+def _cfg() -> Dict[str, Any]:
+    """Cached config access."""
+    if not hasattr(_cfg, "_cache"):
+        _cfg._cache = load_ovh_config()
+    return _cfg._cache
+
+
+def reload_ovh_config():
+    """Force reload of OVH config (useful after editing ovh.yaml)."""
+    if hasattr(_cfg, "_cache"):
+        del _cfg._cache
+
+
+def _storage_cfg() -> Dict[str, str]:
+    return _cfg().get("storage", {})
+
+
+def _training_cfg() -> Dict[str, Any]:
+    return _cfg().get("training", {})
+
+
+def _mounts_cfg() -> Dict[str, str]:
+    return _cfg().get("mounts", {})
+
+
+# ── Derived defaults from config ─────────────────────────────────
+
+def _gpu_models_from_config() -> Dict[str, Dict]:
+    """Build GPU_MODELS dict from config, with hardcoded fallback."""
+    fallback = {
+        "L4": {"vram_gb": 24, "eur_per_hr": 0.75},
+        "L40S": {"vram_gb": 48, "eur_per_hr": 1.40},
+        "H100": {"vram_gb": 80, "eur_per_hr": 3.10},
+    }
+    return _cfg().get("gpu_models", fallback)
+
+
+GPU_MODELS = _gpu_models_from_config()
+
+
+def default_region() -> str:
+    return _storage_cfg().get("region", "GRA")
+
+
+def default_bucket_code() -> str:
+    return _storage_cfg().get("bucket_code", "rendezvous-code")
+
+
+def default_bucket_results() -> str:
+    return _storage_cfg().get("bucket_results", "rendezvous-results")
+
+
+def default_gpu() -> str:
+    return _training_cfg().get("default_gpu", "L4")
+
+
+def default_n_gpu() -> int:
+    return _training_cfg().get("n_gpu", 1)
+
+
+def default_image() -> str:
+    return _training_cfg().get(
+        "image",
+        "pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime",
+    )
+
+
+def default_mount_code() -> str:
+    return _mounts_cfg().get("code", "/workspace/code")
+
+
+def default_mount_results() -> str:
+    return _mounts_cfg().get("results", "/workspace/results")
 
 
 @dataclass
@@ -64,15 +146,17 @@ def _run_ovhai(args: List[str], timeout: int = 60) -> subprocess.CompletedProces
 
 def submit_training_job(
     config_yaml: str,
-    gpu_type: str = "L4",
-    bucket_code: str = "rendezvous-code",
-    bucket_results: str = "rendezvous-results",
-    region: str = DEFAULT_REGION,
-    image: str = DEFAULT_IMAGE,
-    n_gpu: int = 1,
+    gpu_type: Optional[str] = None,
+    bucket_code: Optional[str] = None,
+    bucket_results: Optional[str] = None,
+    region: Optional[str] = None,
+    image: Optional[str] = None,
+    n_gpu: Optional[int] = None,
     job_name: Optional[str] = None,
 ) -> Optional[str]:
     """Submit an OVH AI Training job.
+
+    All parameters default to values from configs/ovh.yaml.
 
     Args:
         config_yaml: path to config YAML relative to code root
@@ -88,6 +172,16 @@ def submit_training_job(
     Returns:
         Job ID string, or None on failure.
     """
+    # Apply defaults from config
+    gpu_type = gpu_type or default_gpu()
+    bucket_code = bucket_code or default_bucket_code()
+    bucket_results = bucket_results or default_bucket_results()
+    region = region or default_region()
+    image = image or default_image()
+    n_gpu = n_gpu if n_gpu is not None else default_n_gpu()
+    mount_code = default_mount_code()
+    mount_results = default_mount_results()
+
     if gpu_type not in GPU_MODELS:
         _log.error(
             f"Unknown GPU type: {gpu_type}. "
@@ -101,10 +195,10 @@ def submit_training_job(
         job_name = f"rendezvous_{parts}"
 
     train_cmd = (
-        f"pip install -e /workspace/code/rendezvous_comm 2>/dev/null; "
-        f"cd /workspace/code && "
+        f"pip install -e {mount_code}/rendezvous_comm 2>/dev/null; "
+        f"cd {mount_code} && "
         f"python -m rendezvous_comm.train "
-        f"/workspace/code/{config_yaml} "
+        f"{mount_code}/{config_yaml} "
         f"--device cuda"
     )
 
@@ -113,9 +207,9 @@ def submit_training_job(
         "--name", job_name,
         "--gpu", str(n_gpu),
         "--gpu-model", gpu_type,
-        "--volume", f"{bucket_code}@{region}/:/workspace/code:ro",
-        "--volume", f"{bucket_results}@{region}/:/workspace/results:rwd",
-        "--env", "RESULTS_DIR=/workspace/results",
+        "--volume", f"{bucket_code}@{region}/:{mount_code}:ro",
+        "--volume", f"{bucket_results}@{region}/:{mount_results}:rwd",
+        "--env", f"RESULTS_DIR={mount_results}",
         "--output", "json",
         "--", "bash", "-c", train_cmd,
     ]
@@ -222,8 +316,10 @@ def list_buckets() -> List[str]:
         return []
 
 
-def upload_code(local_dir: str, bucket: str, region: str = DEFAULT_REGION) -> bool:
+def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[str] = None) -> bool:
     """Upload code directory to an OVH bucket."""
+    bucket = bucket or default_bucket_code()
+    region = region or default_region()
     r = _run_ovhai(
         ["bucket", "object", "upload", f"{bucket}@{region}", local_dir],
         timeout=300,
@@ -236,12 +332,14 @@ def upload_code(local_dir: str, bucket: str, region: str = DEFAULT_REGION) -> bo
 
 
 def download_results(
-    bucket: str,
-    local_dir: str,
+    bucket: Optional[str] = None,
+    local_dir: str = "",
     prefix: str = "",
-    region: str = DEFAULT_REGION,
+    region: Optional[str] = None,
 ) -> bool:
     """Download results from an OVH bucket."""
+    bucket = bucket or default_bucket_results()
+    region = region or default_region()
     args = [
         "bucket", "object", "download",
         f"{bucket}@{region}",

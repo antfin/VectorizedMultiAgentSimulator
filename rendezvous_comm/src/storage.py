@@ -220,7 +220,11 @@ class ExperimentStorage:
         return result
 
     def to_dataframe(self):
-        """Load all metrics into a pandas DataFrame."""
+        """Load all metrics into a pandas DataFrame.
+
+        Uses flat config fields from metrics.json when available,
+        falling back to regex parsing of run_id for older data.
+        """
         import pandas as pd
 
         all_metrics = self.load_all_metrics()
@@ -230,7 +234,11 @@ class ExperimentStorage:
         for run_id, metrics in all_metrics.items():
             row = {"run_id": run_id}
             row.update(metrics)
-            row.update(_parse_run_id(run_id))
+            # Backfill missing config fields from run_id parsing
+            parsed = _parse_run_id(run_id)
+            for k, v in parsed.items():
+                if k not in row:
+                    row[k] = v
             rows.append(row)
         return pd.DataFrame(rows)
 

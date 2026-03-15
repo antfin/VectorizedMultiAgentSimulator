@@ -210,6 +210,53 @@ class _EvalMetricsCallback(_BenchMARLCallback):
                         w.writerow(row)
 
 
+def _extract_training_dynamics(run_storage) -> Dict[str, float]:
+    """Extract final entropy and eval reward from BenchMARL CSVs."""
+    result = {}
+    scalars = run_storage.load_benchmarl_scalars()
+
+    entropy_data = scalars.get("train_agents_entropy")
+    if entropy_data:
+        result["final_entropy"] = entropy_data[-1][1]
+
+    eval_reward_data = scalars.get(
+        "eval_reward_episode_reward_mean"
+    )
+    if eval_reward_data:
+        result["final_eval_reward"] = eval_reward_data[-1][1]
+
+    return result
+
+
+def _write_sweep_csv(spec, results):
+    """Write sweep_results.csv with all metrics + config + execution.
+
+    This CSV is the single source of truth for OVH batch runs.
+    Each row is one run with all fields from metrics.json.
+    """
+    import csv
+    if not results:
+        return
+    csv_path = spec.results_dir / "sweep_results.csv"
+    # Collect all possible field names across all runs
+    all_keys = set()
+    for metrics in results.values():
+        all_keys.update(metrics.keys())
+    # Stable column order: run_id first, then sorted
+    fieldnames = ["run_id"] + sorted(all_keys)
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=fieldnames, restval="",
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for run_id, metrics in results.items():
+            row = {"run_id": run_id}
+            row.update(metrics)
+            writer.writerow(row)
+    _log.info(f"Sweep CSV: {csv_path}")
+
+
 def get_algorithm_config(algorithm: str):
     """Get BenchMARL algorithm config by name."""
     if algorithm == "mappo":
@@ -423,6 +470,9 @@ def run_single(
         # Save M1/M4 eval history for training curve plots
         eval_cb.save_csvs(run_storage.benchmarl_dir)
 
+        # Extract training dynamics from BenchMARL CSVs
+        dynamics = _extract_training_dynamics(run_storage)
+
         m, s = divmod(int(elapsed), 60)
         h, m = divmod(m, 60)
         logger.info(f"TRAINING COMPLETE  {run_id}  ({h}h {m}m {s}s)")
@@ -434,21 +484,104 @@ def run_single(
 
         # Post-training evaluation
         logger.info(f"Evaluating trained policy ({spec.train.evaluation_episodes} episodes)...")
+        t_eval = time.monotonic()
         metrics = evaluate_trained(spec, experiment, task_overrides)
+        eval_elapsed = time.monotonic() - t_eval
 
         # M7: Sample Efficiency (from training CSVs)
         m7 = compute_m7_sample_efficiency(run_storage.run_dir)
         if m7 is not None:
             metrics["M7_sample_efficiency"] = m7
+            metrics["convergence_frame"] = m7
+
+        # ── Enrich metrics with ALL config + execution + dynamics ──
+        # This makes the CSV self-contained for OVH batch runs.
+
+        def _ov(key):
+            """Get effective task param (override > base)."""
+            if task_overrides and key in task_overrides:
+                return task_overrides[key]
+            return getattr(spec.task, key)
+
+        # Experiment identity
+        metrics["exp_id"] = spec.exp_id
+        metrics["experiment_name"] = spec.name
+        metrics["algorithm"] = algorithm
+        metrics["seed"] = seed
+        metrics["run_timestamp"] = run_storage.run_dir.name.split("__")[0]
+        if spec.source_path:
+            metrics["config_file"] = spec.source_path.name
+
+        # Task config (swept + fixed — all params that define the env)
+        metrics["n_agents"] = _ov("n_agents")
+        metrics["n_targets"] = _ov("n_targets")
+        metrics["agents_per_target"] = _ov("agents_per_target")
+        metrics["lidar_range"] = _ov("lidar_range")
+        metrics["covering_range"] = _ov("covering_range")
+        metrics["max_steps"] = _ov("max_steps")
+        metrics["agent_collision_penalty"] = _ov(
+            "agent_collision_penalty"
+        )
+        metrics["covering_rew_coeff"] = _ov("covering_rew_coeff")
+        metrics["time_penalty"] = _ov("time_penalty")
+        metrics["shared_reward"] = _ov("shared_reward")
+        metrics["targets_respawn"] = _ov("targets_respawn")
+
+        # Training hyperparameters
+        metrics["max_n_frames"] = spec.train.max_n_frames
+        metrics["gamma"] = spec.train.gamma
+        metrics["lr"] = spec.train.lr
+        metrics["frames_per_batch"] = (
+            spec.train.on_policy_collected_frames_per_batch
+        )
+        metrics["n_envs_per_worker"] = (
+            spec.train.on_policy_n_envs_per_worker
+        )
+        metrics["n_minibatch_iters"] = (
+            spec.train.on_policy_n_minibatch_iters
+        )
+        metrics["minibatch_size"] = spec.train.on_policy_minibatch_size
+        metrics["share_policy_params"] = spec.train.share_policy_params
+        metrics["evaluation_interval"] = spec.train.evaluation_interval
+        metrics["evaluation_episodes"] = spec.train.evaluation_episodes
+
+        # Execution metadata
+        metrics["training_seconds"] = round(elapsed, 1)
+        metrics["eval_seconds"] = round(eval_elapsed, 1)
+        metrics["device"] = spec.train.train_device
+        metrics["torch_version"] = torch.__version__
+
+        # Derived
+        metrics["n_iterations"] = (
+            spec.train.max_n_frames
+            // spec.train.on_policy_collected_frames_per_batch
+        )
+        if elapsed > 0:
+            metrics["throughput_fps"] = round(
+                spec.train.max_n_frames / elapsed, 1
+            )
+
+        # Policy size
+        try:
+            sd = experiment.policy.state_dict()
+            metrics["policy_params"] = sum(
+                p.numel() for p in sd.values()
+                if hasattr(p, "numel")
+            )
+        except Exception:
+            pass
+
+        # Training dynamics
+        metrics.update(dynamics)
 
         run_storage.save_metrics(metrics)
 
         from .report import METRIC_DETAILS
         for key, val in metrics.items():
-            if key != "n_envs":
-                detail = METRIC_DETAILS.get(key)
-                label = detail["label"] if detail else key
-                fmt = detail["fmt"] if detail else ".4f"
+            detail = METRIC_DETAILS.get(key)
+            if detail and isinstance(val, (int, float)):
+                label = detail["label"]
+                fmt = detail["fmt"]
                 logger.info(f"  {label}: {val:{fmt}}")
 
         # Generate report
@@ -913,8 +1046,9 @@ def run_sweep(
         )
         pbar.close()
 
-    # Generate sweep report
+    # Generate sweep report + CSV
     generate_sweep_report(spec, results, elapsed_seconds=elapsed)
+    _write_sweep_csv(spec, results)
 
     if not notebook:
         _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")

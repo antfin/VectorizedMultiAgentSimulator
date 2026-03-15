@@ -10,6 +10,8 @@ from src.ovh import (
     GPU_MODELS, check_cli_available, submit_training_job,
     list_jobs, get_job, get_job_logs, stop_job,
     list_buckets, upload_code, download_results, estimate_cost,
+    default_bucket_code, default_bucket_results, default_region,
+    default_gpu, default_image,
 )
 
 st.set_page_config(page_title="OVH Jobs", layout="wide")
@@ -51,14 +53,20 @@ with tab_launch:
         config_rel = f"rendezvous_comm/configs/{exp_id}/{config_name}"
 
     with col2:
+        gpu_keys = list(GPU_MODELS.keys())
+        gpu_default_idx = (
+            gpu_keys.index(default_gpu())
+            if default_gpu() in gpu_keys else 0
+        )
         gpu_type = st.selectbox(
             "GPU Model",
-            list(GPU_MODELS.keys()),
+            gpu_keys,
+            index=gpu_default_idx,
             format_func=lambda g: f"{g} ({GPU_MODELS[g]['vram_gb']}GB, {GPU_MODELS[g]['eur_per_hr']} EUR/hr)",
         )
-        bucket_code = st.text_input("Code bucket", "rendezvous-code")
-        bucket_results = st.text_input("Results bucket", "rendezvous-results")
-        region = st.text_input("Region", "GRA")
+        bucket_code = st.text_input("Code bucket", default_bucket_code())
+        bucket_results = st.text_input("Results bucket", default_bucket_results())
+        region = st.text_input("Region", default_region())
 
     # Upload code button
     col_up, col_sub = st.columns(2)
@@ -139,14 +147,14 @@ with tab_monitor:
 with tab_download:
     st.subheader("Download Results from OVH")
 
-    dl_bucket = st.text_input("Results bucket", "rendezvous-results",
+    dl_bucket = st.text_input("Results bucket", default_bucket_results(),
                                key="dl_bucket")
     dl_prefix = st.text_input(
         "Prefix (e.g., er1/)",
         placeholder="Leave empty for all",
         key="dl_prefix",
     )
-    dl_region = st.text_input("Region", "GRA", key="dl_region")
+    dl_region = st.text_input("Region", default_region(), key="dl_region")
     dl_dir = st.text_input("Local directory", str(RESULTS_DIR))
 
     if st.button("Download", type="primary", key="dl_btn"):

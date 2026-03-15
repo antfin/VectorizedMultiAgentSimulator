@@ -130,6 +130,10 @@ def main():
         json.dump(summary, f, indent=2)
     log.info(f"Summary:    {summary_path}")
 
+    csv_path = RESULTS_DIR / spec.exp_id / "sweep_results.csv"
+    if csv_path.exists():
+        log.info(f"CSV:        {csv_path}")
+
     # Exit code
     if not results and not args.dry_run:
         log.warning("No runs completed.")
