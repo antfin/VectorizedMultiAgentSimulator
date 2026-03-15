@@ -38,7 +38,7 @@ train:
 sweep:
   seeds: [0]
   n_agents: [4, 6]
-  n_targets: [4]
+  n_targets: [3, 4]
   agents_per_target: [1, 2]
   lidar_range: [0.35]
   algorithms: [mappo]
