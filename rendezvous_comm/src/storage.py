@@ -156,7 +156,8 @@ class ExperimentStorage:
 
     def __init__(self, exp_id: str, results_root: Optional[Path] = None):
         if results_root is None:
-            results_root = Path(__file__).parent.parent / "results"
+            from .config import RESULTS_DIR
+            results_root = RESULTS_DIR
         self.results_dir = results_root / exp_id.lower()
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.exp_id = exp_id

@@ -1,5 +1,6 @@
 """Experiment configuration loading and management."""
 import itertools
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -9,7 +10,9 @@ import yaml
 
 RENDEZVOUS_ROOT = Path(__file__).parent.parent
 CONFIGS_DIR = RENDEZVOUS_ROOT / "configs"
-RESULTS_DIR = RENDEZVOUS_ROOT / "results"
+RESULTS_DIR = Path(
+    os.environ.get("RESULTS_DIR", str(RENDEZVOUS_ROOT / "results"))
+)
 CHECKPOINTS_DIR = RENDEZVOUS_ROOT / "checkpoints"
 
 # ── Short names for run IDs ───────────────────────────────────────
