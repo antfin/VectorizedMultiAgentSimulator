@@ -5,6 +5,7 @@ Usage:
     python -m rendezvous_comm.train configs/er1/demo.yaml
     python -m rendezvous_comm.train configs/er1/demo.yaml --device cuda
     python -m rendezvous_comm.train configs/er1/demo.yaml --dry-run
+    python -m rendezvous_comm.train configs/er1/demo.yaml --rebuild-csv
 
 Environment variables:
     RESULTS_DIR  — override results output path (default: rendezvous_comm/results)
@@ -50,6 +51,10 @@ def main():
         "--force-retrain", action="store_true",
         help="Re-run even if results exist",
     )
+    parser.add_argument(
+        "--rebuild-csv", action="store_true",
+        help="Rebuild consolidated CSVs without training",
+    )
     args = parser.parse_args()
 
     # Setup logging
@@ -74,6 +79,17 @@ def main():
     log.info(f"Experiment: {spec.exp_id} — {spec.name}")
     log.info(f"Config:     {config_path}")
     log.info(f"Results:    {RESULTS_DIR}")
+
+    # Rebuild CSVs only (no training)
+    if args.rebuild_csv:
+        from src.consolidate import consolidate_csvs
+        paths = consolidate_csvs(spec.exp_id)
+        for kind, path in paths.items():
+            log.info(f"  {kind}: {path}")
+        if not paths:
+            log.warning("No data to consolidate.")
+            sys.exit(1)
+        sys.exit(0)
 
     # Override device if specified
     if args.device:
@@ -130,9 +146,11 @@ def main():
         json.dump(summary, f, indent=2)
     log.info(f"Summary:    {summary_path}")
 
-    csv_path = RESULTS_DIR / spec.exp_id / "sweep_results.csv"
-    if csv_path.exists():
-        log.info(f"CSV:        {csv_path}")
+    csv_matches = sorted(
+        (RESULTS_DIR / spec.exp_id).glob("sweep_results_*.csv")
+    )
+    if csv_matches:
+        log.info(f"CSV:        {csv_matches[-1]}")
 
     # Exit code
     if not results and not args.dry_run:

@@ -13,7 +13,7 @@ import numpy as np
 from src.theme import apply_theme
 from src.config import CONFIGS_DIR, RESULTS_DIR
 from src.storage import load_cross_experiment
-from src.consolidate import load_latest_csv
+from src.consolidate import load_latest_csv, list_experiments_with_data
 from src.plotting import (
     plot_baseline_comparison, plot_metric_radar, plot_success_vs_tokens,
     set_style, METRIC_LABELS, COLORS, LABELS,
@@ -21,13 +21,14 @@ from src.plotting import (
 from src.stats import compare_experiments, bootstrap_ci, pareto_frontier
 
 st.set_page_config(page_title="Cross-Experiment", layout="wide")
-apply_theme()
-st.title("Cross-Experiment Comparison")
+apply_theme(title="Cross-Experiment Comparison")
 
-# Multi-select experiments
-all_exp_ids = sorted(
-    [d.name for d in CONFIGS_DIR.iterdir() if d.is_dir()],
-)
+# Multi-select experiments (only those with data)
+all_exp_ids = list_experiments_with_data()
+if not all_exp_ids:
+    st.info("No experiments with completed runs.")
+    st.stop()
+
 selected_exps = st.sidebar.multiselect(
     "Experiments", all_exp_ids, default=all_exp_ids[:2],
 )

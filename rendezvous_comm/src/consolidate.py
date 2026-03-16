@@ -57,12 +57,16 @@ def _build_sweep_row(run_dir: Path, run_id: str) -> Optional[dict]:
     row = {"run_id": run_id}
     row.update(metrics)
 
-    # Backfill from config.yaml if metrics are missing config fields
+    # Backfill from config.yaml if metrics are missing config fields.
+    # task_overrides take precedence over base task config.
     config = _load_run_config(run_dir)
     if config:
         task = config.get("task", {})
+        overrides = config.get("task_overrides", {})
+        # Merge: base task + overrides (overrides win)
+        effective_task = {**task, **overrides}
         train = config.get("train", {})
-        for k, v in task.items():
+        for k, v in effective_task.items():
             if k not in row:
                 row[k] = v
         for k, v in train.items():
@@ -328,6 +332,32 @@ def load_latest_csv(
 
     latest = matches[-1]  # sorted by timestamp in filename
     return pd.read_csv(latest)
+
+
+def list_experiments_with_data(
+    results_root: Optional[Path] = None,
+) -> list:
+    """Return exp_ids that have at least one completed run or CSV."""
+    if results_root is None:
+        from .config import RESULTS_DIR
+        results_root = RESULTS_DIR
+
+    exp_ids = []
+    if not results_root.exists():
+        return exp_ids
+    for d in sorted(results_root.iterdir()):
+        if not d.is_dir():
+            continue
+        # Has a consolidated CSV?
+        if list(d.glob("sweep_results_*.csv")):
+            exp_ids.append(d.name)
+            continue
+        # Has any completed run (metrics.json)?
+        for sub in d.iterdir():
+            if sub.is_dir() and (sub / "output" / "metrics.json").exists():
+                exp_ids.append(d.name)
+                break
+    return exp_ids
 
 
 if __name__ == "__main__":

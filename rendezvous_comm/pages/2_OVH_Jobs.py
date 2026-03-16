@@ -14,8 +14,10 @@ from src.ovh import (
     default_gpu, default_image,
 )
 
+from src.theme import apply_theme
+
 st.set_page_config(page_title="OVH Jobs", layout="wide")
-st.title("OVH Job Management")
+apply_theme(title="OVH Job Management")
 
 # CLI check
 cli_ok = check_cli_available()

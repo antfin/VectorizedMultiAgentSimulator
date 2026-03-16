@@ -11,8 +11,7 @@ from src.storage import ExperimentStorage
 from src.provenance import check_freshness, Freshness
 
 st.set_page_config(page_title="Experiments", layout="wide")
-apply_theme()
-st.title("Experiment Setup")
+apply_theme(title="Experiment Setup")
 
 # Experiment selector
 exp_ids = sorted(
