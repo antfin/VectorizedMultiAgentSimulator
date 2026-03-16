@@ -10,13 +10,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# ── Style defaults ──────────────────────────────────────────────────
+# ── Polimi brand palette ─────────────────────────────────────────────
+from .theme import (
+    POLIMI_DARK_BLUE, POLIMI_LIGHT_BLUE, POLIMI_GREEN,
+    POLIMI_RED, POLIMI_ORANGE, POLIMI_GRAY,
+)
+
 COLORS = {
-    "er1": "#1f77b4",   # blue  - no comm
-    "er2": "#ff7f0e",   # orange - engineered schema
-    "er3": "#2ca02c",   # green  - symbolic intent
-    "er4": "#d62728",   # red    - event triggered
-    "e1": "#9467bd",    # purple - static LLM
+    "er1": POLIMI_DARK_BLUE,   # blue  - no comm
+    "er2": POLIMI_ORANGE,      # orange - engineered schema
+    "er3": POLIMI_GREEN,       # green  - symbolic intent
+    "er4": POLIMI_RED,         # red    - event triggered
+    "e1": POLIMI_LIGHT_BLUE,   # light blue - static LLM
 }
 
 LABELS = {
@@ -39,12 +44,21 @@ METRIC_LABELS = {
 }
 
 
+_POLIMI_CYCLE = [
+    POLIMI_DARK_BLUE, POLIMI_RED, POLIMI_GREEN,
+    POLIMI_ORANGE, POLIMI_LIGHT_BLUE, POLIMI_GRAY,
+]
+
+
 def set_style():
     plt.rcParams.update({
         "figure.figsize": (10, 6),
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
         "font.size": 12,
         "axes.grid": True,
         "grid.alpha": 0.3,
+        "axes.prop_cycle": plt.cycler(color=_POLIMI_CYCLE),
     })
 
 
@@ -129,7 +143,7 @@ def plot_seed_variance(
 
     fig, ax = plt.subplots(figsize=(8, 5))
     x = range(len(means))
-    ax.bar(x, means, yerr=stds, capsize=5, color="#4a90d9", alpha=0.8)
+    ax.bar(x, means, yerr=stds, capsize=5, color=POLIMI_DARK_BLUE, alpha=0.8)
     ax.set_xticks(x)
     ax.set_xticklabels(means.index, rotation=45, ha="right")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
@@ -265,12 +279,12 @@ def plot_training_dashboard(
     fig.suptitle(title, fontsize=14, fontweight="bold")
 
     panels = [
-        ("eval_reward_episode_reward_mean", "Eval Reward", axes[0, 0], "#1f77b4"),
-        ("collection_agents_info_targets_covered", "Targets Covered / Step", axes[0, 1], "#2ca02c"),
-        ("collection_agents_info_covering_reward", "Covering Reward", axes[1, 0], "#ff7f0e"),
-        ("collection_agents_info_collision_rew", "Collision Penalty", axes[1, 1], "#e74c3c"),
-        ("eval_reward_episode_len_mean", "Eval Episode Length", axes[2, 0], "#17becf"),
-        ("train_agents_entropy", "Policy Entropy", axes[2, 1], "#9467bd"),
+        ("eval_reward_episode_reward_mean", "Eval Reward", axes[0, 0], POLIMI_DARK_BLUE),
+        ("collection_agents_info_targets_covered", "Targets Covered / Step", axes[0, 1], POLIMI_GREEN),
+        ("collection_agents_info_covering_reward", "Covering Reward", axes[1, 0], POLIMI_ORANGE),
+        ("collection_agents_info_collision_rew", "Collision Penalty", axes[1, 1], POLIMI_RED),
+        ("eval_reward_episode_len_mean", "Eval Episode Length", axes[2, 0], POLIMI_LIGHT_BLUE),
+        ("train_agents_entropy", "Policy Entropy", axes[2, 1], POLIMI_GRAY),
     ]
 
     for csv_name, label, ax, color in panels:
@@ -286,7 +300,7 @@ def plot_training_dashboard(
     # Add heuristic reference line on reward plot
     if heuristic_reward is not None:
         axes[0, 0].axhline(
-            y=heuristic_reward, color="#e74c3c", linestyle="--",
+            y=heuristic_reward, color=POLIMI_RED, linestyle="--",
             linewidth=1.5, alpha=0.7, label=f"Heuristic ({heuristic_reward:.1f})",
         )
         axes[0, 0].legend(fontsize=9)
@@ -308,7 +322,7 @@ def plot_baseline_comparison_bars(
         metric_key: which metric to compare
     """
     set_style()
-    default_colors = {"Random": "#e74c3c", "Trained": "#1f77b4", "Heuristic": "#27ae60"}
+    default_colors = {"Random": POLIMI_RED, "Trained": POLIMI_DARK_BLUE, "Heuristic": POLIMI_GREEN}
     if colors is None:
         colors = default_colors
 
@@ -371,11 +385,11 @@ def plot_baseline_grouped_bars(
 
     bars_h = ax.barh(
         y - bar_h / 2, heur_vals, bar_h,
-        label="Heuristic", color="#27ae60", edgecolor="white",
+        label="Heuristic", color=POLIMI_GREEN, edgecolor="white",
     )
     bars_r = ax.barh(
         y + bar_h / 2, rand_vals, bar_h,
-        label="Random", color="#e74c3c", edgecolor="white",
+        label="Random", color=POLIMI_RED, edgecolor="white",
     )
 
     all_vals = heur_vals + rand_vals
@@ -423,9 +437,9 @@ def plot_results_comparison(
     set_style()
     if colors is None:
         colors = {
-            "Random": "#e74c3c",
-            "Heuristic": "#27ae60",
-            "Trained": "#1f77b4",
+            "Random": POLIMI_RED,
+            "Heuristic": POLIMI_GREEN,
+            "Trained": POLIMI_DARK_BLUE,
         }
 
     metrics = ["M1_success_rate", "M2_avg_return", "M6_coverage_progress"]
@@ -506,7 +520,7 @@ def plot_sweep_overview(
             for n in agents_vals
         ]
     else:
-        colors = "#1f77b4"
+        colors = POLIMI_DARK_BLUE
         handles = None
 
     panels = [

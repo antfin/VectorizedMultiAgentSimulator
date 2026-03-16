@@ -1,16 +1,17 @@
-"""Experiment config browser, editor, and status."""
+"""Experiment config browser and run status."""
 import streamlit as st
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import yaml
+from src.theme import apply_theme
 from src.config import CONFIGS_DIR, load_experiment
 from src.storage import ExperimentStorage
 from src.provenance import check_freshness, Freshness
 
 st.set_page_config(page_title="Experiments", layout="wide")
+apply_theme()
 st.title("Experiment Setup")
 
 # Experiment selector
@@ -84,19 +85,3 @@ for run_id, overrides, algo, seed in spec.iter_runs():
 
 if status_rows:
     st.dataframe(status_rows, use_container_width=True)
-
-# Config editor
-st.subheader("Edit Config")
-edited = st.text_area(
-    "YAML content",
-    value=config_text,
-    height=400,
-    key="config_editor",
-)
-if st.button("Save Config"):
-    try:
-        yaml.safe_load(edited)  # Validate YAML
-        config_path.write_text(edited)
-        st.success(f"Saved {config_path}")
-    except yaml.YAMLError as e:
-        st.error(f"Invalid YAML: {e}")

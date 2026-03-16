@@ -228,16 +228,24 @@ def _extract_training_dynamics(run_storage) -> Dict[str, float]:
     return result
 
 
+def _timestamp() -> str:
+    """Return YYYYMMDD_HHMM timestamp for file naming."""
+    from datetime import datetime
+    return datetime.now().strftime("%Y%m%d_%H%M")
+
+
 def _write_sweep_csv(spec, results):
-    """Write sweep_results.csv with all metrics + config + execution.
+    """Write timestamped sweep_results CSV with all metrics + config.
 
     This CSV is the single source of truth for OVH batch runs.
     Each row is one run with all fields from metrics.json.
+    Timestamped so previous runs are never overwritten.
     """
     import csv
     if not results:
         return
-    csv_path = spec.results_dir / "sweep_results.csv"
+    ts = _timestamp()
+    csv_path = spec.results_dir / f"sweep_results_{ts}.csv"
     # Collect all possible field names across all runs
     all_keys = set()
     for metrics in results.values():
@@ -1050,10 +1058,17 @@ def run_sweep(
     generate_sweep_report(spec, results, elapsed_seconds=elapsed)
     _write_sweep_csv(spec, results)
 
+    # Consolidate all CSVs (sweep + training iter/eval)
+    try:
+        from .consolidate import consolidate_csvs
+        consolidate_csvs(spec.exp_id)
+    except Exception as exc:
+        _log.warning(f"CSV consolidation failed: {exc}")
+
     if not notebook:
         _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")
         _log.info(
-            f"Sweep report: {spec.results_dir / 'sweep_report.md'}"
+            f"Sweep report: {spec.results_dir / 'sweep_report_*.md'}"
         )
 
     return results

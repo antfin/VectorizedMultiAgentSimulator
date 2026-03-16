@@ -10,8 +10,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.config import CONFIGS_DIR
-from src.storage import ExperimentStorage, load_cross_experiment
+from src.theme import apply_theme
+from src.config import CONFIGS_DIR, RESULTS_DIR
+from src.storage import load_cross_experiment
+from src.consolidate import load_latest_csv
 from src.plotting import (
     plot_baseline_comparison, plot_metric_radar, plot_success_vs_tokens,
     set_style, METRIC_LABELS, COLORS, LABELS,
@@ -19,6 +21,7 @@ from src.plotting import (
 from src.stats import compare_experiments, bootstrap_ci, pareto_frontier
 
 st.set_page_config(page_title="Cross-Experiment", layout="wide")
+apply_theme()
 st.title("Cross-Experiment Comparison")
 
 # Multi-select experiments
@@ -33,7 +36,19 @@ if len(selected_exps) < 1:
     st.info("Select at least one experiment.")
     st.stop()
 
-cross_df = load_cross_experiment(selected_exps)
+# Try to load from consolidated CSVs first, then fallback
+import pandas as pd
+frames = []
+for eid in selected_exps:
+    df = load_latest_csv(RESULTS_DIR / eid, "sweep_results")
+    if df is not None and not df.empty:
+        df["experiment"] = eid
+        frames.append(df)
+
+if frames:
+    cross_df = pd.concat(frames, ignore_index=True)
+else:
+    cross_df = load_cross_experiment(selected_exps)
 
 if cross_df.empty:
     st.info("No completed runs found for selected experiments.")

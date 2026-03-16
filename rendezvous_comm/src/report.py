@@ -10,6 +10,12 @@ from typing import Any, Dict, List, Optional
 from .config import ExperimentSpec
 
 
+def _sweep_report_filename() -> str:
+    """Return timestamped sweep report filename."""
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    return f"sweep_report_{ts}.md"
+
+
 METRIC_DETAILS = {
     "M1_success_rate": {
         "label": "M1: Success Rate",
@@ -338,7 +344,9 @@ def generate_sweep_report(
         L.append("No completed runs.")
         report_text = "\n".join(L)
         results_dir.mkdir(parents=True, exist_ok=True)
-        (results_dir / "sweep_report.md").write_text(report_text)
+        (results_dir / _sweep_report_filename()).write_text(
+            report_text
+        )
         return report_text
 
     # ── 2. Configuration ──
@@ -506,6 +514,6 @@ def generate_sweep_report(
 
     report_text = "\n".join(L)
     results_dir.mkdir(parents=True, exist_ok=True)
-    (results_dir / "sweep_report.md").write_text(report_text)
+    (results_dir / _sweep_report_filename()).write_text(report_text)
 
     return report_text
