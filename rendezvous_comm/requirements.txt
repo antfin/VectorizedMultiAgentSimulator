@@ -14,12 +14,21 @@ vmas
 matplotlib
 numpy
 pandas
+scipy
+
+# Streamlit dashboard
+streamlit
+
+# Video generation
+imageio
+imageio-ffmpeg
 
 # Config & serialization
 pyyaml
 
 # Notebook display
 ipywidgets
+ipython
 markdown
 
 # Utilities

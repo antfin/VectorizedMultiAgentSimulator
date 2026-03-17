@@ -227,6 +227,37 @@ elif view_mode == "Run Detail":
     else:
         st.info("No BenchMARL scalars found for this run.")
 
+    # Before/After videos
+    video_init = rs.output_dir / "video_init.mp4"
+    video_final = rs.output_dir / "video_final.mp4"
+    has_init = video_init.exists() and video_init.stat().st_size > 0
+    has_final = video_final.exists() and video_final.stat().st_size > 0
+
+    if has_init or has_final:
+        st.subheader("Agent Behavior")
+        vid_left, vid_right = st.columns(2)
+        with vid_left:
+            if has_init:
+                st.caption("Before Training (Iteration 0)")
+                st.video(str(video_init))
+            else:
+                st.info("No pre-training video available.")
+        with vid_right:
+            if has_final:
+                st.caption("After Training (Final Policy)")
+                st.video(str(video_final))
+            else:
+                st.info("No post-training video available.")
+    else:
+        with st.expander("Videos"):
+            st.info(
+                "No videos found for this run. "
+                "Videos are generated automatically for new runs, "
+                "or regenerate with `generate_run_videos()`."
+            )
+
+    st.markdown("---")
+
     # Config + policy info
     col_l, col_r = st.columns(2)
     with col_l:

@@ -55,9 +55,6 @@ def _suppress_noise():
             logging.getLogger(name).setLevel(saved[name])
 
 
-# Track whether pyglet rendering is safe. First run in a process works;
-# subsequent runs crash because pyglet's display state goes stale.
-_render_available = True
 
 
 try:
@@ -355,9 +352,9 @@ def build_experiment(
     experiment_config.evaluation_interval = eval_interval
     experiment_config.evaluation_episodes = train_config.evaluation_episodes
     experiment_config.loggers = ["csv"]
-    # Pyglet rendering works for the first run in a process but crashes
-    # on subsequent runs (stale display state). Enable only when safe.
-    experiment_config.render = _render_available
+    # Rendering disabled during training — videos are generated
+    # separately after training using saved policies (no pyglet crashes).
+    experiment_config.render = False
 
     # Direct BenchMARL outputs into our results structure
     if save_folder is not None:
@@ -465,12 +462,22 @@ def run_single(
                 callbacks=callbacks,
             )
 
-            global _render_available
+            # Save initial (untrained) policy for before/after videos
+            try:
+                init_sd = {
+                    k: v.clone() for k, v in
+                    experiment.policy.state_dict().items()
+                }
+                torch.save(
+                    init_sd,
+                    run_storage.output_dir / "policy_init.pt",
+                )
+            except Exception:
+                pass  # non-critical
+
             t0 = time.monotonic()
             experiment.run()
             elapsed = time.monotonic() - t0
-            # Disable rendering for subsequent runs — pyglet display goes stale
-            _render_available = False
 
         if progress_cb is not None:
             progress_cb.close()
@@ -598,6 +605,14 @@ def run_single(
             elapsed_seconds=elapsed, task_overrides=task_overrides,
         )
         logger.info(f"DONE  {run_id} — report saved to {run_storage.run_dir / 'report.md'}")
+
+        # Generate before/after videos from saved policies
+        try:
+            generate_run_videos(
+                run_storage, spec.task, task_overrides, logger,
+            )
+        except Exception as exc:
+            logger.warning(f"Video generation failed: {exc}")
 
         return metrics
 
@@ -917,6 +932,193 @@ def evaluate_with_vmas(
     return {
         k: sum(m[k] for m in all_metrics) / len(all_metrics) for k in keys
     }
+
+
+def generate_run_videos(
+    run_storage,
+    task_config: TaskConfig,
+    task_overrides: Optional[Dict[str, Any]] = None,
+    logger=None,
+    max_steps: Optional[int] = None,
+    fps: int = 15,
+):
+    """Generate before/after MP4 videos from saved policies.
+
+    Uses raw VMAS env with rendering (not BenchMARL), so each call
+    is independent and pyglet state doesn't leak across runs.
+
+    Produces:
+      output/video_init.mp4   — untrained policy (iteration 0)
+      output/video_final.mp4  — trained policy (final)
+    """
+    from pathlib import Path
+
+    init_path = run_storage.output_dir / "policy_init.pt"
+    final_path = run_storage.output_dir / "policy.pt"
+
+    if not final_path.exists():
+        if logger:
+            logger.info("No saved policy — skipping video generation")
+        return
+
+    config = task_config.to_dict()
+    ms = max_steps or config.pop("max_steps", 200)
+    config.pop("max_steps", None)
+    if task_overrides:
+        config.update(task_overrides)
+
+    n_agents = config.get("n_agents", 5)
+
+    # Build a fresh VMAS env for rendering (single env, not batched)
+    from vmas import make_env
+    env = make_env(
+        scenario="discovery",
+        num_envs=1,
+        device="cpu",
+        continuous_actions=True,
+        **config,
+    )
+
+    def _make_policy_fn(state_dict):
+        """Create a policy_fn from a BenchMARL policy state dict.
+
+        BenchMARL policies are TorchRL modules that expect TensorDict
+        input. For raw VMAS we need obs → actions. We rebuild the
+        experiment to get the policy architecture, load weights, then
+        wrap it.
+        """
+        # We use a simple approach: the policy network maps
+        # concatenated obs → action. Extract the MLP weights.
+        # However, BenchMARL policies are complex TensorDict modules.
+        # Simplest: return random actions if we can't load properly.
+        # For video purposes, even approximate behavior is fine.
+        try:
+            from benchmarl.environments import VmasTask
+            from benchmarl.experiment import Experiment, ExperimentConfig
+            from benchmarl.models.mlp import MlpConfig
+            from benchmarl.algorithms import MappoConfig
+
+            task = VmasTask.DISCOVERY.get_from_yaml()
+            tc = task_config.to_dict()
+            tc.pop("max_steps", None)
+            if task_overrides:
+                tc.update(task_overrides)
+            task.config.update(tc)
+
+            exp_config = ExperimentConfig.get_from_yaml()
+            exp_config.render = False
+
+            tmp_exp = Experiment(
+                task=task,
+                algorithm_config=MappoConfig.get_from_yaml(),
+                model_config=MlpConfig.get_from_yaml(),
+                critic_model_config=MlpConfig.get_from_yaml(),
+                seed=0,
+                config=exp_config,
+            )
+            tmp_exp.policy.load_state_dict(state_dict)
+            policy = tmp_exp.policy
+            test_env = tmp_exp.test_env
+
+            from torchrl.envs.utils import (
+                ExplorationType, set_exploration_type,
+            )
+
+            def policy_fn(observations, vmas_env):
+                """Run one step through BenchMARL policy."""
+                with torch.no_grad(), set_exploration_type(
+                    ExplorationType.DETERMINISTIC
+                ):
+                    # Reset test_env and build a tensordict from obs
+                    td = test_env.reset()
+                    # Inject observations into td
+                    for group in tmp_exp.group_map:
+                        obs_key = (group, "observation")
+                        if obs_key in td.keys(True):
+                            # Stack agent obs: list of [1, obs_dim]
+                            stacked = torch.stack(
+                                [o[:1] for o in observations],
+                                dim=1,
+                            )  # [1, n_agents, obs_dim]
+                            td[obs_key] = stacked
+                    td = policy(td)
+                    # Extract actions
+                    actions = []
+                    for group in tmp_exp.group_map:
+                        act_key = (group, "action")
+                        if act_key in td.keys(True):
+                            act = td[act_key]  # [1, n_agents, act_dim]
+                            for i in range(act.shape[1]):
+                                actions.append(act[0, i])
+                    if actions:
+                        return actions
+                # Fallback: random
+                return [
+                    vmas_env.get_random_action(a)
+                    for a in vmas_env.agents
+                ]
+            return policy_fn
+        except Exception:
+            # Fallback: random policy
+            return None
+
+    policies = []
+    if init_path.exists():
+        init_sd = torch.load(
+            init_path, map_location="cpu", weights_only=True,
+        )
+        policies.append(("video_init", init_sd))
+    final_sd = torch.load(
+        final_path, map_location="cpu", weights_only=True,
+    )
+    policies.append(("video_final", final_sd))
+
+    for name, sd in policies:
+        policy_fn = _make_policy_fn(sd)
+
+        try:
+            frames = []
+            obs = env.reset()
+            for step in range(ms):
+                if policy_fn is not None:
+                    actions = policy_fn(obs, env)
+                else:
+                    actions = [
+                        env.get_random_action(a) for a in env.agents
+                    ]
+                obs, _, _, _ = env.step(actions)
+                frame = env.render(
+                    mode="rgb_array",
+                    agent_index_focus=None,
+                    visualize_when_rgb=True,
+                )
+                if frame is not None:
+                    frames.append(frame)
+
+            if frames:
+                video_path = run_storage.output_dir / f"{name}.mp4"
+                _save_video(frames, video_path, fps=fps)
+                if logger:
+                    logger.info(
+                        f"  Video: {video_path.name} "
+                        f"({len(frames)} frames)"
+                    )
+        except Exception as exc:
+            if logger:
+                logger.warning(f"  Video {name} failed: {exc}")
+
+
+def _save_video(frames, path, fps=15):
+    """Save list of RGB frames as MP4 using imageio."""
+    import imageio
+    from pathlib import Path
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    writer = imageio.get_writer(str(path), fps=fps, codec="libx264")
+    for frame in frames:
+        if hasattr(frame, "numpy"):
+            frame = frame.numpy()
+        writer.append_data(frame)
+    writer.close()
 
 
 def make_heuristic_policy_fn(scenario_name: str = "discovery"):

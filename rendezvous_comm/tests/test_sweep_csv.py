@@ -34,8 +34,9 @@ class TestWriteSweepCsv:
         }
         _write_sweep_csv(spec, results)
 
-        csv_path = tmp_path / "sweep_results.csv"
-        assert csv_path.exists()
+        csv_files = list(tmp_path.glob("sweep_results_*.csv"))
+        assert len(csv_files) == 1
+        csv_path = csv_files[0]
         with open(csv_path) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -49,7 +50,7 @@ class TestWriteSweepCsv:
         spec = MagicMock()
         spec.results_dir = tmp_path
         _write_sweep_csv(spec, {})
-        assert not (tmp_path / "sweep_results.csv").exists()
+        assert list(tmp_path.glob("sweep_results_*.csv")) == []
 
     def test_heterogeneous_keys(self, tmp_path):
         """Runs with different metric sets still produce valid CSV."""
@@ -60,7 +61,8 @@ class TestWriteSweepCsv:
             "run2": {"M1_success_rate": 0.9},
         }
         _write_sweep_csv(spec, results)
-        with open(tmp_path / "sweep_results.csv") as f:
+        csv_path = list(tmp_path.glob("sweep_results_*.csv"))[0]
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
         assert len(rows) == 2
@@ -73,7 +75,8 @@ class TestWriteSweepCsv:
         spec.results_dir = tmp_path
         results = {"r1": {"M1_success_rate": 0.5, "z_field": 1}}
         _write_sweep_csv(spec, results)
-        with open(tmp_path / "sweep_results.csv") as f:
+        csv_path = list(tmp_path.glob("sweep_results_*.csv"))[0]
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
             list(reader)  # consume
             assert reader.fieldnames[0] == "run_id"
@@ -90,7 +93,8 @@ class TestWriteSweepCsv:
             },
         }
         _write_sweep_csv(spec, results)
-        with open(tmp_path / "sweep_results.csv") as f:
+        csv_path = list(tmp_path.glob("sweep_results_*.csv"))[0]
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
         row = rows[0]
@@ -151,7 +155,8 @@ class TestWriteSweepCsv:
             },
         }
         _write_sweep_csv(spec, results)
-        with open(tmp_path / "sweep_results.csv") as f:
+        csv_path = list(tmp_path.glob("sweep_results_*.csv"))[0]
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
         row = rows[0]
@@ -177,7 +182,8 @@ class TestWriteSweepCsv:
             "r1": {"z_metric": 1, "a_metric": 2, "m_metric": 3},
         }
         _write_sweep_csv(spec, results)
-        with open(tmp_path / "sweep_results.csv") as f:
+        csv_path = list(tmp_path.glob("sweep_results_*.csv"))[0]
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
             list(reader)
         cols = reader.fieldnames

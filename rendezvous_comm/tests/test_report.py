@@ -212,9 +212,9 @@ class TestGenerateSweepReport:
         generate_sweep_report(
             spec, self._make_all_metrics(), results_dir=tmp_path
         )
-        report_file = tmp_path / "sweep_report.md"
-        assert report_file.exists()
-        assert len(report_file.read_text()) > 0
+        report_files = list(tmp_path.glob("sweep_report_*.md"))
+        assert len(report_files) == 1
+        assert len(report_files[0].read_text()) > 0
 
     def test_contains_sweep_header_with_run_count(self, tmp_path):
         spec = _make_spec()
@@ -268,7 +268,7 @@ class TestGenerateSweepReport:
         )
         assert "No completed runs" in result
         # Should still write the file
-        assert (tmp_path / "sweep_report.md").exists()
+        assert len(list(tmp_path.glob("sweep_report_*.md"))) == 1
 
     def test_empty_all_metrics_short_report(self, tmp_path):
         spec = _make_spec()
@@ -293,5 +293,6 @@ class TestGenerateSweepReport:
         result = generate_sweep_report(
             spec, self._make_all_metrics(), results_dir=tmp_path
         )
-        report_file = tmp_path / "sweep_report.md"
-        assert report_file.read_text() == result
+        report_files = list(tmp_path.glob("sweep_report_*.md"))
+        assert len(report_files) == 1
+        assert report_files[0].read_text() == result

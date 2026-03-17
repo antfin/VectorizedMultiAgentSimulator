@@ -191,8 +191,9 @@ class TestSweepFolderStructure:
             spec, all_metrics, results_dir=results_dir,
         )
 
-        report_path = results_dir / "sweep_report.md"
-        assert report_path.exists()
+        report_files = list(results_dir.glob("sweep_report_*.md"))
+        assert len(report_files) == 1
+        report_path = report_files[0]
         # At results root, not inside any run folder
         assert report_path.parent == results_dir
 
@@ -206,10 +207,10 @@ class TestSweepFolderStructure:
             results_dir=storage.results_dir,
         )
 
-        # sweep_report.md at exp root
-        assert (storage.results_dir / "sweep_report.md").exists()
+        # sweep_report_*.md at exp root
+        assert len(list(storage.results_dir.glob("sweep_report_*.md"))) == 1
         # NOT inside any run folder
-        assert not (rs.run_dir / "sweep_report.md").exists()
+        assert list(rs.run_dir.glob("sweep_report_*.md")) == []
 
     def test_multiple_runs_each_in_own_folder(self, tmp_path):
         storage = ExperimentStorage("er1", results_root=tmp_path)
@@ -339,7 +340,8 @@ class TestFullRunLifecycle:
         )
 
         # ── Verify sweep-level artifacts ──
-        assert (storage.results_dir / "sweep_report.md").is_file()
+        sweep_reports = list(storage.results_dir.glob("sweep_report_*.md"))
+        assert len(sweep_reports) == 1 and sweep_reports[0].is_file()
 
         # ── Verify each run has its own complete tree ──
         for run_id in run_ids:

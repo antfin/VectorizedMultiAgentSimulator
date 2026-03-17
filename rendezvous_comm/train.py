@@ -18,9 +18,8 @@ import sys
 import time
 from pathlib import Path
 
-# Disable rendering in headless environments
-if not os.environ.get("DISPLAY"):
-    os.environ.setdefault("MPLBACKEND", "Agg")
+# Disable matplotlib GUI in CLI
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 
 def main():
