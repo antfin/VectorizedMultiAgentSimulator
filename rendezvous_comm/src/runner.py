@@ -1014,8 +1014,13 @@ def generate_run_videos(
                 tc.update(task_overrides)
             task.config.update(tc)
 
+            import tempfile
+
             exp_config = ExperimentConfig.get_from_yaml()
             exp_config.render = False
+            exp_config.save_folder = tempfile.mkdtemp(
+                prefix="vmas_video_"
+            )
 
             tmp_exp = Experiment(
                 task=task,
