@@ -406,6 +406,15 @@ def run_single(
     try:
         if skip_complete and run_storage.is_complete():
             logger.info(f"SKIP  {run_id} — already complete")
+            # Generate videos for completed runs that are missing them
+            video_final = run_storage.output_dir / "video_final.mp4"
+            if run_storage.has_policy() and not video_final.exists():
+                try:
+                    generate_run_videos(
+                        run_storage, spec.task, task_overrides, logger,
+                    )
+                except Exception as exc:
+                    logger.warning(f"Video generation failed: {exc}")
             return run_storage.load_metrics()
 
         # Save config snapshot + provenance
@@ -1062,19 +1071,23 @@ def generate_run_videos(
             # Fallback: random policy
             return None
 
+    # Build list of (name, state_dict_or_None) — None means random
     policies = []
     if init_path.exists():
         init_sd = torch.load(
             init_path, map_location="cpu", weights_only=True,
         )
         policies.append(("video_init", init_sd))
+    else:
+        # No saved init policy — use random actions as proxy
+        policies.append(("video_init", None))
     final_sd = torch.load(
         final_path, map_location="cpu", weights_only=True,
     )
     policies.append(("video_final", final_sd))
 
     for name, sd in policies:
-        policy_fn = _make_policy_fn(sd)
+        policy_fn = _make_policy_fn(sd) if sd is not None else None
 
         try:
             frames = []
@@ -1111,12 +1124,36 @@ def generate_run_videos(
 def _save_video(frames, path, fps=15):
     """Save list of RGB frames as MP4 using imageio."""
     import imageio
+    import numpy as np
     from pathlib import Path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    writer = imageio.get_writer(str(path), fps=fps, codec="libx264")
+
+    # Normalize frames to consistent size (VMAS can vary by 1-2px)
+    processed = []
     for frame in frames:
         if hasattr(frame, "numpy"):
             frame = frame.numpy()
+        processed.append(frame)
+
+    if not processed:
+        return
+
+    # Use the first frame's size as reference; resize any mismatches
+    h, w = processed[0].shape[:2]
+    for i, f in enumerate(processed):
+        if f.shape[0] != h or f.shape[1] != w:
+            # Crop or pad to match reference size
+            fh, fw = f.shape[:2]
+            out = np.zeros((h, w, 3), dtype=np.uint8)
+            ch, cw = min(h, fh), min(w, fw)
+            out[:ch, :cw] = f[:ch, :cw]
+            processed[i] = out
+
+    writer = imageio.get_writer(
+        str(path), fps=fps, codec="libx264",
+        macro_block_size=1,  # avoid resize warnings
+    )
+    for frame in processed:
         writer.append_data(frame)
     writer.close()
 

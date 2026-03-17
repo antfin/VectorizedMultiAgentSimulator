@@ -54,6 +54,10 @@ def main():
         "--rebuild-csv", action="store_true",
         help="Rebuild consolidated CSVs without training",
     )
+    parser.add_argument(
+        "--rebuild-videos", action="store_true",
+        help="Regenerate videos for all completed runs",
+    )
     args = parser.parse_args()
 
     # Setup logging
@@ -88,6 +92,41 @@ def main():
         if not paths:
             log.warning("No data to consolidate.")
             sys.exit(1)
+        sys.exit(0)
+
+    # Rebuild videos for all completed runs
+    if args.rebuild_videos:
+        from src.storage import ExperimentStorage
+        from src.runner import generate_run_videos
+        storage = ExperimentStorage(spec.exp_id)
+        run_dirs = storage.list_run_dirs()
+        if not run_dirs:
+            log.warning("No completed runs found.")
+            sys.exit(1)
+        from src.storage import _extract_run_id, RunStorage
+        n_ok, n_fail = 0, 0
+        for rd in run_dirs:
+            rid = _extract_run_id(rd.name)
+            rs = RunStorage(rd, rid)
+            if not rs.has_policy():
+                log.info(f"  SKIP {rid} — no policy")
+                continue
+            log.info(f"  Generating videos for {rid}...")
+            try:
+                # Parse task_overrides from saved config
+                import yaml
+                cfg_path = rs.input_dir / "config.yaml"
+                overrides = None
+                if cfg_path.exists():
+                    with open(cfg_path) as f:
+                        cfg = yaml.safe_load(f) or {}
+                    overrides = cfg.get("task_overrides")
+                generate_run_videos(rs, spec.task, overrides, log)
+                n_ok += 1
+            except Exception as exc:
+                log.warning(f"  FAIL {rid}: {exc}")
+                n_fail += 1
+        log.info(f"Videos: {n_ok} generated, {n_fail} failed")
         sys.exit(0)
 
     # Override device if specified

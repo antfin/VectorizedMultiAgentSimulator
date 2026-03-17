@@ -238,7 +238,7 @@ elif view_mode == "Run Detail":
         vid_left, vid_right = st.columns(2)
         with vid_left:
             if has_init:
-                st.caption("Before Training (Iteration 0)")
+                st.caption("Before Training (Random Policy)")
                 st.video(str(video_init))
             else:
                 st.info("No pre-training video available.")
