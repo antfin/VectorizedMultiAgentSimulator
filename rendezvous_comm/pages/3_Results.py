@@ -155,6 +155,43 @@ elif view_mode == "Run Detail":
 
     run_id = st.sidebar.selectbox("Run", completed)
     rs = storage.get_run(run_id)
+
+    # Rebuild Videos sidebar button (runs in subprocess to avoid
+    # pyglet/OpenGL crashes inside Streamlit's threaded callbacks)
+    if rs.has_policy():
+        if st.sidebar.button("Rebuild Videos"):
+            import subprocess, sys
+
+            script = (
+                "import sys, yaml; "
+                "from pathlib import Path; "
+                "sys.path.insert(0, {project!r}); "
+                "from src.config import TaskConfig; "
+                "from src.storage import RunStorage; "
+                "from src.runner import generate_run_videos; "
+                "rs = RunStorage(Path({run_dir!r}), {run_id!r}); "
+                "cfg = yaml.safe_load(open(rs.input_dir / 'config.yaml')); "
+                "tc = TaskConfig(**cfg.get('task', {{}})); "
+                "generate_run_videos(rs, tc, cfg.get('task_overrides'))"
+            ).format(
+                project=str(Path(__file__).parent.parent),
+                run_dir=str(rs.run_dir),
+                run_id=run_id,
+            )
+            with st.spinner("Generating videos (subprocess)..."):
+                result = subprocess.run(
+                    [sys.executable, "-c", script],
+                    capture_output=True, text=True,
+                    timeout=300,
+                )
+            if result.returncode == 0:
+                st.sidebar.success("Videos generated")
+                st.rerun()
+            else:
+                st.sidebar.error(
+                    f"Video generation failed:\n{result.stderr[-500:]}"
+                )
+
     metrics = rs.load_metrics()
 
     # KPI cards
@@ -233,8 +270,9 @@ elif view_mode == "Run Detail":
     has_init = video_init.exists() and video_init.stat().st_size > 0
     has_final = video_final.exists() and video_final.stat().st_size > 0
 
+    st.subheader("Agent Behavior")
+
     if has_init or has_final:
-        st.subheader("Agent Behavior")
         vid_left, vid_right = st.columns(2)
         with vid_left:
             if has_init:
@@ -249,12 +287,7 @@ elif view_mode == "Run Detail":
             else:
                 st.info("No post-training video available.")
     else:
-        with st.expander("Videos"):
-            st.info(
-                "No videos found for this run. "
-                "Videos are generated automatically for new runs, "
-                "or regenerate with `generate_run_videos()`."
-            )
+        st.info("No videos found for this run.")
 
     st.markdown("---")
 

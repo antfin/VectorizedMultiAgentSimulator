@@ -29,12 +29,28 @@ def apply_theme(title: str = ""):
         [data-testid="stMainMenuButton"] {display: none !important;}
         [data-testid="stToolbarActions"] {display: none !important;}
 
-        /* Keep native header white, shrink to minimal height */
+        /* Keep native header white, shrink to minimal height —
+           but expand when running (spinner visible) */
         [data-testid="stHeader"],
         .stAppHeader {
             background-color: #FFFFFF !important;
             height: 15px !important;
             min-height: 15px !important;
+        }
+        [data-testid="stHeader"]:has([data-testid="stStatusWidget"]),
+        .stAppHeader:has([data-testid="stStatusWidget"]) {
+            height: auto !important;
+            min-height: 40px !important;
+        }
+
+        /* Make spinner/status text visible (dark blue on white) */
+        [data-testid="stStatusWidget"],
+        [data-testid="stStatusWidget"] * {
+            color: #002F6C !important;
+        }
+        [data-testid="stStatusWidget"] svg {
+            fill: #002F6C !important;
+            stroke: #002F6C !important;
         }
 
         /* Reduce top padding to match smaller header */
