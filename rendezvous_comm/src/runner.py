@@ -991,89 +991,56 @@ def generate_run_videos(
     def _make_policy_fn(state_dict):
         """Create a policy_fn from a BenchMARL policy state dict.
 
-        BenchMARL policies are TorchRL modules that expect TensorDict
-        input. For raw VMAS we need obs → actions. We rebuild the
-        experiment to get the policy architecture, load weights, then
-        wrap it.
+        Extracts the raw MLP weights from the state dict and runs
+        them directly (obs → tanh → action), bypassing TensorDict.
+        BenchMARL MLP keys look like:
+          module.0.module.0.module.0.mlp.params.{0,2,4}.{weight,bias}
+        This is a 3-layer MLP with ReLU activations + tanh output.
         """
-        # We use a simple approach: the policy network maps
-        # concatenated obs → action. Extract the MLP weights.
-        # However, BenchMARL policies are complex TensorDict modules.
-        # Simplest: return random actions if we can't load properly.
-        # For video purposes, even approximate behavior is fine.
         try:
-            from benchmarl.environments import VmasTask
-            from benchmarl.experiment import Experiment, ExperimentConfig
-            from benchmarl.models.mlp import MlpConfig
-            from benchmarl.algorithms import MappoConfig
+            import torch.nn.functional as F
 
-            task = VmasTask.DISCOVERY.get_from_yaml()
-            tc = task_config.to_dict()
-            tc.pop("max_steps", None)
-            if task_overrides:
-                tc.update(task_overrides)
-            task.config.update(tc)
+            # Extract weight/bias pairs sorted by layer index
+            params = {}
+            for k, v in state_dict.items():
+                if "mlp.params" not in k:
+                    continue
+                parts = k.split(".")
+                kind = parts[-1]  # "weight" or "bias"
+                if kind not in ("weight", "bias"):
+                    continue
+                idx = int(parts[parts.index("params") + 1])
+                params.setdefault(idx, {})[kind] = v
 
-            import tempfile
+            if not params:
+                return None
 
-            exp_config = ExperimentConfig.get_from_yaml()
-            exp_config.render = False
-            exp_config.save_folder = tempfile.mkdtemp(
-                prefix="vmas_video_"
-            )
+            layers = [params[i] for i in sorted(params.keys())]
 
-            tmp_exp = Experiment(
-                task=task,
-                algorithm_config=MappoConfig.get_from_yaml(),
-                model_config=MlpConfig.get_from_yaml(),
-                critic_model_config=MlpConfig.get_from_yaml(),
-                seed=0,
-                config=exp_config,
-            )
-            tmp_exp.policy.load_state_dict(state_dict)
-            policy = tmp_exp.policy
-            test_env = tmp_exp.test_env
-
-            from torchrl.envs.utils import (
-                ExplorationType, set_exploration_type,
-            )
+            # Infer action dim: output is 2*action_dim (mean+logstd)
+            out_dim = layers[-1]["weight"].shape[0]
+            act_dim = out_dim // 2
 
             def policy_fn(observations, vmas_env):
-                """Run one step through BenchMARL policy."""
-                with torch.no_grad(), set_exploration_type(
-                    ExplorationType.DETERMINISTIC
-                ):
-                    # Reset test_env and build a tensordict from obs
-                    td = test_env.reset()
-                    # Inject observations into td
-                    for group in tmp_exp.group_map:
-                        obs_key = (group, "observation")
-                        if obs_key in td.keys(True):
-                            # Stack agent obs: list of [1, obs_dim]
-                            stacked = torch.stack(
-                                [o[:1] for o in observations],
-                                dim=1,
-                            )  # [1, n_agents, obs_dim]
-                            td[obs_key] = stacked
-                    td = policy(td)
-                    # Extract actions
+                """Forward pass through extracted MLP weights."""
+                with torch.no_grad():
                     actions = []
-                    for group in tmp_exp.group_map:
-                        act_key = (group, "action")
-                        if act_key in td.keys(True):
-                            act = td[act_key]  # [1, n_agents, act_dim]
-                            for i in range(act.shape[1]):
-                                actions.append(act[0, i])
-                    if actions:
-                        return actions
-                # Fallback: random
-                return [
-                    vmas_env.get_random_action(a)
-                    for a in vmas_env.agents
-                ]
+                    for obs in observations:
+                        # obs: [num_envs, obs_dim], keep batch dim
+                        x = obs.float()
+                        for layer in layers[:-1]:
+                            x = F.linear(x, layer["weight"],
+                                         layer["bias"])
+                            x = F.relu(x)
+                        last = layers[-1]
+                        x = F.linear(x, last["weight"],
+                                     last["bias"])
+                        # First half = action mean (deterministic)
+                        x = torch.tanh(x[..., :act_dim])
+                        actions.append(x)
+                    return actions
             return policy_fn
         except Exception:
-            # Fallback: random policy
             return None
 
     # Build list of (name, state_dict_or_None) — None means random
