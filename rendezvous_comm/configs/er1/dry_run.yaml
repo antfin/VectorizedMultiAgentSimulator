@@ -25,20 +25,20 @@ train:
   max_n_frames: 10_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
-  on_policy_n_envs_per_worker: 60
+  on_policy_n_envs_per_worker: 600
   on_policy_n_minibatch_iters: 45
   on_policy_minibatch_size: 4096
   lr: 0.00005
   share_policy_params: true
   evaluation_interval: 960_000
   evaluation_episodes: 50
-  train_device: cpu
-  sampling_device: cpu
+  train_device: cuda
+  sampling_device: cuda
 
 sweep:
   seeds: [0]
   n_agents: [4]
-  n_targets: [3]
+  n_targets: [4]
   agents_per_target: [2]
   lidar_range: [0.35]
   algorithms: [ippo]

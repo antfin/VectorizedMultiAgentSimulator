@@ -353,13 +353,22 @@ def download_results(
     prefix: str = "",
     region: Optional[str] = None,
 ) -> bool:
-    """Download results from an OVH bucket."""
+    """Download results from an OVH bucket.
+
+    Files are downloaded relative to CWD. We use --output to prepend
+    the local_dir path so files land in the right place.
+    """
     bucket = bucket or default_bucket_results()
     region = region or default_region()
+
+    # Ensure local_dir ends with / for --output prefix
+    out_prefix = str(local_dir).rstrip("/") + "/"
+
     args = [
         "bucket", "object", "download",
         f"{bucket}@{region}",
-        "--output-dir", local_dir,
+        "--output", out_prefix,
+        "--no-overwrite",
         "--workers", "8",
     ]
     if prefix:
