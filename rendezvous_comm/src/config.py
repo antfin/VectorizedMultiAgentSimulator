@@ -13,7 +13,9 @@ CONFIGS_DIR = RENDEZVOUS_ROOT / "configs"
 RESULTS_DIR = Path(
     os.environ.get("RESULTS_DIR", str(RENDEZVOUS_ROOT / "results"))
 )
-CHECKPOINTS_DIR = RENDEZVOUS_ROOT / "checkpoints"
+CHECKPOINTS_DIR = Path(
+    os.environ.get("CHECKPOINTS_DIR", str(RENDEZVOUS_ROOT / "checkpoints"))
+)
 
 # ── Short names for run IDs ───────────────────────────────────────
 _SHORT = {

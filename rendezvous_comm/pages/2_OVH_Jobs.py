@@ -115,7 +115,7 @@ with tab_monitor:
     if jobs:
         rows = []
         for j in jobs:
-            dur_m = j.duration_seconds // 60 if j.duration_seconds else 0
+            dur_m = int(j.duration_seconds) // 60 if j.duration_seconds else 0
             rows.append({
                 "ID": j.id[:12],
                 "Name": j.name,

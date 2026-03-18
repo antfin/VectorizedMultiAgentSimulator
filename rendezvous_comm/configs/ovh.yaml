@@ -12,22 +12,22 @@ storage:
 
 # ── AI Training ───────────────────────────────────────────────
 training:
-  default_gpu: "L4"                     # Default GPU model for new jobs
+  default_gpu: "V100S"                  # Default GPU model for new jobs
   n_gpu: 1                              # GPUs per job
   image: "pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime"
 
-# ── GPU catalog (OVH startup program) ────────────────────────
-# Pricing as of 2026-03. Update if OVH changes rates.
+# ── GPU catalog ──────────────────────────────────────────────
+# Run `ovhai capabilities flavor list` to see available flavors.
+# "flavor" maps the display name to the OVH flavor ID.
 gpu_models:
-  L4:
-    vram_gb: 24
-    eur_per_hr: 0.75
-  L40S:
-    vram_gb: 48
-    eur_per_hr: 1.40
-  H100:
-    vram_gb: 80
-    eur_per_hr: 3.10
+  V100S:
+    vram_gb: 32
+    eur_per_hr: 2.10
+    flavor: "ai1-1-gpu"
+  CPU:
+    vram_gb: 0
+    eur_per_hr: 0.03
+    flavor: "ai1-1-cpu"
 
 # ── Mount paths inside the container ─────────────────────────
 mounts:

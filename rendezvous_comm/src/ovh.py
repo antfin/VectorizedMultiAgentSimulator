@@ -65,9 +65,7 @@ def _mounts_cfg() -> Dict[str, str]:
 def _gpu_models_from_config() -> Dict[str, Dict]:
     """Build GPU_MODELS dict from config, with hardcoded fallback."""
     fallback = {
-        "L4": {"vram_gb": 24, "eur_per_hr": 0.75},
-        "L40S": {"vram_gb": 48, "eur_per_hr": 1.40},
-        "H100": {"vram_gb": 80, "eur_per_hr": 3.10},
+        "V100S": {"vram_gb": 32, "eur_per_hr": 2.10, "flavor": "ai1-1-gpu"},
     }
     return _cfg().get("gpu_models", fallback)
 
@@ -88,7 +86,7 @@ def default_bucket_results() -> str:
 
 
 def default_gpu() -> str:
-    return _training_cfg().get("default_gpu", "L4")
+    return _training_cfg().get("default_gpu", "V100S")
 
 
 def default_n_gpu() -> int:
@@ -161,7 +159,7 @@ def submit_training_job(
     Args:
         config_yaml: path to config YAML relative to code root
             (e.g., "rendezvous_comm/configs/er1/demo.yaml")
-        gpu_type: GPU model (L4, L40S, H100)
+        gpu_type: GPU model (V100S, CPU)
         bucket_code: S3 bucket with uploaded code
         bucket_results: S3 bucket for results
         region: OVH region (GRA, BHS, etc.)
@@ -195,21 +193,28 @@ def submit_training_job(
         job_name = f"rendezvous_{parts}"
 
     train_cmd = (
-        f"pip install -e {mount_code}/rendezvous_comm 2>/dev/null; "
-        f"cd {mount_code} && "
-        f"python -m rendezvous_comm.train "
+        f"export HOME=/tmp && "
+        f"pip install "
+        f"vmas benchmarl tensordict torchrl "
+        f"pyyaml pandas scipy imageio matplotlib && "
+        f"cd {mount_code}/rendezvous_comm && "
+        f"python train.py "
         f"{mount_code}/{config_yaml} "
         f"--device cuda"
     )
 
+    # Map GPU model name to OVH flavor ID
+    flavor = GPU_MODELS.get(gpu_type, {}).get("flavor", gpu_type)
+
     args = [
         "job", "run", image,
         "--name", job_name,
+        "--flavor", flavor,
         "--gpu", str(n_gpu),
-        "--gpu-model", gpu_type,
         "--volume", f"{bucket_code}@{region}/:{mount_code}:ro",
         "--volume", f"{bucket_results}@{region}/:{mount_results}:rwd",
         "--env", f"RESULTS_DIR={mount_results}",
+        "--env", f"CHECKPOINTS_DIR={mount_results}/checkpoints",
         "--output", "json",
         "--", "bash", "-c", train_cmd,
     ]
@@ -292,7 +297,7 @@ def get_job(job_id: str) -> Optional[JobInfo]:
 def get_job_logs(job_id: str, tail: int = 100) -> str:
     """Get recent log output from a job."""
     r = _run_ovhai(
-        ["job", "logs", job_id, "--tail", str(tail)], timeout=15,
+        ["job", "logs", job_id, f"--tail={tail}"], timeout=15,
     )
     return r.stdout if r.returncode == 0 else f"Error: {r.stderr}"
 
@@ -317,11 +322,22 @@ def list_buckets() -> List[str]:
 
 
 def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[str] = None) -> bool:
-    """Upload code directory to an OVH bucket."""
+    """Upload code directory to an OVH bucket.
+
+    Strips the local absolute path so files appear at the bucket root
+    (e.g., rendezvous_comm/src/...) instead of /Users/.../rendezvous_comm/...
+    """
     bucket = bucket or default_bucket_code()
     region = region or default_region()
+    # Remove parent of local_dir so only the directory name is kept
+    parent = str(Path(local_dir).parent) + "/"
     r = _run_ovhai(
-        ["bucket", "object", "upload", f"{bucket}@{region}", local_dir],
+        [
+            "bucket", "object", "upload",
+            f"{bucket}@{region}",
+            "--remove-prefix", parent,
+            local_dir,
+        ],
         timeout=300,
     )
     if r.returncode == 0:
@@ -367,7 +383,8 @@ def estimate_cost(
 
     Returns dict with gpu_cost_eur, storage_cost_eur, total_eur.
     """
-    gpu = GPU_MODELS.get(gpu_type, GPU_MODELS["L4"])
+    fallback = next(iter(GPU_MODELS.values()))
+    gpu = GPU_MODELS.get(gpu_type, fallback)
     gpu_hours = n_runs * est_minutes_per_run / 60.0
     gpu_cost = gpu_hours * gpu["eur_per_hr"]
     storage_cost = storage_gb * 0.007  # Standard S3 per month
