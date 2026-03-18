@@ -992,10 +992,10 @@ def generate_run_videos(
         """Create a policy_fn from a BenchMARL policy state dict.
 
         Extracts the raw MLP weights from the state dict and runs
-        them directly (obs → tanh → action), bypassing TensorDict.
-        BenchMARL MLP keys look like:
-          module.0.module.0.module.0.mlp.params.{0,2,4}.{weight,bias}
-        This is a 3-layer MLP with ReLU activations + tanh output.
+        them directly, bypassing TensorDict. BenchMARL MLP structure:
+          Linear → Tanh → Linear → Tanh → Linear
+        Then NormalParamExtractor splits output into loc/scale,
+        and TanhNormal returns tanh(loc) in deterministic mode.
         """
         try:
             import torch.nn.functional as F
@@ -1017,7 +1017,7 @@ def generate_run_videos(
 
             layers = [params[i] for i in sorted(params.keys())]
 
-            # Infer action dim: output is 2*action_dim (mean+logstd)
+            # Output is 2*action_dim (loc + scale for TanhNormal)
             out_dim = layers[-1]["weight"].shape[0]
             act_dim = out_dim // 2
 
@@ -1026,16 +1026,19 @@ def generate_run_videos(
                 with torch.no_grad():
                     actions = []
                     for obs in observations:
-                        # obs: [num_envs, obs_dim], keep batch dim
+                        # obs: [num_envs, obs_dim]
                         x = obs.float()
+                        # Hidden layers: Linear → Tanh
                         for layer in layers[:-1]:
                             x = F.linear(x, layer["weight"],
                                          layer["bias"])
-                            x = F.relu(x)
+                            x = torch.tanh(x)
+                        # Output layer (no activation)
                         last = layers[-1]
                         x = F.linear(x, last["weight"],
                                      last["bias"])
-                        # First half = action mean (deterministic)
+                        # loc = first half; deterministic action
+                        # = tanh(loc) (TanhNormal distribution)
                         x = torch.tanh(x[..., :act_dim])
                         actions.append(x)
                     return actions
