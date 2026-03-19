@@ -1,0 +1,48 @@
+exp_id: er1
+name: "Ablation E: Reduced Collision Penalty"
+description: >
+  Tests reduced collision penalty (-0.01 vs -0.1) for k=2. With agents_per_target=2,
+  agents MUST get close to each other near targets. High collision penalty may
+  discourage exactly the proximity-seeking behavior we need. At early training
+  we see 87 collisions/ep × -0.1 = -8.7 penalty, dominating the +1.0 covering
+  reward. Combined with entropy=0.01.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: false
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: false
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 1200
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cuda
+  sampling_device: cuda
+  entropy_coef: 0.01
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

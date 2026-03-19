@@ -70,6 +70,15 @@ class TrainConfig:
     train_device: str = "cpu"
     sampling_device: str = "cpu"
 
+    # Algorithm-level overrides (None = use BenchMARL defaults)
+    entropy_coef: Optional[float] = None
+    lmbda: Optional[float] = None
+    clip_epsilon: Optional[float] = None
+
+    # Model overrides (None = use BenchMARL defaults: [256,256] Tanh)
+    hidden_layers: Optional[List[int]] = None
+    activation: Optional[str] = None
+
 
 @dataclass
 class SweepConfig:

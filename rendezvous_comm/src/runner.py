@@ -311,10 +311,30 @@ def build_experiment(
 
     # Algorithm
     algo_config = get_algorithm_config(algorithm)
+    if train_config.entropy_coef is not None:
+        algo_config.entropy_coef = train_config.entropy_coef
+    if train_config.lmbda is not None:
+        algo_config.lmbda = train_config.lmbda
+    if train_config.clip_epsilon is not None:
+        algo_config.clip_epsilon = train_config.clip_epsilon
 
     # Model
     model_config = MlpConfig.get_from_yaml()
     critic_model_config = MlpConfig.get_from_yaml()
+    if train_config.hidden_layers is not None:
+        model_config.num_cells = train_config.hidden_layers
+        critic_model_config.num_cells = train_config.hidden_layers
+    if train_config.activation is not None:
+        import torch.nn as nn
+        act_map = {
+            "tanh": nn.Tanh,
+            "relu": nn.ReLU,
+            "gelu": nn.GELU,
+        }
+        act_cls = act_map.get(train_config.activation.lower())
+        if act_cls is not None:
+            model_config.activation_class = act_cls
+            critic_model_config.activation_class = act_cls
 
     # Experiment config
     experiment_config = ExperimentConfig.get_from_yaml()
@@ -568,6 +588,16 @@ def run_single(
         metrics["share_policy_params"] = spec.train.share_policy_params
         metrics["evaluation_interval"] = spec.train.evaluation_interval
         metrics["evaluation_episodes"] = spec.train.evaluation_episodes
+        if spec.train.entropy_coef is not None:
+            metrics["entropy_coef"] = spec.train.entropy_coef
+        if spec.train.lmbda is not None:
+            metrics["lmbda"] = spec.train.lmbda
+        if spec.train.clip_epsilon is not None:
+            metrics["clip_epsilon"] = spec.train.clip_epsilon
+        if spec.train.hidden_layers is not None:
+            metrics["hidden_layers"] = str(spec.train.hidden_layers)
+        if spec.train.activation is not None:
+            metrics["activation"] = spec.train.activation
 
         # Execution metadata
         metrics["training_seconds"] = round(elapsed, 1)
