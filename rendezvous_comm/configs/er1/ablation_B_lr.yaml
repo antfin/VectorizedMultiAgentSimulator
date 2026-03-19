@@ -1,9 +1,9 @@
-exp_id: er1
+exp_id: er1_abl_b
 name: "Ablation B: Learning Rate"
 description: >
   Tests 2x learning rate (1e-4). With 10x default batch size (60K vs 6K),
-  linear scaling suggests LR could go up. Combined with entropy_coef=0.01
-  (assuming A wins) for best chance of improving k=2.
+  linear scaling suggests LR could go up. No entropy bonus (A showed 0.01
+  was catastrophic).
 
 task:
   n_agents: 4
@@ -35,7 +35,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
 
 sweep:
   seeds: [0, 1, 2]

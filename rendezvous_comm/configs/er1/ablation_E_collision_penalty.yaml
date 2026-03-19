@@ -1,11 +1,11 @@
-exp_id: er1
+exp_id: er1_abl_e
 name: "Ablation E: Reduced Collision Penalty"
 description: >
   Tests reduced collision penalty (-0.01 vs -0.1) for k=2. With agents_per_target=2,
   agents MUST get close to each other near targets. High collision penalty may
   discourage exactly the proximity-seeking behavior we need. At early training
   we see 87 collisions/ep × -0.1 = -8.7 penalty, dominating the +1.0 covering
-  reward. Combined with entropy=0.01.
+  reward. No entropy bonus (A showed 0.01 was catastrophic).
 
 task:
   n_agents: 4
@@ -37,7 +37,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
 
 sweep:
   seeds: [0, 1, 2]

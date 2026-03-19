@@ -1,10 +1,10 @@
-exp_id: er1
+exp_id: er1_abl_c
 name: "Ablation C: GAE Lambda"
 description: >
   Tests higher GAE lambda (0.95 vs 0.9 default). Extends credit assignment
   window from ~10 steps to ~20 steps, helping connect early movement decisions
   to eventual joint coverage. Critical for k=2 where coordination payoff is
-  delayed. Combined with entropy_coef=0.01.
+  delayed. No entropy bonus (A showed 0.01 was catastrophic).
 
 task:
   n_agents: 4
@@ -36,7 +36,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
   lmbda: 0.95
 
 sweep:

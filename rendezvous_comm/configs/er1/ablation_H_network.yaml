@@ -1,9 +1,9 @@
-exp_id: er1
+exp_id: er1_abl_h
 name: "Ablation H: Wider Network + ReLU"
 description: >
   Tests [512, 256] with ReLU activation. More capacity in the first layer
   for richer feature extraction from LiDAR rays. ReLU avoids Tanh saturation.
-  Combined with entropy=0.01.
+  No entropy bonus (A showed 0.01 was catastrophic).
   IMPORTANT for comm experiments: when observation space grows (messages added),
   a wider first layer helps process the extra dimensions without bottlenecking.
 
@@ -37,7 +37,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
   hidden_layers: [512, 256]
   activation: relu
 

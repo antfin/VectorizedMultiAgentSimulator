@@ -1,10 +1,9 @@
-exp_id: er1
+exp_id: er1_abl_i
 name: "Ablation I: k=1 Sanity Check"
 description: >
-  Runs the same ablation D (combined best) on an EASY config (k=1) to verify
-  the new hyperparameters don't hurt performance on the task communication
-  experiments will also run on. If k=1 regresses, the hyperparams are
-  over-fitted to k=2 and we need to find a middle ground.
+  Runs ablation D (lr=1e-4 + lmbda=0.95) on an EASY config (k=1) to verify
+  the new hyperparameters don't hurt performance. If k=1 regresses, the
+  hyperparams are over-fitted to k=2 and we need a middle ground.
 
 task:
   n_agents: 4
@@ -36,7 +35,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
   lmbda: 0.95
 
 sweep:

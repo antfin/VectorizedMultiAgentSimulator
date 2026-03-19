@@ -1,4 +1,4 @@
-exp_id: er1
+exp_id: er1_abl_a
 name: "Ablation A: Entropy Coefficient"
 description: >
   Tests whether entropy regularization prevents premature policy collapse

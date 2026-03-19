@@ -1,9 +1,9 @@
-exp_id: er1
-name: "Ablation A2: Higher Entropy Coefficient"
+exp_id: er1_abl_a2
+name: "Ablation A2: Lower Entropy Coefficient"
 description: >
-  Stronger entropy bonus (0.05) to test the upper bound.
-  If 0.01 helps but not enough, 0.05 pushes harder on exploration.
-  Risk: may prevent convergence entirely — monitor reward curves.
+  Much smaller entropy bonus (0.001). Ablation A showed 0.01 was catastrophic
+  (M1 dropped from 3% to 0%, M6 from 51% to 2.4%). Agents explored too
+  randomly and couldn't learn basic target-seeking. 0.001 is 10x gentler.
 
 task:
   n_agents: 4
@@ -35,7 +35,7 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.05
+  entropy_coef: 0.001
 
 sweep:
   seeds: [0, 1, 2]

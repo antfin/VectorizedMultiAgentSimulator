@@ -1,4 +1,4 @@
-exp_id: er1
+exp_id: er1_abl_g
 name: "Ablation G: Extended Training Budget"
 description: >
   Tests whether k=2 simply needs more training time (20M frames vs 10M).

@@ -1,12 +1,11 @@
-exp_id: er1
+exp_id: er1_abl_f
 name: "Ablation F: Shared Reward for k=2"
 description: >
   Tests shared_reward=true for k=2. With individual rewards, agents have weak
   incentive to coordinate (credit assignment problem). Shared reward makes
   covering a team success, removing the need for individual credit.
-  CAVEAT: if shared_reward dramatically helps, this changes the experimental
-  comparison since comm experiments use individual reward. Use as diagnostic
-  only — if it works, consider shared_reward as the default for ALL experiments.
+  No entropy bonus (A showed 0.01 was catastrophic).
+  CAVEAT: if shared_reward dramatically helps, consider it for ALL experiments.
 
 task:
   n_agents: 4
@@ -38,7 +37,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
 
 sweep:
   seeds: [0, 1, 2]

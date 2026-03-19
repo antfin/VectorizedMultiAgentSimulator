@@ -1,9 +1,8 @@
-exp_id: er1
+exp_id: er1_abl_d
 name: "Ablation D: Combined (entropy + LR + lambda)"
 description: >
-  Full package: entropy_coef=0.01, lr=1e-4, lmbda=0.95.
-  Tests whether improvements are additive. If this wins, these become
-  the universal hyperparameters for ALL experiments.
+  Combined: lr=1e-4 + lmbda=0.95 (no entropy — A showed 0.01 was catastrophic).
+  Tests whether LR and lambda improvements are additive.
 
 task:
   n_agents: 4
@@ -35,7 +34,6 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
-  entropy_coef: 0.01
   lmbda: 0.95
 
 sweep:
