@@ -1,13 +1,13 @@
-exp_id: er1
-name: "No-Comm Control"
+exp_id: er1_abl_g
+name: "Ablation G: Extended Training Budget"
 description: >
-  Isolates baseline task difficulty by removing ALL communication.
-  Establishes the floor that any comm method must beat.
-  Full sweep: N ∈ {2,3,4,6} × lidar ∈ {0.25,0.35,0.45} × {MAPPO,IPPO} × 3 seeds = 72 runs.
+  Tests whether k=2 with the winning hyperparams (lmbda=0.95) benefits from
+  more training time (20M frames vs 10M). Curves were still climbing at 10M.
+  Uses 3 seeds for statistical power.
 
 task:
   n_agents: 4
-  n_targets: 7
+  n_targets: 4
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
@@ -23,23 +23,24 @@ task:
 
 train:
   algorithm: mappo
-  max_n_frames: 10_000_000
+  max_n_frames: 20_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
-  on_policy_n_envs_per_worker: 600
+  on_policy_n_envs_per_worker: 1200
   on_policy_n_minibatch_iters: 45
   on_policy_minibatch_size: 4096
   lr: 0.00005
   share_policy_params: true
-  evaluation_interval: 960_000
-  evaluation_episodes: 50
-  train_device: cpu
-  sampling_device: cpu
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cuda
+  sampling_device: cuda
+  lmbda: 0.95
 
 sweep:
   seeds: [0, 1, 2]
-  n_agents: [4, 6, 8]
-  n_targets: [7]
+  n_agents: [4]
+  n_targets: [4]
   agents_per_target: [2]
-  lidar_range: [0.25, 0.35, 0.45]
-  algorithms: [mappo, ippo]
+  lidar_range: [0.35]
+  algorithms: [mappo]

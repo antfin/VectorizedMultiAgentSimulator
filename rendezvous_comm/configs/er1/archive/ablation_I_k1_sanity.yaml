@@ -1,15 +1,14 @@
-exp_id: er1_abl_g
-name: "Ablation G: Extended Training Budget"
+exp_id: er1_abl_i
+name: "Ablation I: k=1 Sanity Check"
 description: >
-  Tests whether k=2 simply needs more training time (20M frames vs 10M).
-  If the reward curve is still climbing at 10M, this is the cheapest fix.
-  If it plateaus, the bottleneck is elsewhere.
-  Single seed only — this is a diagnostic, not a production run.
+  Runs the winning hyperparam (lmbda=0.95) on EASY config (k=1) to verify
+  it doesn't hurt performance. D showed lr=1e-4 doesn't compound, so using
+  baseline lr=5e-5. If k=1 regresses, lmbda=0.95 is k=2-specific.
 
 task:
   n_agents: 4
   n_targets: 4
-  agents_per_target: 2
+  agents_per_target: 1
   lidar_range: 0.35
   covering_range: 0.25
   use_agent_lidar: false
@@ -24,7 +23,7 @@ task:
 
 train:
   algorithm: mappo
-  max_n_frames: 20_000_000
+  max_n_frames: 10_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
   on_policy_n_envs_per_worker: 1200
@@ -36,11 +35,12 @@ train:
   evaluation_episodes: 200
   train_device: cuda
   sampling_device: cuda
+  lmbda: 0.95
 
 sweep:
-  seeds: [0]
+  seeds: [0, 1, 2]
   n_agents: [4]
   n_targets: [4]
-  agents_per_target: [2]
+  agents_per_target: [1]
   lidar_range: [0.35]
   algorithms: [mappo]

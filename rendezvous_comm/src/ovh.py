@@ -200,7 +200,8 @@ def submit_training_job(
         f"cd {mount_code}/rendezvous_comm && "
         f"python train.py "
         f"{mount_code}/{config_yaml} "
-        f"--device cuda"
+        f"--device cuda && "
+        f"sleep 30"
     )
 
     # Map GPU model name to OVH flavor ID
@@ -326,25 +327,60 @@ def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[s
 
     Strips the local absolute path so files appear at the bucket root
     (e.g., rendezvous_comm/src/...) instead of /Users/.../rendezvous_comm/...
+
+    Excludes results/, __pycache__/, and other non-code directories
+    by uploading only the relevant subdirectories.
     """
     bucket = bucket or default_bucket_code()
     region = region or default_region()
-    # Remove parent of local_dir so only the directory name is kept
-    parent = str(Path(local_dir).parent) + "/"
-    r = _run_ovhai(
-        [
-            "bucket", "object", "upload",
-            f"{bucket}@{region}",
-            "--remove-prefix", parent,
-            local_dir,
-        ],
-        timeout=300,
-    )
-    if r.returncode == 0:
+    local = Path(local_dir)
+    parent = str(local.parent) + "/"
+
+    # Upload only code-relevant subdirectories and top-level files
+    _CODE_DIRS = ["src", "configs", "notebooks", "tests"]
+    _CODE_FILES = ["train.py", "setup.py", "setup.cfg",
+                   "pyproject.toml", "requirements.txt"]
+
+    success = True
+    # Upload subdirectories
+    for subdir in _CODE_DIRS:
+        p = local / subdir
+        if not p.exists():
+            continue
+        r = _run_ovhai(
+            [
+                "bucket", "object", "upload",
+                f"{bucket}@{region}",
+                "--remove-prefix", parent,
+                str(p),
+            ],
+            timeout=300,
+        )
+        if r.returncode != 0:
+            _log.error(f"Upload {subdir} failed: {r.stderr}")
+            success = False
+
+    # Upload top-level files
+    for fname in _CODE_FILES:
+        p = local / fname
+        if not p.exists():
+            continue
+        r = _run_ovhai(
+            [
+                "bucket", "object", "upload",
+                f"{bucket}@{region}",
+                "--remove-prefix", parent,
+                str(p),
+            ],
+            timeout=60,
+        )
+        if r.returncode != 0:
+            _log.error(f"Upload {fname} failed: {r.stderr}")
+            success = False
+
+    if success:
         _log.info(f"Uploaded {local_dir} to {bucket}@{region}")
-    else:
-        _log.error(f"Upload failed: {r.stderr}")
-    return r.returncode == 0
+    return success
 
 
 def download_results(

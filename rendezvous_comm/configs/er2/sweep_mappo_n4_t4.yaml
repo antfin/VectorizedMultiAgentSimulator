@@ -1,17 +1,17 @@
-exp_id: er1_abl_i
-name: "Ablation I: k=1 Sanity Check"
+exp_id: er2
+name: "Engineered Schema"
 description: >
-  Runs ablation D (lr=1e-4 + lmbda=0.95) on an EASY config (k=1) to verify
-  the new hyperparameters don't hurt performance. If k=1 regresses, the
-  hyperparams are over-fitted to k=2 and we need a middle ground.
+  Hand-designed structured messages {target_id, ETA, mode, confidence}.
+  Matches ER1 sweep: n=4, t=4, k ∈ {1,2}, lidar ∈ {0.25,0.35}, lmbda=0.95.
+  8 runs: 2 × 2 × 2 seeds.
 
 task:
   n_agents: 4
   n_targets: 4
-  agents_per_target: 1
+  agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
-  use_agent_lidar: false
+  use_agent_lidar: true
   n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
   targets_respawn: false
@@ -29,7 +29,7 @@ train:
   on_policy_n_envs_per_worker: 1200
   on_policy_n_minibatch_iters: 45
   on_policy_minibatch_size: 4096
-  lr: 0.0001
+  lr: 0.00005
   share_policy_params: true
   evaluation_interval: 120_000
   evaluation_episodes: 200
@@ -38,9 +38,9 @@ train:
   lmbda: 0.95
 
 sweep:
-  seeds: [0, 1, 2]
+  seeds: [0, 1]
   n_agents: [4]
   n_targets: [4]
-  agents_per_target: [1]
-  lidar_range: [0.35]
+  agents_per_target: [1, 2]
+  lidar_range: [0.25, 0.35]
   algorithms: [mappo]
