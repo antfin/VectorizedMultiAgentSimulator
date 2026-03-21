@@ -463,6 +463,8 @@ def run_single(
         logger.info(f"  Frames:        {spec.train.max_n_frames:,}")
         logger.info(f"  Device:        {spec.train.train_device}")
         logger.info(f"  Task overrides: {task_overrides}")
+        logger.info(f"  dim_c:         {spec.task.dim_c}")
+        logger.info(f"  comm_proximity: {spec.task.comm_proximity}")
         logger.info(f"  Output dir:    {run_storage.run_dir}")
 
         # Callbacks: progress bar (notebook) + M1/M4 eval tracker
@@ -570,6 +572,8 @@ def run_single(
         metrics["time_penalty"] = _ov("time_penalty")
         metrics["shared_reward"] = _ov("shared_reward")
         metrics["targets_respawn"] = _ov("targets_respawn")
+        metrics["dim_c"] = _ov("dim_c")
+        metrics["comm_proximity"] = _ov("comm_proximity")
 
         # Training hyperparameters
         metrics["max_n_frames"] = spec.train.max_n_frames
@@ -691,6 +695,7 @@ def evaluate_trained(
     all_coverage = []      # float per env (fraction of targets)
     all_agent_covering = []  # (n_agents,) per env
     all_spatial_spread = []  # float per env
+    all_tokens = []          # float per env
     n_success = 0
     n_envs_total = 0
 
@@ -787,6 +792,20 @@ def evaluate_trained(
                     )  # [ne]
                     all_collisions.extend(per_env_coll.tolist())
                     break
+
+            # M5: per-env communication tokens
+            for group in experiment.group_map.keys():
+                tok_key = ("next", group, "info", "comm_tokens")
+                if tok_key in rollout_td.keys(True):
+                    tok = rollout_td[tok_key]
+                    # Shape: [ne, T, n_agents, 1] or [ne, T, 1]
+                    # Sum all tokens across time and agents per env
+                    per_env_tok = tok.reshape(ne, -1).sum(dim=1)
+                    all_tokens.extend(per_env_tok.tolist())
+                    break
+            else:
+                # No comm_tokens → 0 tokens per env
+                all_tokens.extend([0.0] * ne)
 
             # M8: per-env agent covering balance
             # covering_reward shape: [ne, T, n_agents, 1]
@@ -887,7 +906,9 @@ def evaluate_trained(
         "M4_avg_collisions": (
             sum(all_collisions) / max(len(all_collisions), 1)
         ),
-        "M5_avg_tokens": 0.0,
+        "M5_avg_tokens": (
+            sum(all_tokens) / max(len(all_tokens), 1)
+        ),
         "M6_coverage_progress": (
             sum(all_coverage) / max(len(all_coverage), 1)
         ),
@@ -957,8 +978,15 @@ def evaluate_with_vmas(
                 [a.state.pos for a in env.agents], dim=1
             )  # (n_envs, n_agents, 2)
 
+            # M5: count comm tokens from info
+            tokens_step = 0
+            for agent_info in info:
+                if "comm_tokens" in agent_info:
+                    tokens_step += agent_info["comm_tokens"].sum().item()
+
             episode_metrics.update_step(
                 rews, dones, info, step,
+                tokens_this_step=tokens_step,
                 agent_positions=agent_positions,
             )
 

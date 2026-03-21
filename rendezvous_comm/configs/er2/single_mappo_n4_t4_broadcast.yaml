@@ -1,10 +1,9 @@
-exp_id: er2
-name: "Emergent Continuous Communication"
+exp_id: er2_broadcast
+name: "Emergent Comm — Full Broadcast"
 description: >
-  Agents learn what to communicate via MAPPO + dim_c continuous channel.
-  Messages are proximity-gated (only heard within lidar range).
-  Matches ER1_AL sweep: n=4, t=4, k ∈ {1,2}, lidar ∈ {0.25,0.35}, lmbda=0.95.
-  8 runs: 2 × 2 × 2 seeds.
+  comm_proximity=false: messages reach all agents regardless of distance.
+  Tests if proximity gating is the bottleneck — agents spread to M9~0.79
+  but comm range is only 0.35, so most messages are masked.
 
 task:
   n_agents: 4
@@ -12,7 +11,7 @@ task:
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
-  use_agent_lidar: true
+  use_agent_lidar: false
   n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
   targets_respawn: false
@@ -22,7 +21,7 @@ task:
   time_penalty: -0.01
   max_steps: 200
   dim_c: 8
-  comm_proximity: true
+  comm_proximity: false
 
 train:
   algorithm: mappo
@@ -44,6 +43,6 @@ sweep:
   seeds: [0, 1]
   n_agents: [4]
   n_targets: [4]
-  agents_per_target: [1, 2]
-  lidar_range: [0.25, 0.35]
+  agents_per_target: [2]
+  lidar_range: [0.35]
   algorithms: [mappo]

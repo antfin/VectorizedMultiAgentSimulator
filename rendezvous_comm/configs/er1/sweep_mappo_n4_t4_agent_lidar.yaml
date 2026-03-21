@@ -1,10 +1,10 @@
-exp_id: er2
-name: "Emergent Continuous Communication"
+exp_id: er1_al
+name: "No-Comm Control (with agent lidar)"
 description: >
-  Agents learn what to communicate via MAPPO + dim_c continuous channel.
-  Messages are proximity-gated (only heard within lidar range).
-  Matches ER1_AL sweep: n=4, t=4, k ∈ {1,2}, lidar ∈ {0.25,0.35}, lmbda=0.95.
-  8 runs: 2 × 2 × 2 seeds.
+  ER1 baseline with use_agent_lidar=true so agents can sense each other.
+  Matches ER2-ER4 sensing — the only difference with comm experiments
+  will be the communication channel itself.
+  8 runs: k ∈ {1,2} × lidar ∈ {0.25,0.35} × 2 seeds.
 
 task:
   n_agents: 4
@@ -21,8 +21,6 @@ task:
   covering_rew_coeff: 1.0
   time_penalty: -0.01
   max_steps: 200
-  dim_c: 8
-  comm_proximity: true
 
 train:
   algorithm: mappo

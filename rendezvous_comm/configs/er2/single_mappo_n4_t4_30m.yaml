@@ -1,10 +1,10 @@
-exp_id: er2
-name: "Emergent Continuous Communication"
+exp_id: er2_30m
+name: "Emergent Continuous Communication (extended)"
 description: >
-  Agents learn what to communicate via MAPPO + dim_c continuous channel.
-  Messages are proximity-gated (only heard within lidar range).
-  Matches ER1_AL sweep: n=4, t=4, k ∈ {1,2}, lidar ∈ {0.25,0.35}, lmbda=0.95.
-  8 runs: 2 × 2 × 2 seeds.
+  ER2 extended to 30M frames. dim_c=8, no agent lidar, k=2.
+  ER2 at 10M was still actively learning (return -0.262, no plateau).
+  ER1 at 20M showed no improvement (ablation G), so this tests whether
+  comm enables continued learning beyond the no-comm ceiling.
 
 task:
   n_agents: 4
@@ -12,7 +12,7 @@ task:
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
-  use_agent_lidar: true
+  use_agent_lidar: false
   n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
   targets_respawn: false
@@ -26,7 +26,7 @@ task:
 
 train:
   algorithm: mappo
-  max_n_frames: 10_000_000
+  max_n_frames: 30_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
   on_policy_n_envs_per_worker: 1200
@@ -44,6 +44,6 @@ sweep:
   seeds: [0, 1]
   n_agents: [4]
   n_targets: [4]
-  agents_per_target: [1, 2]
-  lidar_range: [0.25, 0.35]
+  agents_per_target: [2]
+  lidar_range: [0.35]
   algorithms: [mappo]

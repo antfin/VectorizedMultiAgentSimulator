@@ -41,6 +41,11 @@ class Scenario(BaseScenario):
         self.agent_collision_penalty = kwargs.pop("agent_collision_penalty", 0)
         self.covering_rew_coeff = kwargs.pop("covering_rew_coeff", 1.0)
         self.time_penalty = kwargs.pop("time_penalty", 0)
+
+        # Communication channel (0 = no comm, >0 = continuous floats)
+        self.dim_c = kwargs.pop("dim_c", 0)
+        self.comm_proximity = kwargs.pop("comm_proximity", True)
+
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
         self._comms_range = self._lidar_range
@@ -60,6 +65,7 @@ class Scenario(BaseScenario):
             collision_force=500,
             substeps=2,
             drag=0.25,
+            dim_c=self.dim_c,
         )
 
         # Add agents
@@ -74,6 +80,7 @@ class Scenario(BaseScenario):
             agent = Agent(
                 name=f"agent_{i}",
                 collide=True,
+                silent=self.dim_c == 0,
                 shape=Sphere(radius=self.agent_radius),
                 sensors=(
                     [
@@ -244,11 +251,28 @@ class Scenario(BaseScenario):
 
     def observation(self, agent: Agent):
         lidar_1_measures = agent.sensors[0].measure()
-        return torch.cat(
-            [agent.state.pos, agent.state.vel, lidar_1_measures]
-            + ([agent.sensors[1].measure()] if self.use_agent_lidar else []),
-            dim=-1,
-        )
+        obs_parts = [agent.state.pos, agent.state.vel, lidar_1_measures]
+        if self.use_agent_lidar:
+            obs_parts.append(agent.sensors[1].measure())
+
+        # Append received messages from other agents
+        if self.dim_c > 0:
+            for other in self.world.agents:
+                if other is agent:
+                    continue
+                if other.state.c is not None:
+                    msg = other.state.c
+                    if self.comm_proximity:
+                        # Mask messages from agents outside comm range
+                        dist = torch.linalg.vector_norm(
+                            agent.state.pos - other.state.pos, dim=-1,
+                            keepdim=True,
+                        )
+                        in_range = (dist <= self._comms_range).float()
+                        msg = msg * in_range
+                    obs_parts.append(msg)
+
+        return torch.cat(obs_parts, dim=-1)
 
     def info(self, agent: Agent) -> Dict[str, Tensor]:
         info = {
@@ -260,6 +284,13 @@ class Scenario(BaseScenario):
             "collision_rew": agent.collision_rew,
             "targets_covered": self.covered_targets.sum(-1),
         }
+        # Communication tokens sent this step (for M5)
+        if self.dim_c > 0 and not agent.silent:
+            info["comm_tokens"] = torch.full(
+                (self.world.batch_dim,),
+                float(self.dim_c),
+                device=self.world.device,
+            )
         return info
 
     def done(self):

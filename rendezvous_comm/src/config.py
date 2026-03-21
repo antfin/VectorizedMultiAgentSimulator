@@ -47,6 +47,8 @@ class TaskConfig:
     y_semidim: float = 1.0
     min_dist_between_entities: float = 0.2
     max_steps: int = 200
+    dim_c: int = 0
+    comm_proximity: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}

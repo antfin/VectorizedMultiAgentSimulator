@@ -1,10 +1,8 @@
-exp_id: er2
-name: "Emergent Continuous Communication"
+exp_id: er2_bc_dimc2
+name: "Emergent Comm — Broadcast + Small Channel (dim_c=2)"
 description: >
-  Agents learn what to communicate via MAPPO + dim_c continuous channel.
-  Messages are proximity-gated (only heard within lidar range).
-  Matches ER1_AL sweep: n=4, t=4, k ∈ {1,2}, lidar ∈ {0.25,0.35}, lmbda=0.95.
-  8 runs: 2 × 2 × 2 seeds.
+  dim_c=2, full broadcast. Fewer comm dims = smaller obs (25 vs 43),
+  easier to learn but less bandwidth. Tests if 8 is too noisy.
 
 task:
   n_agents: 4
@@ -12,7 +10,7 @@ task:
   agents_per_target: 2
   lidar_range: 0.35
   covering_range: 0.25
-  use_agent_lidar: true
+  use_agent_lidar: false
   n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
   targets_respawn: false
@@ -21,8 +19,8 @@ task:
   covering_rew_coeff: 1.0
   time_penalty: -0.01
   max_steps: 200
-  dim_c: 8
-  comm_proximity: true
+  dim_c: 2
+  comm_proximity: false
 
 train:
   algorithm: mappo
@@ -44,6 +42,6 @@ sweep:
   seeds: [0, 1]
   n_agents: [4]
   n_targets: [4]
-  agents_per_target: [1, 2]
-  lidar_range: [0.25, 0.35]
+  agents_per_target: [2]
+  lidar_range: [0.35]
   algorithms: [mappo]

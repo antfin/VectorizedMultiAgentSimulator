@@ -1,10 +1,8 @@
-exp_id: er2
-name: "Emergent Continuous Communication"
+exp_id: er1_al_abl_sr
+name: "ER1_AL Ablation: Shared Reward"
 description: >
-  Agents learn what to communicate via MAPPO + dim_c continuous channel.
-  Messages are proximity-gated (only heard within lidar range).
-  Matches ER1_AL sweep: n=4, t=4, k ∈ {1,2}, lidar ∈ {0.25,0.35}, lmbda=0.95.
-  8 runs: 2 × 2 × 2 seeds.
+  Agent lidar ON, shared_reward=true.
+  Tests if team reward signal helps agents coordinate when they can see each other.
 
 task:
   n_agents: 4
@@ -16,34 +14,32 @@ task:
   n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
   targets_respawn: false
-  shared_reward: false
+  shared_reward: true
   agent_collision_penalty: -0.1
   covering_rew_coeff: 1.0
   time_penalty: -0.01
   max_steps: 200
-  dim_c: 8
-  comm_proximity: true
 
 train:
   algorithm: mappo
   max_n_frames: 10_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
-  on_policy_n_envs_per_worker: 1200
+  on_policy_n_envs_per_worker: 600
   on_policy_n_minibatch_iters: 45
   on_policy_minibatch_size: 4096
   lr: 0.00005
   share_policy_params: true
   evaluation_interval: 120_000
   evaluation_episodes: 200
-  train_device: cuda
-  sampling_device: cuda
+  train_device: cpu
+  sampling_device: cpu
   lmbda: 0.95
 
 sweep:
-  seeds: [0, 1]
+  seeds: [0]
   n_agents: [4]
   n_targets: [4]
-  agents_per_target: [1, 2]
-  lidar_range: [0.25, 0.35]
+  agents_per_target: [2]
+  lidar_range: [0.35]
   algorithms: [mappo]
