@@ -283,6 +283,8 @@ class Scenario(BaseScenario):
             ),
             "collision_rew": agent.collision_rew,
             "targets_covered": self.covered_targets.sum(-1),
+            "pos": agent.state.pos,
+            "vel": agent.state.vel,
         }
         # Communication tokens sent this step (for M5)
         if self.dim_c > 0 and not agent.silent:

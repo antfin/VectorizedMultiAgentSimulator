@@ -26,7 +26,7 @@ ovhai job run pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime \
   --name rendezvous_dry_run \
   --flavor ai1-1-gpu --gpu 1 \
   --volume "rendezvous-code@GRA/:/workspace/code:ro" \
-  --volume "rendezvous-results@GRA/:/workspace/results:rwd" \
+  --volume "rendezvous-results@GRA/er1/:/workspace/results:rwd" \
   --env "RESULTS_DIR=/workspace/results" \
   --env "CHECKPOINTS_DIR=/workspace/results/checkpoints" \
   -- bash -c "export HOME=/tmp && \
@@ -42,7 +42,7 @@ ovhai job run pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime \
 ### AI Training (batch jobs — recommended for sweeps)
 - Submit job, auto-stops when done, no idle cost
 - Lifecycle: INITIALIZING → PENDING → RUNNING → FINALIZING → DONE/FAILED
-- Can run multiple sweep configs in parallel on separate GPUs
+- Can run multiple sweep configs in parallel on separate GPUs (use per-experiment bucket prefix)
 - Launch via Streamlit OVH Jobs page or CLI
 
 ### AI Notebooks (managed Jupyter — interactive work)
@@ -58,6 +58,31 @@ ai1-1-cpu    Intel CPU vCores     1 vCPU, 4GB RAM
 Run `ovhai capabilities flavor list` to check current availability.
 
 ## Known Issues & Workarounds
+
+### Parallel jobs overwrite each other's results
+OVH AI Training does NOT use a live S3 mount. The lifecycle is:
+1. **INITIALIZING**: bucket contents are copied to a local filesystem
+2. **RUNNING**: job reads/writes the local filesystem only
+3. **FINALIZING**: entire local filesystem is synced back to the bucket prefix
+
+When multiple parallel jobs mount the same bucket root with `rwd`, the last
+job to finalize **overwrites all previous results** — only its local files
+survive. This caused data loss for broadcast/dimc2 experiments (2026-03-21).
+
+**Fix**: Each job now mounts a per-experiment prefix:
+```
+# Before (all jobs share one mount — DANGEROUS in parallel):
+--volume "rendezvous-results@GRA/:/workspace/results:rwd"
+
+# After (each job isolated by exp_id):
+--volume "rendezvous-results@GRA/er2_broadcast/:/workspace/results:rwd"
+```
+`submit_training_job()` extracts `exp_id` from the config YAML and uses it
+as the bucket prefix automatically. Parallel jobs with different exp_ids
+are now safe.
+
+**Note**: `sleep` or `sync` at the end of the training command is unnecessary —
+OVH handles the sync during FINALIZING, not during RUNNING.
 
 ### Permission denied for pip install
 The container runs as non-root with HOME=/workspace (a mounted volume).

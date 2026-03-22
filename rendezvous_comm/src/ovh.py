@@ -192,6 +192,20 @@ def submit_training_job(
         parts = Path(config_yaml).stem
         job_name = f"rendezvous_{parts}"
 
+    # Extract exp_id from config to use as bucket prefix.
+    # Each job gets its own prefix in the results bucket so that
+    # parallel jobs don't overwrite each other during FINALIZING.
+    # OVH syncs the entire local volume back to the bucket prefix
+    # when the job ends — without isolation, the last job to
+    # finalize wins and earlier results are lost.
+    try:
+        with open(config_yaml) as _f:
+            _raw = yaml.safe_load(_f)
+        exp_id = _raw.get("exp_id", "")
+    except Exception:
+        exp_id = ""
+    results_prefix = f"{exp_id}/" if exp_id else ""
+
     train_cmd = (
         f"export HOME=/tmp && "
         f"pip install "
@@ -200,8 +214,7 @@ def submit_training_job(
         f"cd {mount_code}/rendezvous_comm && "
         f"python train.py "
         f"{mount_code}/{config_yaml} "
-        f"--device cuda && "
-        f"sleep 30"
+        f"--device cuda"
     )
 
     # Map GPU model name to OVH flavor ID
@@ -213,7 +226,8 @@ def submit_training_job(
         "--flavor", flavor,
         "--gpu", str(n_gpu),
         "--volume", f"{bucket_code}@{region}/:{mount_code}:ro",
-        "--volume", f"{bucket_results}@{region}/:{mount_results}:rwd",
+        "--volume",
+        f"{bucket_results}@{region}/{results_prefix}:{mount_results}:rwd",
         "--env", f"RESULTS_DIR={mount_results}",
         "--env", f"CHECKPOINTS_DIR={mount_results}/checkpoints",
         "--output", "json",

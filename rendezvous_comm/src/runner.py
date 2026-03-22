@@ -319,10 +319,52 @@ def build_experiment(
         algo_config.clip_epsilon = train_config.clip_epsilon
 
     # Model
-    model_config = MlpConfig.get_from_yaml()
-    critic_model_config = MlpConfig.get_from_yaml()
+    if train_config.model_type == "gnn":
+        from benchmarl.models import GnnConfig
+        import torch_geometric.nn.conv as pyg_conv
+
+        gnn_cls_map = {
+            "GATv2Conv": pyg_conv.GATv2Conv,
+            "GraphConv": pyg_conv.GraphConv,
+            "SAGEConv": pyg_conv.SAGEConv,
+            "GINConv": pyg_conv.GINConv,
+        }
+        gnn_cls = gnn_cls_map.get(
+            train_config.gnn_class, pyg_conv.GATv2Conv,
+        )
+        edge_radius = train_config.gnn_edge_radius
+        if edge_radius is None:
+            edge_radius = task_config.lidar_range
+            if task_overrides and "lidar_range" in task_overrides:
+                edge_radius = task_overrides["lidar_range"]
+
+        gnn_kwargs = {}
+        if train_config.gnn_topology == "from_pos":
+            gnn_kwargs.update(
+                position_key="pos",
+                pos_features=2,
+                velocity_key="vel",
+                vel_features=2,
+                edge_radius=edge_radius,
+                exclude_pos_from_node_features=False,
+            )
+
+        model_config = GnnConfig(
+            topology=train_config.gnn_topology,
+            self_loops=False,
+            gnn_class=gnn_cls,
+            **gnn_kwargs,
+        )
+        # Critic: "from_pos" not supported for PPO critics,
+        # use MLP critic with GNN actor
+        critic_model_config = MlpConfig.get_from_yaml()
+    else:
+        model_config = MlpConfig.get_from_yaml()
+        critic_model_config = MlpConfig.get_from_yaml()
+
     if train_config.hidden_layers is not None:
-        model_config.num_cells = train_config.hidden_layers
+        if hasattr(model_config, "num_cells"):
+            model_config.num_cells = train_config.hidden_layers
         critic_model_config.num_cells = train_config.hidden_layers
     if train_config.activation is not None:
         import torch.nn as nn
@@ -333,7 +375,8 @@ def build_experiment(
         }
         act_cls = act_map.get(train_config.activation.lower())
         if act_cls is not None:
-            model_config.activation_class = act_cls
+            if hasattr(model_config, "activation_class"):
+                model_config.activation_class = act_cls
             critic_model_config.activation_class = act_cls
 
     # Experiment config

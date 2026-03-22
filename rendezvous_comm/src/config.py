@@ -81,6 +81,13 @@ class TrainConfig:
     hidden_layers: Optional[List[int]] = None
     activation: Optional[str] = None
 
+    # Model type: "mlp" (default) or "gnn"
+    model_type: str = "mlp"
+    # GNN-specific (ignored when model_type="mlp")
+    gnn_topology: str = "from_pos"  # "from_pos" or "full"
+    gnn_class: str = "GATv2Conv"    # torch_geometric conv class name
+    gnn_edge_radius: Optional[float] = None  # None = use lidar_range
+
 
 @dataclass
 class SweepConfig:
