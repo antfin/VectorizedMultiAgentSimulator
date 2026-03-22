@@ -22,6 +22,15 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 
+def _extract_family(exp_id: str) -> str:
+    """Extract experiment family (er1, er2, er3) from exp_id."""
+    eid = exp_id.lower()
+    for prefix in ("er1", "er2", "er3"):
+        if eid.startswith(prefix):
+            return prefix
+    return eid.split("_")[0]
+
+
 def _json_serializable(obj):
     """Convert non-serializable types for JSON."""
     if hasattr(obj, "item"):  # torch/numpy scalar
@@ -158,7 +167,9 @@ class ExperimentStorage:
         if results_root is None:
             from .config import RESULTS_DIR
             results_root = RESULTS_DIR
-        self.results_dir = results_root / exp_id.lower()
+        # Route to family-based structure: results/<family>/runs/
+        family = _extract_family(exp_id)
+        self.results_dir = results_root / family / "runs"
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.exp_id = exp_id
 
@@ -169,22 +180,60 @@ class ExperimentStorage:
         Otherwise creates a new timestamped folder.
         """
         # Check for existing run with this parametric id
-        existing = self._find_run_dir(run_id)
+        existing = self.find_existing(run_id)
         if existing is not None:
-            return RunStorage(existing, run_id)
+            return existing
 
         # Create new timestamped folder
+        return self.new_run(run_id)
+
+    def find_existing(self, run_id: str) -> Optional[RunStorage]:
+        """Find an existing completed run matching this run_id.
+
+        Used for skip_complete detection. Returns None if no
+        completed run exists.
+        """
+        run_dir = self._find_run_dir(run_id)
+        if run_dir is not None:
+            rs = RunStorage(run_dir, run_id)
+            if rs.is_complete():
+                return rs
+        return None
+
+    def new_run(self, run_id: str) -> RunStorage:
+        """Always create a new timestamped run folder.
+
+        Use this when you want a fresh run even if a previous
+        one with the same run_id exists.
+        """
         folder_name = _make_folder_name(run_id)
         run_dir = self.results_dir / folder_name
         return RunStorage(run_dir, run_id)
 
     def _find_run_dir(self, run_id: str) -> Optional[Path]:
-        """Find an existing run folder matching this parametric run_id."""
+        """Find an existing run folder matching this parametric run_id.
+
+        Checks both timestamped folder names (YYYYMMDD_HHMM__<run_id>)
+        and reorganized variant-tag folders (by reading config.yaml).
+        """
         if not self.results_dir.exists():
             return None
         for d in self.results_dir.iterdir():
-            if d.is_dir() and _extract_run_id(d.name) == run_id:
+            if not d.is_dir():
+                continue
+            # Match by folder name (timestamped or plain)
+            if _extract_run_id(d.name) == run_id:
                 return d
+            # Match reorganized folders by config run_id
+            cfg_path = d / "input" / "config.yaml"
+            if cfg_path.exists():
+                try:
+                    with open(cfg_path, encoding="utf-8") as f:
+                        cfg = yaml.safe_load(f) or {}
+                    if cfg.get("run_id") == run_id:
+                        return d
+                except Exception:
+                    continue
         return None
 
     def list_runs(self) -> List[str]:
@@ -287,6 +336,119 @@ def _parse_run_id(run_id: str) -> Dict[str, Any]:
             parsed["lidar_range"] = float(f"0.{raw.lstrip('0') or '0'}")
 
     return parsed
+
+
+def append_to_master_csv(
+    run_id: str,
+    config: Dict[str, Any],
+    metrics: Dict[str, float],
+    old_path: str = "",
+):
+    """Append a row to master_results.csv after a run completes.
+
+    Creates the file with headers if it doesn't exist.
+    """
+    import csv
+    from .config import RESULTS_DIR
+
+    csv_path = RESULTS_DIR / "master_results.csv"
+    task = config.get("task", {})
+    train = {k: v for k, v in config.get("train", {}).items()}
+
+    # Determine family
+    exp_id = config.get("exp_id", "")
+    family = "er1"
+    for prefix in ("er3", "er2", "er1"):
+        if exp_id.startswith(prefix):
+            family = prefix
+            break
+
+    # Build variant tag components
+    parts = []
+    if task.get("use_agent_lidar", False):
+        parts.append("al")
+    if (task.get("shared_reward", False)
+            and task.get("agent_collision_penalty", -0.1) > -0.05):
+        parts.append("lp_sr")
+    elif task.get("shared_reward", False):
+        parts.append("sr")
+    elif task.get("agent_collision_penalty", -0.1) > -0.05:
+        parts.append("lp")
+    dim_c = task.get("dim_c", 0)
+    if dim_c > 0:
+        mode = "prox" if task.get("comm_proximity", True) else "bc"
+        parts.append(f"{mode}_dc{dim_c}")
+    model_type = train.get("model_type", "mlp")
+    if model_type == "gnn":
+        gnn = train.get("gnn_class", "GATv2Conv")
+        if "GATv2" in gnn:
+            parts.append("gatv2")
+        elif "GraphConv" in gnn:
+            parts.append("graphconv")
+        else:
+            parts.append(gnn.lower())
+    max_steps = task.get("max_steps", 200)
+    if max_steps != 200:
+        parts.append(f"ms{max_steps}")
+    if not parts:
+        parts.append("default")
+
+    k = config.get("task", {}).get("agents_per_target", 2)
+    lr = str(task.get("lidar_range", 0.35)).replace(".", "")
+    seed = config.get("seed", 0)
+    parts.append(f"k{k}_l{lr}")
+    parts.append(f"s{seed}")
+    variant = "_".join(parts)
+
+    row = {
+        "variant": variant,
+        "family": family,
+        "old_run_id": run_id,
+        "old_dir": old_path,
+        "agent_lidar": task.get("use_agent_lidar", False),
+        "dim_c": dim_c,
+        "shared_reward": task.get("shared_reward", False),
+        "collision_penalty": task.get(
+            "agent_collision_penalty", -0.1
+        ),
+        "agents_per_target": k,
+        "lidar_range": task.get("lidar_range", 0.35),
+        "n_agents": task.get("n_agents", 4),
+        "n_targets": task.get("n_targets", 4),
+        "algorithm": config.get("algorithm", "mappo"),
+        "seed": seed,
+        "max_steps": max_steps,
+        "max_frames": train.get("max_n_frames", 10_000_000),
+        "model_type": model_type,
+    }
+    # Add all metrics
+    for mk, mv in metrics.items():
+        if mk.startswith("M") and "_" in mk:
+            row[mk] = mv
+
+    row["training_seconds"] = metrics.get("training_seconds", "")
+    row["device"] = train.get("train_device", "")
+
+    file_exists = csv_path.exists()
+    fieldnames = list(row.keys())
+
+    # If file exists, read its headers to ensure consistency
+    if file_exists:
+        with open(csv_path, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or fieldnames
+            # Add any new fields not in existing header
+            for k in row:
+                if k not in fieldnames:
+                    fieldnames.append(k)
+
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=fieldnames, extrasaction="ignore",
+        )
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def load_cross_experiment(

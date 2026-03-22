@@ -304,7 +304,7 @@ def build_experiment(
     # Task
     task = VmasTask.DISCOVERY.get_from_yaml()
     config = task_config.to_dict()
-    config.pop("max_steps")  # not a VMAS task param; remove before update
+    # max_steps IS a VMAS task param (controls episode length)
     if task_overrides:
         config.update(task_overrides)
     task.config.update(config)
@@ -461,25 +461,38 @@ def run_single(
         metrics dict
     """
     storage = ExperimentStorage(spec.exp_id)
-    run_storage = storage.get_run(run_id)
+
+    # Check for existing completed run (skip_complete)
+    if skip_complete:
+        existing = storage.find_existing(run_id)
+        if existing is not None:
+            logger = setup_run_logger(
+                existing.run_dir, console=not quiet,
+            )
+            try:
+                logger.info(f"SKIP  {run_id} — already complete")
+                video_final = existing.output_dir / "video_final.mp4"
+                if existing.has_policy() and not video_final.exists():
+                    try:
+                        generate_run_videos(
+                            existing, spec.task,
+                            task_overrides, logger,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            f"Video generation failed: {exc}"
+                        )
+                return existing.load_metrics()
+            finally:
+                teardown_run_logger(logger)
+
+    # Always create a new timestamped folder for training
+    run_storage = storage.new_run(run_id)
 
     # Setup logging — file only when quiet (notebook progress bars instead)
     logger = setup_run_logger(run_storage.run_dir, console=not quiet)
 
     try:
-        if skip_complete and run_storage.is_complete():
-            logger.info(f"SKIP  {run_id} — already complete")
-            # Generate videos for completed runs that are missing them
-            video_final = run_storage.output_dir / "video_final.mp4"
-            if run_storage.has_policy() and not video_final.exists():
-                try:
-                    generate_run_videos(
-                        run_storage, spec.task, task_overrides, logger,
-                    )
-                except Exception as exc:
-                    logger.warning(f"Video generation failed: {exc}")
-            return run_storage.load_metrics()
-
         # Save config snapshot + provenance
         run_storage.save_config({
             "exp_id": spec.exp_id,
@@ -676,6 +689,34 @@ def run_single(
         metrics.update(dynamics)
 
         run_storage.save_metrics(metrics)
+
+        # Append to master_results.csv
+        try:
+            from .storage import append_to_master_csv
+            append_to_master_csv(
+                run_id=run_id,
+                config={
+                    "exp_id": spec.exp_id,
+                    "algorithm": algorithm,
+                    "seed": seed,
+                    "task": spec.task.to_dict(),
+                    "train": {
+                        k: v for k, v
+                        in spec.train.__dict__.items()
+                    },
+                },
+                metrics=metrics,
+                old_path=str(
+                    run_storage.run_dir.relative_to(
+                        run_storage.run_dir.parent.parent.parent
+                    )
+                ),
+            )
+            logger.info("  Appended to master_results.csv")
+        except Exception as exc:
+            logger.warning(
+                f"  master_results.csv append failed: {exc}"
+            )
 
         from .report import METRIC_DETAILS
         for key, val in metrics.items():
@@ -1299,8 +1340,7 @@ def run_sweep(
     n_already_done = 0
     if skip_complete:
         for run_id, _, _, _ in all_runs:
-            rs = storage.get_run(run_id)
-            if rs.is_complete():
+            if storage.find_existing(run_id) is not None:
                 n_already_done += 1
 
     if not notebook:
@@ -1329,7 +1369,8 @@ def run_sweep(
 
     for i, (run_id, overrides, algo, seed) in enumerate(all_runs):
         is_complete = (
-            skip_complete and storage.get_run(run_id).is_complete()
+            skip_complete
+            and storage.find_existing(run_id) is not None
         )
 
         if notebook and pbar is not None:

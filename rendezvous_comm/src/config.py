@@ -114,8 +114,17 @@ class ExperimentSpec:
     source_path: Optional[Path] = None
 
     @property
+    def family(self) -> str:
+        """Extract experiment family (er1, er2, er3) from exp_id."""
+        eid = self.exp_id.lower()
+        for prefix in ("er1", "er2", "er3"):
+            if eid.startswith(prefix):
+                return prefix
+        return eid.split("_")[0]
+
+    @property
     def results_dir(self) -> Path:
-        return RESULTS_DIR / self.exp_id.lower()
+        return RESULTS_DIR / self.family / "runs"
 
     @property
     def checkpoints_dir(self) -> Path:

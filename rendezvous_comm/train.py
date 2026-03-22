@@ -165,7 +165,7 @@ def main():
     log.info(f"Sweep complete: {len(results)} runs in {h}h {m}m {s}s")
 
     # Write summary JSON
-    summary_path = RESULTS_DIR / spec.exp_id / "sweep_summary.json"
+    summary_path = spec.results_dir / "sweep_summary.json"
     summary = {
         "exp_id": spec.exp_id,
         "config": str(config_path),
@@ -185,7 +185,7 @@ def main():
     log.info(f"Summary:    {summary_path}")
 
     csv_matches = sorted(
-        (RESULTS_DIR / spec.exp_id).glob("sweep_results_*.csv")
+        spec.results_dir.glob("sweep_results_*.csv")
     )
     if csv_matches:
         log.info(f"CSV:        {csv_matches[-1]}")
