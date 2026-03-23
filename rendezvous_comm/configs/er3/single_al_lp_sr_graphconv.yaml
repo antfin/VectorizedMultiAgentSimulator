@@ -38,8 +38,9 @@ train:
   sampling_device: cpu
   lmbda: 0.95
   model_type: gnn
-  gnn_topology: full
+  gnn_topology: from_pos
   gnn_class: GraphConv
+  gnn_hidden_size: 148
 
 sweep:
   seeds: [0]

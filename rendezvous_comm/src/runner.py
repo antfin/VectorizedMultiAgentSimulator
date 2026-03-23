@@ -307,6 +307,10 @@ def build_experiment(
     # max_steps IS a VMAS task param (controls episode length)
     if task_overrides:
         config.update(task_overrides)
+    # Enable dict observations for GNN from_pos topology
+    if (train_config.model_type == "gnn"
+            and train_config.gnn_topology == "from_pos"):
+        config["dict_obs"] = True
     task.config.update(config)
 
     # Algorithm
@@ -320,7 +324,8 @@ def build_experiment(
 
     # Model
     if train_config.model_type == "gnn":
-        from benchmarl.models import GnnConfig
+        from benchmarl.models import GnnConfig, SequenceModelConfig
+        import torch.nn as _nn
         import torch_geometric.nn.conv as pyg_conv
 
         gnn_cls_map = {
@@ -349,14 +354,62 @@ def build_experiment(
                 exclude_pos_from_node_features=False,
             )
 
-        model_config = GnnConfig(
+        # GNN hidden size for inter-model communication
+        gnn_hidden = train_config.gnn_hidden_size
+
+        # Wrap GNN in a sequence for capacity.
+        # Bare GNN alone has too few params (~264) to learn.
+        # BenchMARL requires GNN with position/velocity keys
+        # to be the FIRST layer in a sequence model.
+        gnn_layer = GnnConfig(
             topology=train_config.gnn_topology,
             self_loops=False,
             gnn_class=gnn_cls,
             **gnn_kwargs,
         )
-        # Critic: "from_pos" not supported for PPO critics,
-        # use MLP critic with GNN actor
+        if train_config.gnn_topology == "from_pos":
+            # GNN must be first when using position keys
+            # GNN → MLP → MLP
+            model_config = SequenceModelConfig(
+                model_configs=[
+                    gnn_layer,
+                    MlpConfig(
+                        num_cells=[gnn_hidden],
+                        activation_class=_nn.Tanh,
+                        layer_class=_nn.Linear,
+                    ),
+                    MlpConfig(
+                        num_cells=[gnn_hidden],
+                        activation_class=_nn.Tanh,
+                        layer_class=_nn.Linear,
+                    ),
+                ],
+                intermediate_sizes=[
+                    gnn_hidden, gnn_hidden,
+                ],
+            )
+        else:
+            # MLP → GNN → MLP (full topology, no pos keys)
+            model_config = SequenceModelConfig(
+                model_configs=[
+                    MlpConfig(
+                        num_cells=[gnn_hidden],
+                        activation_class=_nn.Tanh,
+                        layer_class=_nn.Linear,
+                    ),
+                    gnn_layer,
+                    MlpConfig(
+                        num_cells=[gnn_hidden],
+                        activation_class=_nn.Tanh,
+                        layer_class=_nn.Linear,
+                    ),
+                ],
+                intermediate_sizes=[
+                    gnn_hidden, gnn_hidden,
+                ],
+            )
+        # Critic: MLP (GNN topology not needed for
+        # centralized value function)
         critic_model_config = MlpConfig.get_from_yaml()
     else:
         model_config = MlpConfig.get_from_yaml()
@@ -924,7 +977,46 @@ def evaluate_trained(
                 obs_key = (group, "observation")
                 if obs_key in rollout_td.keys(True):
                     obs = rollout_td[obs_key]
-                    # obs: [ne, T, n_agents, obs_dim]
+                    # Dict obs: extract "pos" or fall back
+                    # to flat tensor's first 2 features
+                    if hasattr(obs, "keys"):
+                        # TensorDict from dict observations
+                        if "pos" in obs.keys():
+                            # pos: [ne, T, n_agents, 2]
+                            pos_td = obs["pos"]
+                            if pos_td.dim() >= 4:
+                                ne_o, T_s, n_ag = (
+                                    pos_td.shape[:3]
+                                )
+                                if n_ag >= 2:
+                                    mask = torch.triu(
+                                        torch.ones(
+                                            n_ag, n_ag,
+                                            device=pos_td.device,
+                                        ),
+                                        diagonal=1,
+                                    ).bool()
+                                    for e in range(ne_o):
+                                        ep_spread = 0.0
+                                        for t in range(T_s):
+                                            d = torch.cdist(
+                                                pos_td[
+                                                    e, t
+                                                ].unsqueeze(0),
+                                                pos_td[
+                                                    e, t
+                                                ].unsqueeze(0),
+                                            )[0]
+                                            ep_spread += (
+                                                d[mask].mean()
+                                                .item()
+                                            )
+                                        all_spatial_spread.append(
+                                            ep_spread
+                                            / max(T_s, 1)
+                                        )
+                        break
+                    # Flat tensor obs: [ne, T, n_agents, obs_dim]
                     if obs.dim() >= 4:
                         ne_o, T_s, n_ag, obs_dim = obs.shape
                         if n_ag >= 2 and obs_dim >= 2:

@@ -46,6 +46,10 @@ class Scenario(BaseScenario):
         self.dim_c = kwargs.pop("dim_c", 0)
         self.comm_proximity = kwargs.pop("comm_proximity", True)
 
+        # Dict observations: return {"obs": ..., "pos": ..., "vel": ...}
+        # instead of flat tensor. Required for GNN from_pos topology.
+        self.dict_obs = kwargs.pop("dict_obs", False)
+
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
         self._comms_range = self._lidar_range
@@ -272,6 +276,12 @@ class Scenario(BaseScenario):
                         msg = msg * in_range
                     obs_parts.append(msg)
 
+        if self.dict_obs:
+            return {
+                "observation": torch.cat(obs_parts, dim=-1),
+                "pos": agent.state.pos,
+                "vel": agent.state.vel,
+            }
         return torch.cat(obs_parts, dim=-1)
 
     def info(self, agent: Agent) -> Dict[str, Tensor]:

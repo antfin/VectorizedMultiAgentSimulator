@@ -49,6 +49,7 @@ class TaskConfig:
     max_steps: int = 200
     dim_c: int = 0
     comm_proximity: bool = True
+    dict_obs: bool = False  # Dict observations for GNN from_pos
 
     def to_dict(self) -> Dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -87,6 +88,7 @@ class TrainConfig:
     gnn_topology: str = "from_pos"  # "from_pos" or "full"
     gnn_class: str = "GATv2Conv"    # torch_geometric conv class name
     gnn_edge_radius: Optional[float] = None  # None = use lidar_range
+    gnn_hidden_size: int = 148  # Hidden size for GNN sequence (~75K params)
 
 
 @dataclass

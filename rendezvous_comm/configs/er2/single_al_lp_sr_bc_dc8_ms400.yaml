@@ -1,15 +1,16 @@
-exp_id: er3_al_lp_sr_gatv2_cr035
-name: "ER3 GATv2 + AL + LP+SR (covering_range=0.35)"
+exp_id: er2_al_lp_sr_bc_dc8_ms400
+name: "ER2 + AL + LP+SR broadcast dc=8 (max_steps=400)"
 description: >
-  Same as ER3 GATv2 but with covering_range=0.35 instead of 0.25.
-  Tests if larger covering radius helps GNN coordination.
+  Same as ER2+AL+LP+SR but with broadcast communication (comm_proximity=False)
+  and 400 steps per episode. Tests if unrestricted communication helps
+  compared to proximity-gated communication.
 
 task:
   n_agents: 4
   n_targets: 4
   agents_per_target: 2
   lidar_range: 0.35
-  covering_range: 0.35
+  covering_range: 0.25
   use_agent_lidar: true
   n_lidar_rays_entities: 15
   n_lidar_rays_agents: 12
@@ -18,8 +19,9 @@ task:
   agent_collision_penalty: -0.01
   covering_rew_coeff: 1.0
   time_penalty: -0.01
-  max_steps: 200
-  dim_c: 0
+  max_steps: 400
+  dim_c: 8
+  comm_proximity: false
 
 train:
   algorithm: mappo
@@ -36,10 +38,6 @@ train:
   train_device: cpu
   sampling_device: cpu
   lmbda: 0.95
-  model_type: gnn
-  gnn_topology: from_pos
-  gnn_class: GATv2Conv
-  gnn_hidden_size: 148
 
 sweep:
   seeds: [0]
