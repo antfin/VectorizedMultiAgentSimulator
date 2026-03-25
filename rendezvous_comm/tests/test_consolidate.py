@@ -160,6 +160,33 @@ class TestLoadLatestCsv:
         df = load_latest_csv(tmp_path, "sweep_results")
         assert df.iloc[0]["run_id"] == "new"
 
+    def test_loads_from_runs_subdir(self, tmp_path):
+        import pandas as pd
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        (runs_dir / "sweep_results_20260325_1000.csv").write_text(
+            "run_id,M1\nfromruns,0.7\n"
+        )
+
+        df = load_latest_csv(tmp_path, "sweep_results")
+        assert df.iloc[0]["run_id"] == "fromruns"
+
+    def test_prefers_runs_subdir_if_newer(self, tmp_path):
+        import pandas as pd
+        # Older CSV at root level
+        (tmp_path / "sweep_results_20260315_1000.csv").write_text(
+            "run_id,M1\nold,0.1\n"
+        )
+        # Newer CSV in runs/
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        (runs_dir / "sweep_results_20260325_1000.csv").write_text(
+            "run_id,M1\nnew,0.9\n"
+        )
+
+        df = load_latest_csv(tmp_path, "sweep_results")
+        assert df.iloc[0]["run_id"] == "new"
+
     def test_returns_none_if_no_match(self, tmp_path):
         assert load_latest_csv(tmp_path, "sweep_results") is None
 
@@ -176,6 +203,14 @@ class TestListExperimentsWithData:
         exp_dir = tmp_path / "er1"
         exp_dir.mkdir()
         (exp_dir / "sweep_results_20260316.csv").write_text("run_id\n")
+
+        result = list_experiments_with_data(results_root=tmp_path)
+        assert "er1" in result
+
+    def test_finds_experiment_with_csv_in_runs(self, tmp_path):
+        runs_dir = tmp_path / "er1" / "runs"
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "sweep_results_20260325.csv").write_text("run_id\n")
 
         result = list_experiments_with_data(results_root=tmp_path)
         assert "er1" in result

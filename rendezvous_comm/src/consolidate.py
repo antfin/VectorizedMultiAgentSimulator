@@ -326,11 +326,15 @@ def load_latest_csv(
     if not results_dir.exists():
         return None
 
-    matches = sorted(results_dir.glob(f"{prefix}_*.csv"))
+    matches = list(results_dir.glob(f"{prefix}_*.csv"))
+    # Also check runs/ subdirectory (family-based structure)
+    runs_dir = results_dir / "runs"
+    if runs_dir.exists():
+        matches.extend(runs_dir.glob(f"{prefix}_*.csv"))
     if not matches:
         return None
 
-    latest = matches[-1]  # sorted by timestamp in filename
+    latest = sorted(matches, key=lambda p: p.name)[-1]
     return pd.read_csv(latest)
 
 
@@ -348,12 +352,17 @@ def list_experiments_with_data(
     for d in sorted(results_root.iterdir()):
         if not d.is_dir():
             continue
-        # Has a consolidated CSV?
+        # Has a consolidated CSV? (check both d/ and d/runs/)
         if list(d.glob("sweep_results_*.csv")):
             exp_ids.append(d.name)
             continue
+        runs_sub = d / "runs"
+        if runs_sub.exists() and list(runs_sub.glob("sweep_results_*.csv")):
+            exp_ids.append(d.name)
+            continue
         # Has any completed run (metrics.json)?
-        for sub in d.iterdir():
+        search_dir = runs_sub if runs_sub.exists() else d
+        for sub in search_dir.iterdir():
             if sub.is_dir() and (sub / "output" / "metrics.json").exists():
                 exp_ids.append(d.name)
                 break
