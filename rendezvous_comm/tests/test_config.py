@@ -74,7 +74,7 @@ class TestTaskConfig:
             "n_lidar_rays_agents", "targets_respawn", "shared_reward",
             "agent_collision_penalty", "covering_rew_coeff", "time_penalty",
             "x_semidim", "y_semidim", "min_dist_between_entities",
-            "max_steps",
+            "max_steps", "dim_c", "comm_proximity", "dict_obs",
         }
         assert set(d.keys()) == expected_keys
 
@@ -132,8 +132,9 @@ class TestExperimentSpecProperties:
 
     def test_results_dir(self):
         spec = ExperimentSpec(exp_id="ER1", name="Test", description="")
-        assert spec.results_dir.name == "er1"
-        assert spec.results_dir.parent.name == "results"
+        # results_dir is results/er1/runs/
+        assert spec.results_dir.name == "runs"
+        assert spec.results_dir.parent.name == "er1"
 
     def test_checkpoints_dir(self):
         spec = ExperimentSpec(exp_id="ER2", name="Test", description="")

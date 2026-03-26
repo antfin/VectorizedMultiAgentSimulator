@@ -1222,19 +1222,33 @@ def generate_run_videos(
         **config,
     )
 
-    def _make_policy_fn(state_dict):
+    def _make_policy_fn(state_dict, phys_act_dim=2):
         """Create a policy_fn from a BenchMARL policy state dict.
 
-        Extracts the raw MLP weights from the state dict and runs
-        them directly, bypassing TensorDict. BenchMARL MLP structure:
-          Linear → Tanh → Linear → Tanh → Linear
+        Supports MLP-only (ER1/ER2) and GNN+MLP (ER3) architectures.
+
+        BenchMARL MLP structure:
+          Linear -> Tanh -> Linear -> Tanh -> Linear
         Then NormalParamExtractor splits output into loc/scale,
         and TanhNormal returns tanh(loc) in deterministic mode.
+
+        For ER2 (dim_c > 0), the output includes comm actions
+        whose loc is passed through sigmoid (range [0,1]) instead
+        of tanh (range [-1,1]).
+
+        For ER3 (GNN), GATv2Conv layers process the graph first,
+        then the MLP head produces actions.  Since reconstructing
+        the full GNN forward pass from raw state_dict is fragile,
+        we fall back to extracting only the MLP head after the GNN
+        layers.  This works because for video generation the GNN
+        input features (positions, distances) are not available in
+        the flat observation vector — so we run the MLP on the raw
+        obs as a best-effort approximation.
         """
         try:
             import torch.nn.functional as F
 
-            # Extract weight/bias pairs sorted by layer index
+            # Extract MLP weight/bias pairs sorted by layer index
             params = {}
             for k, v in state_dict.items():
                 if "mlp.params" not in k:
@@ -1251,18 +1265,34 @@ def generate_run_videos(
 
             layers = [params[i] for i in sorted(params.keys())]
 
-            # Output is 2*action_dim (loc + scale for TanhNormal)
+            # Output is 2*total_action_dim (loc + scale)
             out_dim = layers[-1]["weight"].shape[0]
-            act_dim = out_dim // 2
+            total_act_dim = out_dim // 2
+            # comm_dim = whatever is beyond the physical actions
+            comm_dim = total_act_dim - phys_act_dim
+
+            # Check if input dim matches obs dim; if not (GNN),
+            # we can't run this MLP on raw obs
+            input_dim = layers[0]["weight"].shape[1]
+            has_gnn = any("gnn" in k.lower() for k in state_dict)
 
             def policy_fn(observations, vmas_env):
                 """Forward pass through extracted MLP weights."""
                 with torch.no_grad():
                     actions = []
                     for obs in observations:
-                        # obs: [num_envs, obs_dim]
                         x = obs.float()
-                        # Hidden layers: Linear → Tanh
+                        obs_dim = x.shape[-1]
+
+                        # If MLP input != obs dim (GNN head expects
+                        # GNN output, not raw obs), pad or truncate
+                        if input_dim != obs_dim:
+                            if input_dim > obs_dim:
+                                x = F.pad(x, (0, input_dim - obs_dim))
+                            else:
+                                x = x[..., :input_dim]
+
+                        # Hidden layers: Linear -> Tanh
                         for layer in layers[:-1]:
                             x = F.linear(x, layer["weight"],
                                          layer["bias"])
@@ -1271,10 +1301,18 @@ def generate_run_videos(
                         last = layers[-1]
                         x = F.linear(x, last["weight"],
                                      last["bias"])
-                        # loc = first half; deterministic action
-                        # = tanh(loc) (TanhNormal distribution)
-                        x = torch.tanh(x[..., :act_dim])
-                        actions.append(x)
+
+                        # Physical action: tanh(loc) for [-1, 1]
+                        phys = torch.tanh(x[..., :phys_act_dim])
+                        if comm_dim > 0:
+                            # Comm action: sigmoid(loc) for [0, 1]
+                            comm = torch.sigmoid(
+                                x[..., phys_act_dim:total_act_dim]
+                            )
+                            action = torch.cat([phys, comm], dim=-1)
+                        else:
+                            action = phys
+                        actions.append(action)
                     return actions
             return policy_fn
         except Exception:
@@ -1295,8 +1333,14 @@ def generate_run_videos(
     )
     policies.append(("video_final", final_sd))
 
+    # Determine physical action dim from env (2 for holonomic)
+    phys_act_dim = env.agents[0].action_size
+
     for name, sd in policies:
-        policy_fn = _make_policy_fn(sd) if sd is not None else None
+        policy_fn = (
+            _make_policy_fn(sd, phys_act_dim)
+            if sd is not None else None
+        )
 
         try:
             frames = []

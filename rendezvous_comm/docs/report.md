@@ -52,11 +52,29 @@ The k=2 constraint is critical. When k=1 (any single agent can cover a target), 
 The Discovery scenario is implemented in VMAS (Vectorized Multi-Agent Simulator), a PyTorch-based framework that runs batches of environments in parallel on GPU. Key simulation parameters:
 
 - **Parallelism:** 600 environments run simultaneously
-- **Space:** 2D continuous, agents and targets spawn randomly
-- **Agents:** 4, each equipped with LiDAR sensor
+- **Space:** 2D continuous (2.0 x 2.0 units), agents and targets spawn randomly
+- **Agents:** 4, holonomic dynamics (direct force control), radius 0.05
 - **Targets:** 4, with `targets_respawn=False` (episode ends when all targets are covered)
-- **Reward structure:** `covering_rew` (positive for covering targets) + `collision_penalty` + `time_penalty`
+- **Reward structure:** `covering_rew` (positive for covering targets) + `collision_penalty` (-0.01) + `time_penalty` (-0.01)
 - **Covering:** A target is covered when k agents are simultaneously within `covering_range` of it
+
+#### Spatial Scales
+
+Understanding spatial scales is critical to interpreting why ms200 vs ms400 and cr025 vs cr035 produce such different results:
+
+| Quantity | Value | Steps to traverse | % of world width |
+| --- | --- | --- | --- |
+| Agent diameter | 0.10 | ~1 step | 5% |
+| covering_range (cr025) | 0.25 | ~25 steps | 12.5% |
+| covering_range (cr035) | 0.35 | ~35 steps | 17.5% |
+| LiDAR range | 0.35 | ~35 steps | 17.5% |
+| World width | 2.0 | **~200 steps** | 100% |
+
+An agent moves ~0.01 units/step from rest (steady-state max ~0.1 units/step with sustained force). The LiDAR covers ~12% of the world diagonal, so agents must actively explore. At ms200, crossing the world once consumes the entire episode — leaving almost no margin for k=2 synchronization. At **ms400**, agents have double the budget to explore, wait for partners, and cover all 4 targets. This explains the 10x improvement (4% to 40.5%) from doubling episode length alone.
+
+Similarly, **cr035 nearly doubles the covering zone area** (0.39 vs 0.20 sq units) and widens the spatial overlap window by 40%, making simultaneous occupation far easier.
+
+See [Spatial Scales and Physics Reference](spatial_scales_physics.md) for full physics integration details, steady-state velocity derivation, and scale diagrams.
 
 ### 3.2 MAPPO Algorithm
 
@@ -363,4 +381,6 @@ See [Detailed GNN vs Minimal Team comparison](comparison_gnn_vs_minimal_team.md)
 
 - Raw results: `../results/er1/runs/`, `../results/er2/runs/`, `../results/er3/runs/`
 - GNN theory: [theory_gnn_communication.md](theory_gnn_communication.md)
+- Spatial scales and physics: [spatial_scales_physics.md](spatial_scales_physics.md)
 - GNN vs minimal team: [comparison_gnn_vs_minimal_team.md](comparison_gnn_vs_minimal_team.md)
+- Full experiment table: [all_experiments_analysis.md](all_experiments_analysis.md)

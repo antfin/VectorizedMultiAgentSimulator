@@ -77,8 +77,9 @@ class TestRunFolderStructure:
     def test_run_dir_under_exp_id(self, tmp_path, spec):
         storage = ExperimentStorage("er1", results_root=tmp_path)
         rs = storage.get_run("er1_mappo_n4_t3_k2_l035_s0")
-        assert rs.run_dir.parent.name == "er1"
-        assert rs.run_dir.parent.parent == tmp_path
+        # Run dir is under results/er1/runs/
+        assert rs.run_dir.parent.name == "runs"
+        assert rs.run_dir.parent.parent.name == "er1"
 
     def test_subdirectories_created(self, tmp_path):
         rs = RunStorage(tmp_path / "run1", "run1")
@@ -229,7 +230,8 @@ class TestSweepFolderStructure:
 
     def test_exp_id_lowercased(self, tmp_path):
         storage = ExperimentStorage("ER1", results_root=tmp_path)
-        assert storage.results_dir.name == "er1"
+        # results_dir is results/er1/runs/
+        assert storage.results_dir.parent.name == "er1"
 
 
 # ── Full lifecycle integration ───────────────────────────────────

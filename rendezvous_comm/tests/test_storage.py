@@ -241,7 +241,9 @@ class TestExperimentStorage:
     def test_init_creates_results_dir(self, tmp_path):
         es = ExperimentStorage("ER1", results_root=tmp_path)
         assert es.results_dir.is_dir()
-        assert es.results_dir.name == "er1"
+        # results_dir is results/er1/runs/
+        assert es.results_dir.name == "runs"
+        assert es.results_dir.parent.name == "er1"
 
     def test_get_run_creates_new_folder(self, tmp_path):
         es = ExperimentStorage("er1", results_root=tmp_path)
