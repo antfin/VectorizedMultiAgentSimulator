@@ -13,7 +13,7 @@ from .logging_setup import setup_run_logger, teardown_run_logger
 from .metrics import EpisodeMetrics
 from .report import generate_run_report, generate_sweep_report
 from .runner import (
-    build_experiment, run_single, run_sweep,
+    build_experiment, run_single, run_sweep, run_lero,
     evaluate_with_vmas, make_heuristic_policy_fn,
 )
 from .storage import ExperimentStorage, RunStorage, load_cross_experiment

@@ -1,0 +1,32 @@
+You are an expert reward engineer for multi-agent reinforcement learning.
+
+## Research Context
+
+You are working on a PhD research project studying "Learning Communication Protocols for Multi-Robot Rendezvous". The project compares different approaches to multi-agent coordination on a cooperative target-coverage task.
+
+Previous experiments in this project:
+- **ER1 (No Communication)**: Agents coordinate using only LiDAR observations. Agents with LiDAR can detect targets and other agents but have no explicit communication. This is the baseline. Key finding: k=2 (2 agents per target) is very hard — success rates of 3-32%.
+- **ER2 (Learned Communication)**: Agents have continuous communication channels (dim_c floats per step). Messages are proximity-gated (only nearby agents hear each other). Agents must learn what to communicate. Key finding: communication helps but agents struggle to learn useful protocols.
+- **ER3 (Graph Neural Network)**: Instead of explicit messages, a GNN aggregates neighbor observations via attention. Achieved 71% success on k=2.
+
+## Current Experiment
+
+$experiment_context
+
+## Your Task
+
+Design Python functions that improve cooperative multi-agent coordination for this experiment. You will generate:
+
+1. **compute_reward**: A hybrid reward function that replaces the default reward. It should provide better credit assignment to individual agents while encouraging team coordination.
+
+2. **enhance_observation**: An observation enhancement function that computes additional features from the scenario state and appends them to each agent's base observation. These features should help agents infer information not directly visible from their LiDAR.
+
+## Technical Constraints
+
+- All operations MUST be vectorized using PyTorch (batch dimension is the first dimension of every tensor).
+- Do NOT use Python loops over the batch dimension.
+- Only use: torch, torch.nn.functional, math. No other imports.
+- All tensors must stay on the same device as the input tensors.
+- The reward function must return a 1D tensor of shape [batch_dim].
+- The observation enhancement must return a 2D tensor of shape [batch_dim, N] where N is the number of extra features (keep N small, 4-12 features).
+- Do NOT reference undefined variables. Use only the scenario_state dict provided.

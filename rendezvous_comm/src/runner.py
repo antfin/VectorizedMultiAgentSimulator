@@ -488,6 +488,39 @@ def build_experiment(
     return experiment
 
 
+def run_lero(
+    spec: ExperimentSpec,
+    task_overrides: Optional[Dict[str, Any]] = None,
+    algorithm: str = "mappo",
+    seed: int = 0,
+    output_dir=None,
+) -> Dict[str, Any]:
+    """Run a LERO evolutionary loop for an experiment.
+
+    Requires spec.lero and spec.llm to be set (from YAML config).
+
+    Returns:
+        Final metrics dict from the best evolved candidate.
+    """
+    if spec.lero is None:
+        raise ValueError(
+            "ExperimentSpec has no LERO config. "
+            "Add a 'lero:' section to the YAML."
+        )
+    from .lero import LeroLoop
+    loop = LeroLoop(
+        spec=spec,
+        lero_config=spec.lero,
+        llm_config=spec.llm,
+        output_dir=output_dir,
+    )
+    return loop.run(
+        task_overrides=task_overrides,
+        algorithm=algorithm,
+        seed=seed,
+    )
+
+
 def run_single(
     spec: ExperimentSpec,
     run_id: str,

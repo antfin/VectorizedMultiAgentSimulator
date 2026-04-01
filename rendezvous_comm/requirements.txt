@@ -33,3 +33,6 @@ markdown
 
 # Utilities
 tqdm
+
+# LERO: LLM-driven evolutionary reward/observation optimization
+litellm>=1.40

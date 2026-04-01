@@ -114,6 +114,9 @@ class ExperimentSpec:
     train: TrainConfig = field(default_factory=TrainConfig)
     sweep: SweepConfig = field(default_factory=SweepConfig)
     source_path: Optional[Path] = None
+    # LERO evolutionary loop (None = not a LERO experiment)
+    lero: Optional[Any] = None   # LeroConfig
+    llm: Optional[Any] = None    # LLMConfig
 
     @property
     def family(self) -> str:
@@ -212,6 +215,17 @@ def load_experiment(yaml_path) -> ExperimentSpec:
     train = TrainConfig(**raw.get("train", {}))
     sweep = SweepConfig(**raw.get("sweep", {}))
 
+    # Optional LERO config
+    lero_config = None
+    llm_config = None
+    if "lero" in raw:
+        from .lero.config import LeroConfig, LLMConfig
+        lero_config = LeroConfig(**raw["lero"])
+        if "llm" in raw:
+            llm_config = LLMConfig(**raw["llm"])
+        else:
+            llm_config = LLMConfig()  # defaults
+
     return ExperimentSpec(
         exp_id=raw["exp_id"],
         name=raw["name"],
@@ -220,6 +234,8 @@ def load_experiment(yaml_path) -> ExperimentSpec:
         train=train,
         sweep=sweep,
         source_path=yaml_path.resolve(),
+        lero=lero_config,
+        llm=llm_config,
     )
 
 
