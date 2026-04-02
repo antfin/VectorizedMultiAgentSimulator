@@ -23,9 +23,10 @@ class LLMConfig:
     """
 
     # Model identifier (LiteLLM format: "provider/model" or just "model")
-    model: str = "claude-sonnet-4-6"
+    model: str = "gpt-5.4-mini"
     temperature: float = 0.8
-    max_tokens: int = 4096
+    # Max output tokens. None = use provider default.
+    max_tokens: Optional[int] = None
 
     # Custom endpoint (for OVH or any OpenAI-compatible API)
     # None = use provider's default endpoint
@@ -33,6 +34,11 @@ class LLMConfig:
 
     # API key override (None = read from environment variable)
     api_key: Optional[str] = None
+
+    # Context window size in tokens (prompt + completion must fit).
+    # None = auto-detect from LiteLLM's model registry.
+    # Set explicitly for custom endpoints where auto-detect fails.
+    context_window: Optional[int] = None
 
     # Retry / robustness
     max_retries: int = 3

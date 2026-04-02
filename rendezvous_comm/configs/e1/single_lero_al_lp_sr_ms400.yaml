@@ -48,10 +48,8 @@ lero:
   evolve_observation: true
 
 llm:
-  model: "openai/gpt-oss-120b"
-  api_base: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+  model: "gpt-5.4-mini"
   temperature: 0.8
-  max_tokens: 4096
   max_retries: 3
   prompt_version: "v1"
 

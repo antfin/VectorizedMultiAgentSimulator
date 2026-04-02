@@ -28,13 +28,15 @@ load_dotenv(_ENV_PATH, override=False)
 
 _log = logging.getLogger("rendezvous.lero")
 
+# Default context window for custom endpoints where auto-detect fails
+_DEFAULT_CONTEXT_WINDOW = 16_000
+
 
 class LLMClient:
     """Unified LLM client using LiteLLM."""
 
     def __init__(self, config: LLMConfig):
         self.config = config
-        # Import check at init time — fail fast if not installed
         try:
             import litellm
             self._litellm = litellm
@@ -43,8 +45,18 @@ class LLMClient:
                 "LiteLLM is required for LERO. Install it with:\n"
                 "  pip install litellm"
             )
-        # Suppress litellm's own verbose logging
         litellm.suppress_debug_info = True
+
+        # Resolve context window once at init
+        self._context_window = self._resolve_context_window()
+        _log.info(
+            "LLM: %s (context=%d tokens, max_output=%d tokens)",
+            config.model, self._context_window, config.max_tokens,
+        )
+
+    @property
+    def context_window(self) -> int:
+        return self._context_window
 
     # ── public API ───────────────────────────────────────────────
 
@@ -53,15 +65,7 @@ class LLMClient:
         messages: List[Dict[str, str]],
         n: int = 1,
     ) -> List[str]:
-        """Generate *n* independent completions.
-
-        Args:
-            messages: conversation history [{role, content}, ...]
-            n: number of independent completions (candidates)
-
-        Returns:
-            List of response text strings.
-        """
+        """Generate *n* independent completions."""
         responses: List[str] = []
         for i in range(n):
             text = self._call_with_retry(messages)
@@ -71,6 +75,38 @@ class LLMClient:
         return responses
 
     # ── internal ─────────────────────────────────────────────────
+
+    def _resolve_context_window(self) -> int:
+        """Determine context window for the configured model.
+
+        Priority:
+        1. Explicit context_window in LLMConfig (for custom endpoints)
+        2. LiteLLM's model registry (knows Claude, GPT, etc.)
+        3. Conservative default (16K) for unknown models
+        """
+        # 1. Explicit config
+        if self.config.context_window is not None:
+            return self.config.context_window
+
+        # 2. LiteLLM model registry
+        try:
+            info = self._litellm.get_model_info(self.config.model)
+            if info and info.get("max_input_tokens"):
+                # max_input_tokens + max_output_tokens = context window
+                max_in = info["max_input_tokens"]
+                max_out = info.get("max_output_tokens", self.config.max_tokens)
+                return max_in + max_out
+        except Exception:
+            pass
+
+        # 3. Conservative default for custom/unknown endpoints
+        _log.warning(
+            "Could not determine context window for '%s'. "
+            "Using conservative default %d tokens. "
+            "Set 'context_window' in llm config for accuracy.",
+            self.config.model, _DEFAULT_CONTEXT_WINDOW,
+        )
+        return _DEFAULT_CONTEXT_WINDOW
 
     def _call_with_retry(self, messages: List[Dict[str, str]]) -> str:
         last_err = None
@@ -92,24 +128,48 @@ class LLMClient:
         )
 
     def _call(self, messages: List[Dict[str, str]]) -> str:
+        # Check prompt fits in context window
+        total_chars = sum(len(m.get("content", "")) for m in messages)
+        approx_prompt_tokens = total_chars // 4
+        max_out = self.config.max_tokens or 4096  # estimate for warning
+        total_needed = approx_prompt_tokens + max_out
+        headroom = self._context_window - total_needed
+
+        if headroom < 0:
+            _log.warning(
+                "Prompt (~%d tokens) + output (~%d) = ~%d total, "
+                "EXCEEDS context window (%d) by ~%d tokens.",
+                approx_prompt_tokens, max_out,
+                total_needed, self._context_window, -headroom,
+            )
+        elif headroom < 2000:
+            _log.warning(
+                "Prompt (~%d tokens) + output (~%d) = ~%d total, "
+                "only ~%d tokens headroom in context window (%d).",
+                approx_prompt_tokens, max_out,
+                total_needed, headroom, self._context_window,
+            )
+
         kwargs = {
             "model": self.config.model,
             "messages": messages,
-            "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
         }
+        if self.config.max_tokens is not None:
+            kwargs["max_tokens"] = self.config.max_tokens
 
-        # Custom endpoint (OVH, local, etc.)
         if self.config.api_base:
             kwargs["api_base"] = self.config.api_base
 
-        # API key: explicit config > OVH env var > provider default env var
         api_key = self.config.api_key
         if not api_key and self.config.api_base:
-            # Custom endpoint — try OVH token as fallback
             api_key = os.environ.get("OVH_AI_ENDPOINTS_ACCESS_TOKEN")
         if api_key:
             kwargs["api_key"] = api_key
 
         response = self._litellm.completion(**kwargs)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            _log.warning("LLM returned None content, treating as empty")
+            return ""
+        return content

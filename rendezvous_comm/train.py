@@ -141,28 +141,62 @@ def main():
         spec.train.sampling_device = device
         log.info(f"Device:     {device} (auto-detected)")
 
-    # Count sweep runs
-    all_runs = list(spec.iter_runs())
-    log.info(f"Sweep:      {len(all_runs)} runs")
+    # LERO experiment or standard sweep?
+    is_lero = spec.lero is not None
 
-    # Run sweep
+    if is_lero:
+        log.info(f"Mode:       LERO ({spec.lero.n_iterations} iters × {spec.lero.n_candidates} candidates)")
+    else:
+        all_runs = list(spec.iter_runs())
+        log.info(f"Sweep:      {len(all_runs)} runs")
+
     skip = not args.force_retrain
     t0 = time.monotonic()
 
-    from src.runner import run_sweep
+    if is_lero:
+        # Load .env for API keys
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent / ".env")
 
-    results = run_sweep(
-        spec,
-        skip_complete=skip,
-        dry_run=args.dry_run,
-        max_runs=args.max_runs,
-    )
+        from src.runner import run_lero
+
+        # Use first sweep combo for task_overrides
+        first_run = list(spec.iter_runs())[0]
+        _, task_overrides, algorithm, seed = first_run
+
+        log.info(f"Task:       {task_overrides}")
+        log.info(f"Algorithm:  {algorithm}, seed={seed}")
+
+        result = run_lero(
+            spec,
+            task_overrides=task_overrides,
+            algorithm=algorithm,
+            seed=seed,
+        )
+        results = {"lero_best": result}
+    else:
+        from src.runner import run_sweep
+
+        results = run_sweep(
+            spec,
+            skip_complete=skip,
+            dry_run=args.dry_run,
+            max_runs=args.max_runs,
+        )
+
     elapsed = time.monotonic() - t0
 
     # Summary
     m, s = divmod(int(elapsed), 60)
     h, m = divmod(m, 60)
-    log.info(f"Sweep complete: {len(results)} runs in {h}h {m}m {s}s")
+    log.info(f"{'LERO' if is_lero else 'Sweep'} complete: {len(results)} runs in {h}h {m}m {s}s")
+
+    if is_lero:
+        # Print key metrics
+        r = results.get("lero_best", {})
+        for k in sorted(r):
+            if k.startswith("M") and isinstance(r[k], (int, float)):
+                log.info(f"  {k}: {r[k]:.4f}")
 
     # Write summary JSON
     summary_path = spec.results_dir / "sweep_summary.json"
@@ -172,6 +206,7 @@ def main():
         "n_runs": len(results),
         "elapsed_seconds": int(elapsed),
         "device": spec.train.train_device,
+        "mode": "lero" if is_lero else "sweep",
         "runs": {},
     }
     for run_id, metrics in results.items():

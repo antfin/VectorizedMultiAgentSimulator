@@ -25,7 +25,7 @@ from .codegen import CandidateCode, build_feedback, extract_candidates
 from .config import LeroConfig, LLMConfig
 from .llm_client import LLMClient
 from .prompts.loader import PromptLoader
-from .scenario_patch import patch_scenario_class, unpatch_scenario_class
+from .scenario_patch import make_patched_scenario_class
 
 _log = logging.getLogger("rendezvous.lero")
 
@@ -207,6 +207,155 @@ def _get_scenario_from_experiment(experiment):
     )
 
 
+class _ScenarioEnvFunFactory:
+    """Picklable env factory that creates VmasEnv with a scenario CLASS.
+
+    Each env gets a NEW instance of the patched scenario class.
+    BenchMARL pickles this for naming, so __getstate__ is minimal.
+    """
+
+    def __init__(self, scenario_class, config):
+        self.scenario_class = scenario_class
+        self.config = config
+
+    def __call__(self, num_envs, continuous_actions, seed, device):
+        ScenarioClass = self.scenario_class
+        config = self.config
+
+        def make_env():
+            from torchrl.envs.libs.vmas import VmasEnv
+            # Each env creates a FRESH scenario instance
+            return VmasEnv(
+                scenario=ScenarioClass(),
+                num_envs=num_envs,
+                continuous_actions=continuous_actions,
+                seed=seed,
+                device=device,
+                categorical_actions=True,
+                clamp_actions=True,
+                **config,
+            )
+
+        return make_env
+
+    def __getstate__(self):
+        return {"_dummy": True}
+
+    def __setstate__(self, state):
+        pass
+
+
+def _build_patched_experiment(
+    task_config,
+    train_config,
+    algorithm: str,
+    seed: int,
+    task_overrides: Optional[Dict] = None,
+    save_folder: Optional[str] = None,
+    reward_source: Optional[str] = None,
+    obs_source: Optional[str] = None,
+):
+    """Build a BenchMARL Experiment with LLM-patched scenario.
+
+    Creates a Scenario subclass with the LLM-generated reward/observation
+    and passes it as a scenario instance to BenchMARL. This way TorchRL
+    sees the patched observation size when computing specs during init.
+    """
+    from ..runner import get_algorithm_config
+
+    from benchmarl.environments import VmasTask
+    from benchmarl.experiment import Experiment, ExperimentConfig
+    from benchmarl.models.mlp import MlpConfig
+
+    # Create patched scenario class
+    PatchedScenario = make_patched_scenario_class(
+        reward_source, obs_source,
+    )
+    # Configure the task
+    task = VmasTask.DISCOVERY.get_from_yaml()
+    config = task_config.to_dict()
+    if task_overrides:
+        config.update(task_overrides)
+    if (train_config.model_type == "gnn"
+            and train_config.gnn_topology == "from_pos"):
+        config["dict_obs"] = True
+    task.config.update(config)
+
+    # Override the env factory to use our patched scenario CLASS
+    # Each env creates a fresh instance of the patched class
+    task.get_env_fun = _ScenarioEnvFunFactory(
+        PatchedScenario, config,
+    )
+
+    # Algorithm
+    algo_config = get_algorithm_config(algorithm)
+    if train_config.entropy_coef is not None:
+        algo_config.entropy_coef = train_config.entropy_coef
+    if train_config.lmbda is not None:
+        algo_config.lmbda = train_config.lmbda
+    if train_config.clip_epsilon is not None:
+        algo_config.clip_epsilon = train_config.clip_epsilon
+
+    # Model
+    model_config = MlpConfig.get_from_yaml()
+    critic_model_config = MlpConfig.get_from_yaml()
+    if train_config.hidden_layers is not None:
+        model_config.num_cells = train_config.hidden_layers
+        critic_model_config.num_cells = train_config.hidden_layers
+    if train_config.activation is not None:
+        import torch.nn as nn
+        act_map = {"tanh": nn.Tanh, "relu": nn.ReLU, "gelu": nn.GELU}
+        act_cls = act_map.get(train_config.activation.lower())
+        if act_cls is not None:
+            model_config.activation_class = act_cls
+            critic_model_config.activation_class = act_cls
+
+    # Experiment config
+    experiment_config = ExperimentConfig.get_from_yaml()
+    experiment_config.max_n_frames = train_config.max_n_frames
+    experiment_config.gamma = train_config.gamma
+    experiment_config.on_policy_collected_frames_per_batch = (
+        train_config.on_policy_collected_frames_per_batch
+    )
+    experiment_config.on_policy_n_envs_per_worker = (
+        train_config.on_policy_n_envs_per_worker
+    )
+    experiment_config.on_policy_n_minibatch_iters = (
+        train_config.on_policy_n_minibatch_iters
+    )
+    experiment_config.on_policy_minibatch_size = (
+        train_config.on_policy_minibatch_size
+    )
+    experiment_config.train_device = train_config.train_device
+    experiment_config.sampling_device = train_config.sampling_device
+    experiment_config.share_policy_params = train_config.share_policy_params
+    experiment_config.evaluation = True
+
+    eval_interval = train_config.evaluation_interval
+    batch_size = train_config.on_policy_collected_frames_per_batch
+    if eval_interval % batch_size != 0:
+        eval_interval = max(
+            batch_size, (eval_interval // batch_size) * batch_size,
+        )
+    experiment_config.evaluation_interval = eval_interval
+    experiment_config.evaluation_episodes = train_config.evaluation_episodes
+    experiment_config.loggers = ["csv"]
+    experiment_config.render = False
+
+    if save_folder is not None:
+        experiment_config.save_folder = save_folder
+
+    experiment = Experiment(
+        task=task,
+        algorithm_config=algo_config,
+        model_config=model_config,
+        critic_model_config=critic_model_config,
+        seed=seed,
+        config=experiment_config,
+    )
+    return experiment
+
+
 class LeroLoop:
     """Main LERO evolutionary loop."""
 
@@ -227,7 +376,7 @@ class LeroLoop:
         if output_dir is None:
             storage = ExperimentStorage(spec.exp_id)
             ts = time.strftime("%Y%m%d_%H%M")
-            output_dir = storage.base_dir / "lero" / ts
+            output_dir = storage.results_dir / "lero" / ts
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -317,6 +466,7 @@ class LeroLoop:
                 try:
                     metrics = self._evaluate_candidate(
                         cand, task_overrides, algorithm, seed,
+                        iter_dir=iter_dir, candidate_idx=j,
                     )
                     results.append((cand, metrics))
                     # Save metrics
@@ -374,15 +524,24 @@ class LeroLoop:
                 task_params,
             )
 
-            # Update conversation for next iteration
-            messages.append({
-                "role": "assistant",
-                "content": best_candidate.source,
-            })
-            messages.append({
-                "role": "user",
-                "content": feedback,
-            })
+            # Update conversation for next iteration.
+            # Use a sliding window: keep system + initial user + only
+            # the LAST assistant/feedback pair. This prevents the
+            # conversation from growing beyond the model's context
+            # window (OVH/vLLM returns null content when prompt is
+            # too long — see vllm-project/vllm#18006).
+            messages = [
+                messages[0],  # system
+                messages[1],  # initial user prompt
+                {
+                    "role": "assistant",
+                    "content": best_candidate.source,
+                },
+                {
+                    "role": "user",
+                    "content": feedback,
+                },
+            ]
 
             # Save feedback
             (iter_dir / "feedback.txt").write_text(feedback)
@@ -490,34 +649,36 @@ class LeroLoop:
         task_overrides: Optional[Dict],
         algorithm: str,
         seed: int,
+        iter_dir: Optional[Path] = None,
+        candidate_idx: int = 0,
     ) -> Dict[str, float]:
         """Short training run with patched scenario to evaluate a candidate."""
         from ..runner import build_experiment, evaluate_trained
+        from benchmarl.environments import VmasTask
 
         short_train = copy.copy(self.spec.train)
         short_train.max_n_frames = self.lero.eval_frames
         short_train.evaluation_episodes = self.lero.eval_episodes
 
-        # Patch class BEFORE building experiment so BenchMARL sees
-        # the correct observation size when probing the env.
-        originals = patch_scenario_class(
+        save_folder = None
+        if iter_dir is not None:
+            save_folder = str(iter_dir / f"benchmarl_c{candidate_idx}")
+
+        # build_experiment creates its own task internally, but we need
+        # to patch the task's env factory BEFORE the Experiment is built.
+        # So we replicate the task setup here and pass the patched task.
+        experiment = _build_patched_experiment(
+            self.spec.task, short_train, algorithm, seed,
+            task_overrides, save_folder,
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
         )
 
-        try:
-            experiment = build_experiment(
-                self.spec.task, short_train, algorithm, seed,
-                task_overrides,
-            )
-            experiment.run()
-            metrics = evaluate_trained(
-                self.spec, experiment, task_overrides,
-                n_eval_episodes=self.lero.eval_episodes,
-            )
-        finally:
-            unpatch_scenario_class(originals)
-
+        experiment.run()
+        metrics = evaluate_trained(
+            self.spec, experiment, task_overrides,
+            n_eval_episodes=self.lero.eval_episodes,
+        )
         return metrics
 
     def _full_training(
@@ -533,31 +694,26 @@ class LeroLoop:
         full_train = copy.copy(self.spec.train)
         full_train.max_n_frames = self.lero.full_frames
 
-        # Patch class BEFORE building experiment
-        originals = patch_scenario_class(
+        save_folder = str(self.output_dir / "benchmarl_final")
+
+        experiment = _build_patched_experiment(
+            self.spec.task, full_train, algorithm, seed,
+            task_overrides, save_folder,
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
         )
 
-        try:
-            experiment = build_experiment(
-                self.spec.task, full_train, algorithm, seed,
-                task_overrides,
-            )
+        t0 = time.monotonic()
+        experiment.run()
+        elapsed = time.monotonic() - t0
 
-            t0 = time.monotonic()
-            experiment.run()
-            elapsed = time.monotonic() - t0
+        metrics = evaluate_trained(self.spec, experiment, task_overrides)
+        metrics["training_seconds"] = elapsed
 
-            metrics = evaluate_trained(self.spec, experiment, task_overrides)
-            metrics["training_seconds"] = elapsed
-
-            # Save policy
-            policy_path = self.output_dir / "best_policy.pt"
-            torch.save(experiment.policy.state_dict(), policy_path)
-            _log.info("Saved best policy to %s", policy_path)
-        finally:
-            unpatch_scenario_class(originals)
+        # Save policy
+        policy_path = self.output_dir / "best_policy.pt"
+        torch.save(experiment.policy.state_dict(), policy_path)
+        _log.info("Saved best policy to %s", policy_path)
 
         return metrics
 

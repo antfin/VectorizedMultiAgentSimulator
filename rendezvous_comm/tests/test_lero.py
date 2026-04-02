@@ -20,8 +20,7 @@ from src.lero.prompts.loader import PromptLoader
 from src.lero.scenario_patch import (
     _build_scenario_state,
     _compile_function,
-    patch_scenario,
-    unpatch_scenario,
+    make_patched_scenario_class,
 )
 
 
@@ -116,9 +115,10 @@ class TestLeroConfig:
 class TestLLMConfig:
     def test_defaults(self):
         cfg = LLMConfig()
-        assert "claude" in cfg.model
+        assert "gpt-5.4-mini" == cfg.model
         assert cfg.temperature == 0.8
-        assert cfg.max_tokens == 4096
+        assert cfg.max_tokens is None
+        assert cfg.max_tokens is None
         assert cfg.max_retries == 3
         assert cfg.prompt_version == "v1"
         assert cfg.api_base is None
@@ -171,7 +171,7 @@ class TestConfigWithLero:
         spec = load_experiment(path)
         assert spec.lero is not None
         assert spec.llm is not None
-        assert "claude" in spec.llm.model
+        assert "gpt-5.4-mini" == spec.llm.model
 
     def test_load_real_e1_config(self):
         cfg_path = (
@@ -633,42 +633,42 @@ class TestScenarioPatch:
         assert "messages" in state
         assert state["messages"].shape[-1] == 4  # dim_c
 
-    def test_patch_class_and_unpatch(self):
-        """Test class-level patching and restoration."""
-        from vmas.scenarios.discovery import Scenario
-        from src.lero.scenario_patch import (
-            patch_scenario_class, unpatch_scenario_class,
-        )
+    def test_make_patched_scenario_class_obs(self):
+        """Test that patched subclass has different observation."""
+        from vmas.scenarios.discovery import Scenario as OrigScenario
 
-        orig_reward = Scenario.reward
-        orig_obs = Scenario.observation
-
-        originals = patch_scenario_class(
+        PatchedCls = make_patched_scenario_class(
             obs_source=VALID_OBS_SRC.strip(),
         )
-        # After patch, observation method is different
-        assert Scenario.observation is not orig_obs
-        # Reward not patched — still original
-        assert Scenario.reward is orig_reward
+        # Subclass of original
+        assert issubclass(PatchedCls, OrigScenario)
+        # Has overridden observation
+        assert PatchedCls.observation is not OrigScenario.observation
+        # Reward NOT overridden
+        assert PatchedCls.reward is OrigScenario.reward
 
-        unpatch_scenario_class(originals)
-        # Restored
-        assert Scenario.observation is orig_obs
-        assert Scenario.reward is orig_reward
+    def test_make_patched_scenario_class_reward(self):
+        """Test that patched subclass has different reward."""
+        from vmas.scenarios.discovery import Scenario as OrigScenario
 
-    def test_patch_class_reward_only(self):
-        from vmas.scenarios.discovery import Scenario
-        from src.lero.scenario_patch import (
-            patch_scenario_class, unpatch_scenario_class,
-        )
-
-        orig_obs = Scenario.observation
-        originals = patch_scenario_class(
+        PatchedCls = make_patched_scenario_class(
             reward_source=VALID_REWARD_SRC.strip(),
         )
-        # Obs not touched
-        assert Scenario.observation is orig_obs
-        unpatch_scenario_class(originals)
+        assert issubclass(PatchedCls, OrigScenario)
+        assert PatchedCls.reward is not OrigScenario.reward
+        # Obs NOT overridden
+        assert PatchedCls.observation is OrigScenario.observation
+
+    def test_make_patched_scenario_class_both(self):
+        """Test patched subclass with both reward and observation."""
+        from vmas.scenarios.discovery import Scenario as OrigScenario
+
+        PatchedCls = make_patched_scenario_class(
+            reward_source=VALID_REWARD_SRC.strip(),
+            obs_source=VALID_OBS_SRC.strip(),
+        )
+        assert PatchedCls.reward is not OrigScenario.reward
+        assert PatchedCls.observation is not OrigScenario.observation
 
 
 # ── LLMClient ────────────────────────────────────────────────────
@@ -727,6 +727,7 @@ class TestLLMClient:
             model="openai/llama-3-70b",
             api_base="https://ovh.example.com/v1",
             api_key="sk-test-key",
+            context_window=16000,
         )
         client = LLMClient(cfg)
         mock_completion = MagicMock()
@@ -745,7 +746,7 @@ class TestLLMClient:
 
     @patch.dict("sys.modules", {"litellm": MagicMock()})
     def test_call_omits_api_base_when_none(self):
-        cfg = LLMConfig(model="gpt-4o")
+        cfg = LLMConfig(model="gpt-4o", context_window=128000)
         client = LLMClient(cfg)
         mock_completion = MagicMock()
         mock_completion.return_value.choices = [
@@ -758,3 +759,9 @@ class TestLLMClient:
         call_kwargs = mock_completion.call_args[1]
         assert "api_base" not in call_kwargs
         assert "api_key" not in call_kwargs
+
+    @patch.dict("sys.modules", {"litellm": MagicMock()})
+    def test_context_window_explicit(self):
+        cfg = LLMConfig(model="openai/custom", context_window=32000)
+        client = LLMClient(cfg)
+        assert client.context_window == 32000

@@ -56,6 +56,9 @@ def extract_candidates(
     """
     candidates = []
     for resp in responses:
+        if not resp:
+            _log.warning("Empty/None LLM response, skipping")
+            continue
         code_blocks = _CODE_BLOCK_RE.findall(resp)
         if not code_blocks:
             _log.warning("No code blocks found in LLM response")
@@ -81,9 +84,13 @@ def extract_candidates(
                 else:
                     _log.warning("enhance_observation failed validation")
 
-        # Accept if at least one requested function was found
-        if (evolve_reward and reward_src is None
-                and evolve_observation and obs_src is None):
+        # Require at least one requested function
+        has_any = False
+        if evolve_reward and reward_src is not None:
+            has_any = True
+        if evolve_observation and obs_src is not None:
+            has_any = True
+        if not has_any:
             _log.warning("No valid functions extracted from response")
             continue
 
@@ -179,7 +186,8 @@ def build_feedback(
         reverse=True,
     )
 
-    # Build results text
+    # Build results text — include code only for top_k candidates
+    # to keep prompt within context window limits
     lines = []
     for rank, (orig_idx, (cand, metrics)) in enumerate(indexed):
         lines.append(f"--- Candidate #{orig_idx + 1} (rank {rank + 1}) ---")
@@ -190,12 +198,14 @@ def build_feedback(
         if "M5_avg_tokens" in metrics and metrics["M5_avg_tokens"] > 0:
             lines.append(f"M5 Avg Tokens:      {metrics.get('M5_avg_tokens', 0):.1f}")
         lines.append("")
-        if cand.reward_source:
-            lines.append("Reward function:")
-            lines.append(f"```python\n{cand.reward_source}\n```")
-        if cand.obs_source:
-            lines.append("Observation enhancement:")
-            lines.append(f"```python\n{cand.obs_source}\n```")
+        # Only include code for top_k to save tokens
+        if rank < top_k:
+            if cand.reward_source:
+                lines.append("Reward function:")
+                lines.append(f"```python\n{cand.reward_source}\n```")
+            if cand.obs_source:
+                lines.append("Observation enhancement:")
+                lines.append(f"```python\n{cand.obs_source}\n```")
         lines.append("")
 
     best_idx = indexed[0][0] + 1  # 1-indexed
