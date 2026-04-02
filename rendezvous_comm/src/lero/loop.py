@@ -343,6 +343,7 @@ def _build_patched_experiment(
     experiment_config.render = False
 
     if save_folder is not None:
+        Path(save_folder).mkdir(parents=True, exist_ok=True)
         experiment_config.save_folder = save_folder
 
     experiment = Experiment(
@@ -504,15 +505,35 @@ class LeroLoop:
                 reverse=True,
             )
 
-            best_candidate = valid_results[0][0]
-            best_metrics = valid_results[0][1]
+            iter_best_candidate = valid_results[0][0]
+            iter_best_metrics = valid_results[0][1]
 
-            _log.info(
-                "  Best: M1=%.3f, M2=%.2f, M6=%.3f",
-                best_metrics.get("M1_success_rate", 0),
-                best_metrics.get("M2_avg_return", 0),
-                best_metrics.get("M6_coverage_progress", 0),
-            )
+            # Track global best across ALL iterations
+            iter_m1 = iter_best_metrics.get("M1_success_rate", 0)
+            global_m1 = best_metrics.get("M1_success_rate", -1) if best_metrics else -1
+            if iter_m1 > global_m1 or (
+                iter_m1 == global_m1
+                and iter_best_metrics.get("M2_avg_return", -1e9)
+                > (best_metrics or {}).get("M2_avg_return", -1e9)
+            ):
+                best_candidate = iter_best_candidate
+                best_metrics = iter_best_metrics
+                _log.info(
+                    "  NEW GLOBAL BEST (iter %d): M1=%.3f, M2=%.2f, M6=%.3f",
+                    iteration,
+                    best_metrics.get("M1_success_rate", 0),
+                    best_metrics.get("M2_avg_return", 0),
+                    best_metrics.get("M6_coverage_progress", 0),
+                )
+            else:
+                _log.info(
+                    "  Iter best: M1=%.3f, M2=%.2f, M6=%.3f "
+                    "(global best M1=%.3f from earlier iter)",
+                    iter_m1,
+                    iter_best_metrics.get("M2_avg_return", 0),
+                    iter_best_metrics.get("M6_coverage_progress", 0),
+                    global_m1,
+                )
 
             # 4. Build feedback for next iteration
             task_params = self._effective_task_params(task_overrides)
@@ -535,7 +556,7 @@ class LeroLoop:
                 messages[1],  # initial user prompt
                 {
                     "role": "assistant",
-                    "content": best_candidate.source,
+                    "content": iter_best_candidate.source,
                 },
                 {
                     "role": "user",
