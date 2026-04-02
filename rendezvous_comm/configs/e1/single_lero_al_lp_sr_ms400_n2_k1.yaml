@@ -48,7 +48,8 @@ lero:
   evolve_observation: true
 
 llm:
-  model: "claude-sonnet-4-6"
+  model: "openai/gpt-oss-120b"
+  api_base: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
   temperature: 0.8
   max_tokens: 4096
   max_retries: 3

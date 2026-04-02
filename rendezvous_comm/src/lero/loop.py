@@ -25,7 +25,7 @@ from .codegen import CandidateCode, build_feedback, extract_candidates
 from .config import LeroConfig, LLMConfig
 from .llm_client import LLMClient
 from .prompts.loader import PromptLoader
-from .scenario_patch import patch_scenario, unpatch_scenario
+from .scenario_patch import patch_scenario_class, unpatch_scenario_class
 
 _log = logging.getLogger("rendezvous.lero")
 
@@ -494,31 +494,29 @@ class LeroLoop:
         """Short training run with patched scenario to evaluate a candidate."""
         from ..runner import build_experiment, evaluate_trained
 
-        # Create a modified train config with reduced frames
         short_train = copy.copy(self.spec.train)
         short_train.max_n_frames = self.lero.eval_frames
         short_train.evaluation_episodes = self.lero.eval_episodes
 
-        experiment = build_experiment(
-            self.spec.task, short_train, algorithm, seed, task_overrides,
-        )
-
-        # Find and patch the scenario
-        scenario = _get_scenario_from_experiment(experiment)
-        originals = patch_scenario(
-            scenario,
+        # Patch class BEFORE building experiment so BenchMARL sees
+        # the correct observation size when probing the env.
+        originals = patch_scenario_class(
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
         )
 
         try:
+            experiment = build_experiment(
+                self.spec.task, short_train, algorithm, seed,
+                task_overrides,
+            )
             experiment.run()
             metrics = evaluate_trained(
                 self.spec, experiment, task_overrides,
                 n_eval_episodes=self.lero.eval_episodes,
             )
         finally:
-            unpatch_scenario(scenario, originals)
+            unpatch_scenario_class(originals)
 
         return metrics
 
@@ -532,22 +530,21 @@ class LeroLoop:
         """Full training run with the best candidate."""
         from ..runner import build_experiment, evaluate_trained
 
-        # Use full training budget
         full_train = copy.copy(self.spec.train)
         full_train.max_n_frames = self.lero.full_frames
 
-        experiment = build_experiment(
-            self.spec.task, full_train, algorithm, seed, task_overrides,
-        )
-
-        scenario = _get_scenario_from_experiment(experiment)
-        originals = patch_scenario(
-            scenario,
+        # Patch class BEFORE building experiment
+        originals = patch_scenario_class(
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
         )
 
         try:
+            experiment = build_experiment(
+                self.spec.task, full_train, algorithm, seed,
+                task_overrides,
+            )
+
             t0 = time.monotonic()
             experiment.run()
             elapsed = time.monotonic() - t0
@@ -560,7 +557,7 @@ class LeroLoop:
             torch.save(experiment.policy.state_dict(), policy_path)
             _log.info("Saved best policy to %s", policy_path)
         finally:
-            unpatch_scenario(scenario, originals)
+            unpatch_scenario_class(originals)
 
         return metrics
 

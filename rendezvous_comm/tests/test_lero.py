@@ -633,41 +633,42 @@ class TestScenarioPatch:
         assert "messages" in state
         assert state["messages"].shape[-1] == 4  # dim_c
 
-    def test_patch_obs_appends_features(self, mock_scenario):
-        originals = patch_scenario(
-            mock_scenario, obs_source=VALID_OBS_SRC.strip(),
+    def test_patch_class_and_unpatch(self):
+        """Test class-level patching and restoration."""
+        from vmas.scenarios.discovery import Scenario
+        from src.lero.scenario_patch import (
+            patch_scenario_class, unpatch_scenario_class,
         )
-        agent = mock_scenario.world.agents[0]
-        result = mock_scenario.observation(agent)
-        # Original was 10 features, obs enhancement adds 2
-        assert result.shape[-1] == 12
 
-    def test_unpatch_restores_original(self, mock_scenario):
-        orig_reward = mock_scenario.reward
-        orig_obs = mock_scenario.observation
-        originals = patch_scenario(
-            mock_scenario,
+        orig_reward = Scenario.reward
+        orig_obs = Scenario.observation
+
+        originals = patch_scenario_class(
             obs_source=VALID_OBS_SRC.strip(),
         )
-        # After patch, observation is different
-        assert mock_scenario.observation is not orig_obs
+        # After patch, observation method is different
+        assert Scenario.observation is not orig_obs
+        # Reward not patched — still original
+        assert Scenario.reward is orig_reward
 
-        unpatch_scenario(mock_scenario, originals)
-        # After unpatch, restored
-        assert mock_scenario.observation is orig_obs
+        unpatch_scenario_class(originals)
+        # Restored
+        assert Scenario.observation is orig_obs
+        assert Scenario.reward is orig_reward
 
-    def test_patch_obs_only_leaves_reward(self, mock_scenario):
-        orig_reward = mock_scenario.reward
-        patch_scenario(mock_scenario, obs_source=VALID_OBS_SRC.strip())
-        assert mock_scenario.reward is orig_reward
+    def test_patch_class_reward_only(self):
+        from vmas.scenarios.discovery import Scenario
+        from src.lero.scenario_patch import (
+            patch_scenario_class, unpatch_scenario_class,
+        )
 
-    def test_patch_reward_only_leaves_obs(self, mock_scenario):
-        orig_obs = mock_scenario.observation
-        # For reward patching we need the full scenario setup
-        # which the mock doesn't fully support, so just test
-        # that obs is untouched
-        patch_scenario(mock_scenario, reward_source=None, obs_source=None)
-        assert mock_scenario.observation is orig_obs
+        orig_obs = Scenario.observation
+        originals = patch_scenario_class(
+            reward_source=VALID_REWARD_SRC.strip(),
+        )
+        # Obs not touched
+        assert Scenario.observation is orig_obs
+        unpatch_scenario_class(originals)
 
 
 # ── LLMClient ────────────────────────────────────────────────────

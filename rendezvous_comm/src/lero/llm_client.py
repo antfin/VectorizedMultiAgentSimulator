@@ -13,10 +13,18 @@ Future DSPy migration: replace litellm.completion() with dspy.LM().
 """
 
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
+from dotenv import load_dotenv
+
 from .config import LLMConfig
+
+# Auto-load .env from rendezvous_comm/ (gitignored, never committed)
+_ENV_PATH = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(_ENV_PATH, override=False)
 
 _log = logging.getLogger("rendezvous.lero")
 
@@ -95,9 +103,13 @@ class LLMClient:
         if self.config.api_base:
             kwargs["api_base"] = self.config.api_base
 
-        # Explicit API key (overrides env var)
-        if self.config.api_key:
-            kwargs["api_key"] = self.config.api_key
+        # API key: explicit config > OVH env var > provider default env var
+        api_key = self.config.api_key
+        if not api_key and self.config.api_base:
+            # Custom endpoint — try OVH token as fallback
+            api_key = os.environ.get("OVH_AI_ENDPOINTS_ACCESS_TOKEN")
+        if api_key:
+            kwargs["api_key"] = api_key
 
         response = self._litellm.completion(**kwargs)
         return response.choices[0].message.content
