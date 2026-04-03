@@ -69,13 +69,13 @@ def extract_candidates(
 
         for block in code_blocks:
             block = block.strip()
-            if "def compute_reward" in block and evolve_reward:
+            if "def compute_reward_bonus" in block and evolve_reward:
                 if validate_function(
-                    block, "compute_reward", ["scenario_state"]
+                    block, "compute_reward_bonus", ["scenario_state"]
                 ):
                     reward_src = block
                 else:
-                    _log.warning("compute_reward failed validation")
+                    _log.warning("compute_reward_bonus failed validation")
             elif "def enhance_observation" in block and evolve_observation:
                 if validate_function(
                     block, "enhance_observation", ["scenario_state"]

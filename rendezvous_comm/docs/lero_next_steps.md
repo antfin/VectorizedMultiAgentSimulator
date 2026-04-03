@@ -1,184 +1,224 @@
 # LERO — Next Steps & Open Issues
 
-Based on the first E1 run (n=2, k=1, gpt-5.4-mini, 4 evolutionary iterations).
+Updated after E1 runs (n=2 k=1, gpt-5.4-mini, multiple attempts).
 
 ---
 
-## 1. Fair Comparison: MLP Input Size Problem
+## Summary of Results So Far
+
+| Run | Global Best (1M) | Final (10M) | Verdict |
+|---|---|---|---|
+| E1 n=2 k=1 (run 1, wrong candidate bug) | M1=0.35 | M1=0.11 | Used iter_3 instead of global best |
+| E1 n=2 k=1 (run 2, global best fix) | M1=0.40 | M1=0.065 | Reward hacking: M1 collapsed at 10M |
+| ER1 n=2 k=1 (baseline) | — | **M1=0.58** | Baseline wins |
+
+**Core problem: Candidates that look good at 1M frames collapse at 10M frames.** The LLM-shaped reward gets "hacked" — agents optimize the shaped reward signal without actually completing the task.
+
+---
+
+## 1. Observation Enhancement Uses Oracle Information (CRITICAL)
 
 ### The Issue
 
-Each LERO candidate generates a different `enhance_observation` function that returns a different number of extra features. This means the MLP input layer (and total params) varies across candidates and vs the ER1 baseline:
+The LLM-generated `enhance_observation` receives `scenario_state` containing **global environment state** that agents should NOT access in a decentralized MARL setting. This makes comparison with ER1/ER2/ER3 unfair.
 
-| Experiment | Obs Dims | MLP Input | First Layer Params | Total Params |
-|---|---|---|---|---|
-| ER1 baseline | 31 | 31 | 7,936 | 75,012 |
-| LERO iter_0/c2 | 31 + 7 = 38 | 38 | 9,728 | 76,804 |
-| LERO iter_1/c1 (best) | 31 + 17 = 48 | 48 | 12,288 | 79,364 |
-| LERO iter_2/c2 | 31 + 19 = 50 | 50 | 12,800 | 79,876 |
-| LERO iter_3/c2 | 31 + 23 = 54 | 54 | 13,824 | 80,900 |
+**What agents normally observe (ER1/ER2/ER3):**
+- Own position and velocity (4 dims)
+- Target LiDAR: distances to nearby targets in angular rays (15 dims) — no target identity, no covered/uncovered info
+- Agent LiDAR: distances to nearby agents in angular rays (12 dims) — no agent identity
+- Messages from nearby agents (if dim_c > 0)
 
-**What stays the same across ALL variants:**
-- Hidden layers: 2 × 256 neurons (65,536 + 256 params)
-- Activation: Tanh
-- Output layer: 4 outputs (2 agents × 2D force action)
-- Architecture: MLP (no GNN, no attention)
-- All other training hyperparameters (lr, gamma, lambda, batch size, etc.)
+**What LERO's `enhance_observation` can access (oracle info):**
+| State Variable | Global? | Why It's Unfair |
+|---|---|---|
+| `agents_pos` [batch, n_agents, 2] | YES | Agents only see others via LiDAR rays, not exact positions |
+| `targets_pos` [batch, n_targets, 2] | YES | Agents only detect targets via LiDAR, not exact coordinates |
+| `agents_targets_dists` [batch, n, t] | YES | Full pairwise distance matrix — agent only knows its own distances |
+| `covered_targets` / `all_time_covered` | YES | Agents can't distinguish covered vs uncovered targets via LiDAR |
+| `agents_per_target` [batch, t] | YES | Agent doesn't know how many others are at each target |
 
-**What changes:**
-- First layer weight matrix: `[256, input_dim]` — grows with more obs features
-- Total param difference: ~5-8% more params in LERO vs ER1 (~75K vs ~80K)
+**Note:** The reward function using oracle info is FINE (CTDE: Centralized Training, Decentralized Execution). Only the observation enhancement is problematic because it changes what agents see at execution time.
 
-### Impact
+### Fix: Two-tier `scenario_state` (Option C)
 
-The 5-8% param increase is small and unlikely to explain the performance difference. However, the **extra information content** in the enhanced observation is significant — features like `same_target`, `dist_to_uncovered`, `other_agent_target_dist` give the agent coordination signals that are impossible to infer from raw LiDAR.
+Pass full state to `compute_reward` but restricted state to `enhance_observation`:
 
-### Proposed Ablations
+```python
+# For reward (centralized training — full state OK)
+reward_state = scenario_state  # everything
 
-To properly isolate LERO's contributions, run these variants:
+# For observation (decentralized execution — local sensors only)
+obs_state = {
+    "agent_pos": agent.state.pos,
+    "agent_vel": agent.state.vel,
+    "agent_idx": agent_idx,
+    "n_agents": n_agents,
+    "n_targets": n_targets,
+    "covering_range": covering_range,
+    "agents_per_target_required": k,
+    "lidar_targets": agent.sensors[0].measure(),
+    "lidar_agents": agent.sensors[1].measure(),  # if enabled
+}
+```
 
-| Ablation | Reward | Obs | MLP Input | Tests |
-|---|---|---|---|---|
-| **ER1** (existing) | Original | Original (31D) | 31 | Baseline |
-| **E1-RO** (reward only) | LLM-evolved | Original (31D) | 31 | Reward shaping effect alone |
-| **E1-OO** (obs only) | Original | LLM-evolved | 31 + N | Obs enhancement effect alone |
-| **E1-FULL** (both) | LLM-evolved | LLM-evolved | 31 + N | Combined LERO effect |
-| **E1-OO-fixed** | Original | LLM-evolved (N=8 fixed) | 39 | Obs with fixed dim for comparability |
+Update `scenario_patch.py` to pass different states to each function. Update prompts to explain what's available for each.
 
-To implement:
-- `evolve_reward: true, evolve_observation: false` → E1-RO
-- `evolve_reward: false, evolve_observation: true` → E1-OO
-- Add `obs_n_features: 8` to LeroConfig to enforce fixed output dim in prompt
-
-**Priority: E1-RO (reward only) is the cleanest comparison** — same MLP as ER1, only the reward function differs. Matches the LERO paper's "LR" ablation.
+**Priority: CRITICAL — current results are not publishable.**
 
 ---
 
-## 2. E2: Communication Experiments
+## 2. Reward Hacking: 1M→10M Collapse
+
+### The Problem
+
+Candidates scoring M1=0.35-0.40 at 1M frames evaluation drop to M1=0.065-0.11 after full 10M training. The LLM-designed reward creates shortcuts that get exploited during longer training.
+
+Evidence from best candidate (iter_2, M1=0.40 at 1M):
+- Reward had 7 components with hand-tuned weights (1.35, 0.55, 0.30, 0.75, 1.25)
+- `approach_uncovered = exp(-4·dist)` — dense gradient but exploitable
+- At 10M frames, agent learned to oscillate near targets (collecting approach reward) without actually covering them
+
+### Fixes to Investigate
+
+1. **Longer candidate evaluation**: Increase `eval_frames` from 1M to 2-3M. More expensive but catches hacking earlier. The LERO paper used 30K steps — with our 60K batch, that's only 0.5 batches. We may need more.
+
+2. **Multi-checkpoint evaluation**: Evaluate candidates at 0.5M, 1M, and 2M frames. If M1 drops between checkpoints, penalize the candidate.
+
+3. **Constrained reward design**: In the prompt, tell the LLM:
+   - "The reward MUST include the original covering reward as a component"
+   - "Do NOT create dense approach rewards that can be exploited"
+   - "Reward must be bounded between -X and +X"
+
+4. **Reward = original + shaping**: Instead of replacing the reward entirely, have the LLM generate a BONUS added to the original reward: `R = R_original + α·R_llm_bonus`. This guarantees the base task signal is always present.
+
+5. **Fitness function**: Use M1 at multiple training checkpoints, not just final. E.g., `fitness = min(M1_at_500K, M1_at_1M)` — penalizes candidates that peak early and collapse.
+
+**Priority: HIGH — this is why LERO underperforms ER1.**
+
+---
+
+## 3. MLP Input Size Varies Across Candidates
+
+### The Issue
+
+Each `enhance_observation` returns a different N features (7-23 observed). This means:
+- Different MLP first layer size per candidate (38-54 vs ER1's 31)
+- ~5-8% more params in LERO vs ER1
+- Candidates not comparable to each other
+
+### Fix Options
+
+1. **Fixed obs dim in prompt**: Add `obs_n_features: 8` to LeroConfig, enforce in prompt: "return exactly 8 features"
+2. **Reward-only mode** (`evolve_observation: false`): Same MLP as ER1, cleanest comparison
+3. Both: reward-only as main experiment, obs enhancement as ablation
+
+**Priority: MEDIUM — important for publishable results but less critical than #1 and #2.**
+
+---
+
+## 4. E2: Communication Experiments
 
 ### What Changes with dim_c > 0
-
-When communication is enabled (`dim_c=8`):
 
 | Aspect | E1 (no comm) | E2 (comm) |
 |---|---|---|
 | Agent action | 2D force | 2D force + 8D message = **10D** |
-| Base obs | pos(2) + vel(2) + target_lidar(15) + agent_lidar(12) = **31D** | 31D + (n_agents-1) × dim_c messages |
-| For n=4, k=2 | 31D | 31 + 3×8 = **55D** |
-| MLP output | 4 (2 agents × 2D) | 20 (4 agents × (2D force + 8D comm)) |
+| Base obs (n=4) | 31D | 31 + 3×8 = **55D** |
+| MLP output (n=4) | 8 (4×2D force) | 40 (4×10D) |
 
-### LERO Implications for E2
+### LERO for Communication
 
-The LLM-generated functions get extra data:
-- `scenario_state["messages"]`: `[batch, n_agents-1, dim_c]` — raw messages from other agents
-- The reward can incentivize useful communication (penalize silence, reward informative messages)
-- The obs enhancement can compute message statistics (mean, variance, entropy)
+The reward can incentivize useful communication:
+- Penalize silent agents (all-zero messages)
+- Reward message diversity across agents
+- Bonus when communicated info leads to coverage
 
-### Key Questions for E2
+The obs enhancement (if used) can compute message statistics from `scenario_state["messages"]`.
+
+### Key Questions
 - Does LERO help agents learn **what to communicate**?
-- Can the LLM design reward shaping that makes communication emerge faster?
-- Is the improvement from better reward, better obs, or the combo?
+- Can LLM-designed reward make communication emerge faster than ER2's default?
 
-### E2 Configs Ready
-
-`configs/e2/single_lero_al_lp_sr_prox_dc8_ms400.yaml` — same task params as `er2_al_lp_sr_prox_dc8_ms400` for direct comparison.
+### Blocked By
+Issues #1 (oracle obs) and #2 (reward hacking) should be fixed first. E2 adds complexity — fix the fundamentals on E1 first.
 
 ---
 
-## 3. LLM Code Quality Issues
+## 5. LLM Code Quality
 
-### Observed in E1 Run
+### Stats from Runs
 
-Of 12 total candidates generated (4 iters × 3 each):
-- **8 valid** — code extracted, compiled, and ran successfully
-- **2 failed extraction** — code blocks malformed or missing function name
-- **2 runtime errors** — shape mismatches, wrong tensor ops (`~` on float tensor, reshape size mismatch)
+Of ~24 candidates generated across runs:
+- ~16 valid (67%) — compiled and ran
+- ~4 failed extraction (17%) — malformed code blocks
+- ~4 runtime errors (17%) — shape mismatches, wrong tensor ops
 
-### Improvements to Consider
+### Fixes
 
-1. **Add runtime validation before full training**: Run the compiled functions on a small synthetic batch (100 envs, 1 step) to catch shape/type errors before committing to 1M frames of training. Cost: ~1s per candidate.
+1. **Pre-training validation**: Run candidate on synthetic batch (1s) before committing to 1M-frame training
+2. **Error feedback to LLM**: Include tracebacks in feedback prompt
+3. **Temperature tuning**: Try 0.5-0.6 for more reliable code
 
-2. **Better error feedback to LLM**: When a candidate fails, include the traceback in the feedback prompt so the LLM can fix it in the next iteration.
-
-3. **Fix obs dimension in prompt**: Tell the LLM exactly how many features to return (e.g., "return exactly 8 features") to make candidates comparable.
-
-4. **Temperature tuning**: Current temperature=0.8. Lower (0.5-0.6) may produce more reliable code with fewer runtime errors. Higher (0.9-1.0) may produce more creative reward designs.
+**Priority: LOW — the loop handles errors gracefully, just wastes ~6min per failed candidate.**
 
 ---
 
-## 4. Evolution Dynamics
+## 6. Evolution Dynamics Improvements
 
-### What Worked
+### Global Best Tracking
+**FIXED** — now tracks best across all iterations, not just last.
 
-| Iteration | Best M1 | Best M6 | M4 (collisions) | Key Change |
-|---|---|---|---|---|
-| 0 | 0.10 | 0.61 | 465 | First attempt — agents cluster |
-| 1 | **0.35** | 0.75 | **1.1** | Occupancy-based credit + spread bonus |
-| 2 | 0.32 | **0.83** | 106 | Coverage improved but collisions regressed |
-| 3 | 0.29 | 0.77 | 261 | Further regression |
+### Remaining Issues
 
-**Iteration 1 was the breakthrough**: the LLM added `1/(agents_at_target + 1)` credit splitting and a spread bonus, which virtually eliminated collisions (465 → 1.1) while tripling success rate (0.10 → 0.35).
+1. **Multi-objective fitness**: Rank by composite score, not just M1. E.g., `fitness = M1 - 0.001×M4` to prevent collision regression.
 
-**Iterations 2-3 regressed** on collisions, likely because the feedback focused on pushing M1/M6 higher, and the LLM traded collision avoidance for more aggressive target pursuit.
+2. **Feedback guidance**: When M4 regresses between iterations, add "DO NOT regress on collision avoidance" to feedback.
 
-### Improvements to Consider
-
-1. **Multi-objective fitness**: Instead of ranking by M1 only, use a composite score that penalizes high M4 (collisions). E.g., `fitness = M1 - 0.001 × M4`.
-
-2. **Keep best across all iterations**: Currently best_candidate is from the last iteration with valid results. Should track global best across all iterations.
-
-3. **Feedback emphasis**: Add explicit "DO NOT regress on collision avoidance" guidance when M4 increases between iterations.
-
----
-
-## 5. Scaling to n=4, k=2
-
-The n=2, k=1 task is relatively easy — each agent just needs to visit 2 targets. The real test is n=4, k=2 where:
-- 4 agents must cover 4 targets
-- Each target needs **2 agents simultaneously** — requires rendezvous coordination
-- ER1 baseline gets only 3-32% success rate on this task
-- ER3 (GNN) achieves 71%
-
-### Estimated Time for n=4, k=2
-
-Based on n=2 timings, n=4 will be ~2× slower per batch (more agents, more obs):
-- Evolution: 4 iters × 3 candidates × ~12 min = ~2.5h
-- Full training: 167 batches × ~40s = ~1.9h
-- **Total: ~4.5h**
-
-### Config Ready
-
-`configs/e1/single_lero_al_lp_sr_ms400.yaml` — n=4, k=2, same hyperparameters.
-
----
-
-## 6. Execution Plan
-
-### Phase 1: Ablations on n=2, k=1 (fast iteration)
-1. **E1-RO** (reward only, `evolve_observation: false`) — ~2h
-2. Compare E1-RO vs E1-FULL vs ER1 — isolate reward vs obs contributions
-
-### Phase 2: Main experiment n=4, k=2
-3. **E1-FULL** n=4, k=2 — ~4.5h
-4. Compare against ER1, ER2, ER3 baselines
-
-### Phase 3: Communication (E2)
-5. **E2-FULL** n=4, k=2, dim_c=8 — ~5h
-6. Compare against ER2 baseline
-
-### Phase 4: Analysis
-7. Compare all: ER1 vs E1-RO vs E1-FULL vs ER2 vs E2-FULL vs ER3
-8. Analyze LLM-generated code across iterations — what patterns emerge?
-9. Check if LERO-designed rewards transfer across seeds/configurations
+3. **Sliding window loses history**: Current sliding window keeps only last iteration's code in conversation. The LLM can't see iteration 0's breakthrough. Consider keeping a "hall of fame" summary.
 
 ---
 
 ## 7. Technical Debt
 
-- [ ] Global best tracking across iterations (not just last iteration's best)
-- [ ] Runtime validation of candidates before training (synthetic batch test)
-- [ ] Failed candidate tracebacks in feedback prompt
-- [ ] Configurable fitness function (not just M1 primary)
-- [ ] Obs dimension enforcement option (`obs_n_features` in config)
-- [ ] Resume support (continue from iteration N if interrupted)
-- [ ] Multiple seeds per LERO run (currently seed=0 only)
+- [x] Global best tracking across iterations
+- [x] LLM connection error handling (skip iteration, don't crash)
+- [x] BenchMARL save_folder creation
+- [x] Context window awareness (model-specific)
+- [x] Sliding window conversation (OVH token limit fix)
+- [ ] Two-tier scenario_state (oracle obs fix)
+- [ ] Pre-training candidate validation
+- [ ] Failed candidate tracebacks in feedback
+- [ ] Multi-objective fitness function
+- [ ] Fixed obs dimension option
+- [ ] Reward = original + LLM bonus mode
+- [ ] Multi-checkpoint candidate evaluation
+- [ ] Resume support (continue from iteration N)
+- [ ] Multiple seeds per LERO run
+
+---
+
+## 8. Execution Plan (Revised)
+
+### Phase 1: Fix Fundamentals
+1. Implement two-tier `scenario_state` (issue #1)
+2. Add "reward = original + bonus" mode (issue #2)
+3. Add pre-training candidate validation (issue #5)
+
+### Phase 2: Reward-Only Ablation (cleanest test)
+4. **E1-RO** n=2 k=1 (`evolve_observation: false`) — same MLP as ER1, only reward differs
+5. Compare E1-RO vs ER1 — does LLM reward shaping help or hurt?
+
+### Phase 3: Full LERO with Fixes
+6. **E1-FULL** n=2 k=1 with fixed obs (restricted state, N=8)
+7. **E1-FULL** n=4 k=2
+8. Compare against ER1/ER3 baselines
+
+### Phase 4: Communication
+9. **E2-RO** n=4 k=2 dim_c=8 (reward only)
+10. **E2-FULL** n=4 k=2 dim_c=8
+11. Compare against ER2 baseline
+
+### Phase 5: Analysis
+12. Compare all variants
+13. Analyze LLM-generated code patterns
+14. Test reward transferability across seeds

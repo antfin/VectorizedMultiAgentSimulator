@@ -18,7 +18,8 @@ from src.lero.config import LeroConfig, LLMConfig
 from src.lero.llm_client import LLMClient
 from src.lero.prompts.loader import PromptLoader
 from src.lero.scenario_patch import (
-    _build_scenario_state,
+    _build_reward_state,
+    _build_obs_state,
     _compile_function,
     make_patched_scenario_class,
 )
@@ -55,14 +56,12 @@ def _make_lero_yaml(**overrides):
 VALID_REWARD_SRC = """\
 import torch
 
-def compute_reward(scenario_state):
-    collision = scenario_state["collision_rew"]
-    time_pen = torch.full_like(collision, scenario_state["time_penalty"])
+def compute_reward_bonus(scenario_state):
     agent_pos = scenario_state["agent_pos"]
     targets_pos = scenario_state["targets_pos"]
     dists = torch.cdist(agent_pos.unsqueeze(1), targets_pos).squeeze(1)
     min_dist = dists.min(dim=-1).values
-    return -min_dist + collision + time_pen
+    return -min_dist * 0.5
 """
 
 VALID_OBS_SRC = """\
@@ -89,6 +88,11 @@ Here are the improved functions:
 {VALID_OBS_SRC}
 ```
 """
+
+# Old name for backward compat in some tests
+VALID_REWARD_SRC_OLD_NAME = VALID_REWARD_SRC.replace(
+    "compute_reward_bonus", "compute_reward"
+)
 
 
 # ── LeroConfig / LLMConfig ──────────────────────────────────────
@@ -293,7 +297,7 @@ class TestPromptLoader:
             scenario_reward_code="def reward(): pass",
             scenario_observation_code="def observation(): pass",
         )
-        assert "compute_reward" in text
+        assert "compute_reward_bonus" in text
         assert "enhance_observation" in text
         assert "400" in text  # max_steps
         assert "NONE" in text  # no comm
@@ -339,7 +343,7 @@ class TestValidateFunction:
     def test_valid_reward_function(self):
         assert validate_function(
             VALID_REWARD_SRC.strip(),
-            "compute_reward", ["scenario_state"],
+            "compute_reward_bonus", ["scenario_state"],
         )
 
     def test_valid_obs_function(self):
@@ -399,7 +403,7 @@ class TestExtractCandidates:
         c = candidates[0]
         assert c.reward_source is not None
         assert c.obs_source is not None
-        assert "compute_reward" in c.reward_source
+        assert "compute_reward_bonus" in c.reward_source
         assert "enhance_observation" in c.obs_source
 
     def test_extract_reward_only(self):
@@ -425,7 +429,7 @@ class TestExtractCandidates:
         assert len(candidates) == 0
 
     def test_invalid_code_skipped(self):
-        resp = "```python\ndef compute_reward(x, y):\n    return 0\n```"
+        resp = "```python\ndef compute_reward_bonus(x, y):\n    return 0\n```"
         candidates = extract_candidates([resp])
         # Invalid args, should be skipped
         assert len(candidates) == 0
@@ -440,7 +444,7 @@ class TestExtractCandidates:
         candidates = extract_candidates([FAKE_LLM_RESPONSE])
         c = candidates[0]
         source = c.source
-        assert "compute_reward" in source
+        assert "compute_reward_bonus" in source
         assert "enhance_observation" in source
 
     def test_raw_response_preserved(self):
@@ -496,7 +500,7 @@ class TestBuildFeedback:
 
 class TestCompileFunction:
     def test_compile_reward(self):
-        fn = _compile_function(VALID_REWARD_SRC.strip(), "compute_reward")
+        fn = _compile_function(VALID_REWARD_SRC.strip(), "compute_reward_bonus")
         assert callable(fn)
 
     def test_compile_obs(self):
@@ -506,10 +510,10 @@ class TestCompileFunction:
     def test_missing_function_raises(self):
         src = "def wrong_name(x):\n    return 0"
         with pytest.raises(ValueError, match="not found"):
-            _compile_function(src, "compute_reward")
+            _compile_function(src, "compute_reward_bonus")
 
     def test_compiled_reward_runs(self):
-        fn = _compile_function(VALID_REWARD_SRC.strip(), "compute_reward")
+        fn = _compile_function(VALID_REWARD_SRC.strip(), "compute_reward_bonus")
         batch = 8
         state = {
             "collision_rew": torch.zeros(batch),
@@ -606,32 +610,45 @@ class TestScenarioPatch:
 
         return scenario
 
-    def test_build_scenario_state(self, mock_scenario):
+    def test_build_reward_state(self, mock_scenario):
         agent = mock_scenario.world.agents[0]
-        state = _build_scenario_state(mock_scenario, agent, 0)
+        state = _build_reward_state(mock_scenario, agent, 0)
 
+        # Reward state has FULL global info
         assert "agents_pos" in state
         assert "targets_pos" in state
+        assert "agents_targets_dists" in state
+        assert "covered_targets" in state
+        assert "agent_pos" in state
+        assert state["agent_idx"] == 0
+        assert state["n_agents"] == 2
+
+    def test_build_obs_state_local_only(self, mock_scenario):
+        agent = mock_scenario.world.agents[0]
+        state = _build_obs_state(mock_scenario, agent, 0)
+
+        # Obs state has LOCAL info only
         assert "agent_pos" in state
         assert "agent_vel" in state
         assert "agent_idx" in state
-        assert state["agent_idx"] == 0
-        assert state["n_agents"] == 2
-        assert state["n_targets"] == 2
+        assert "n_agents" in state
+        assert "lidar_targets" in state
+        # Must NOT have global info
+        assert "agents_pos" not in state
+        assert "targets_pos" not in state
+        assert "agents_targets_dists" not in state
+        assert "covered_targets" not in state
+        assert "all_time_covered" not in state
+        assert "agents_per_target" not in state
 
-    def test_build_scenario_state_no_comm(self, mock_scenario):
-        agent = mock_scenario.world.agents[0]
-        state = _build_scenario_state(mock_scenario, agent, 0)
-        assert "messages" not in state
-
-    def test_build_scenario_state_with_comm(self, mock_scenario):
+    def test_build_reward_state_with_comm(self, mock_scenario):
         mock_scenario.dim_c = 4
         for a in mock_scenario.world.agents:
             a.state.c = torch.randn(4, 4)
         agent = mock_scenario.world.agents[0]
-        state = _build_scenario_state(mock_scenario, agent, 0)
+        state = _build_reward_state(mock_scenario, agent, 0)
         assert "messages" in state
-        assert state["messages"].shape[-1] == 4  # dim_c
+        assert state["messages"].shape[-1] == 4
 
     def test_make_patched_scenario_class_obs(self):
         """Test that patched subclass has different observation."""

@@ -151,8 +151,22 @@ def _build_experiment_context(
     else:
         comm_state_description = "# No communication channels available"
 
-    # ── Observation enhancement guidance for comm ──
+    # ── Obs-local: agent LiDAR and comm lines for obs_state ──
+    if task_params.get("use_agent_lidar", False):
+        obs_lidar_agents = (
+            f'"lidar_agents":    '
+            f"# [batch, {task_params.get('n_lidar_rays_agents', 12)}] "
+            f"— agent LiDAR readings"
+        )
+    else:
+        obs_lidar_agents = "# agent LiDAR not enabled"
+
     if dim_c > 0:
+        obs_comm_state = (
+            f'"messages":        '
+            f"# [batch, {n_agents - 1}, {dim_c}] — received messages "
+            f"(proximity-masked if comm_proximity=True)"
+        )
         comm_obs_guidance = (
             "- Summary statistics of received messages "
             "(mean, max, variance)\n"
@@ -160,6 +174,7 @@ def _build_experiment_context(
             "(message entropy/diversity)"
         )
     else:
+        obs_comm_state = "# No communication channels available"
         comm_obs_guidance = ""
 
     return {
@@ -168,6 +183,8 @@ def _build_experiment_context(
         "comm_description": comm_description,
         "reward_description": reward_description,
         "comm_state_description": comm_state_description,
+        "obs_lidar_agents": obs_lidar_agents,
+        "obs_comm_state": obs_comm_state,
         "comm_obs_guidance": comm_obs_guidance,
     }
 
@@ -420,9 +437,17 @@ class LeroLoop:
 
             # 1. Generate candidates from LLM
             _log.info("Generating %d candidates...", self.lero.n_candidates)
-            responses = self.llm.generate(
-                messages, n=self.lero.n_candidates,
-            )
+            try:
+                responses = self.llm.generate(
+                    messages, n=self.lero.n_candidates,
+                )
+            except Exception as e:
+                _log.warning(
+                    "LLM call failed in iteration %d: %s. "
+                    "Skipping iteration.",
+                    iteration, e,
+                )
+                continue
 
             candidates = extract_candidates(
                 responses,
@@ -644,6 +669,8 @@ class LeroLoop:
             comm_description=ctx["comm_description"],
             reward_description=ctx["reward_description"],
             comm_state_description=ctx["comm_state_description"],
+            obs_lidar_agents=ctx["obs_lidar_agents"],
+            obs_comm_state=ctx["obs_comm_state"],
             comm_obs_guidance=ctx["comm_obs_guidance"],
             # Source code
             scenario_reward_code=reward_src,

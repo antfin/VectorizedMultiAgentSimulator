@@ -32,11 +32,13 @@ Here is the current observation function:
 $scenario_observation_code
 ```
 
-### Available State
+### Available State for Each Function
 
-The `scenario_state` dict passed to your functions contains:
+IMPORTANT: The two functions receive DIFFERENT state dictionaries.
+
+**`compute_reward_bonus` receives FULL global state** (centralized training — CTDE):
 ```python
-scenario_state = {
+reward_state = {
     "agents_pos":       # [batch, n_agents, 2] — all agent positions
     "targets_pos":      # [batch, n_targets, 2] — all target positions
     "agents_targets_dists":  # [batch, n_agents, n_targets] — pairwise distances
@@ -57,43 +59,67 @@ scenario_state = {
 }
 ```
 
+**`enhance_observation` receives LOCAL sensor state ONLY** (decentralized execution):
+```python
+obs_state = {
+    "agent_pos":        # [batch, 2] — this agent's position
+    "agent_vel":        # [batch, 2] — this agent's velocity
+    "agent_idx":        # int — index of this agent (0..n_agents-1)
+    "n_agents":         # int ($n_agents)
+    "n_targets":        # int ($n_targets)
+    "covering_range":   # float ($covering_range)
+    "agents_per_target_required": # int ($agents_per_target)
+    "lidar_targets":    # [batch, $n_lidar_rays_entities] — target LiDAR readings (0=contact, max=out of range)
+    $obs_lidar_agents
+    $obs_comm_state
+}
+```
+NOTE: The observation function does NOT have access to other agents' positions, target positions, covered/uncovered status, or any global state. It can only use the agent's own sensors.
+
 ### Generate Functions
 
 Please generate TWO functions with these exact signatures:
 
 ```python
-def compute_reward(scenario_state: dict) -> torch.Tensor:
-    """Compute hybrid reward for one agent.
+def compute_reward_bonus(scenario_state: dict) -> torch.Tensor:
+    """Compute a BONUS reward added to the original reward.
+
+    The original reward (covering + collision + time penalty) is ALWAYS included.
+    This function returns an ADDITIONAL shaping bonus to help agents learn faster.
 
     Args:
-        scenario_state: dict with all state variables listed above.
+        scenario_state: dict with FULL global state (see reward_state above).
 
     Returns:
-        reward: torch.Tensor of shape [batch_dim]
+        bonus: torch.Tensor of shape [batch_dim]
 
-    The reward should:
-    - Give individual credit for contributing to target coverage
+    The bonus should:
+    - Give dense approach signals (reward getting closer to uncovered targets)
     - Encourage spatial coordination (agents spreading to different targets)
-    - Include the collision penalty and time penalty from scenario_state
-    - Balance individual and team components
+    - Reward partial progress toward coverage
+    - Be moderate in magnitude (roughly -1 to +1 per step) so it doesn't
+      overwhelm the original reward signal
+    - NOT duplicate collision or time penalties (already in original reward)
     """
     ...
 ```
 
 ```python
 def enhance_observation(scenario_state: dict) -> torch.Tensor:
-    """Compute extra observation features for one agent.
+    """Compute extra observation features from LOCAL sensor data only.
 
     Args:
-        scenario_state: dict with all state variables listed above.
+        scenario_state: dict with LOCAL state only (see obs_state above).
+            You have LiDAR readings and own position/velocity, but NO
+            access to other agents' positions or global target state.
 
     Returns:
-        extra_obs: torch.Tensor of shape [batch_dim, N] where N is 4-12
+        extra_obs: torch.Tensor of shape [batch_dim, N] where N is 4-8
 
     The enhanced observation should help the agent infer:
-    - Which targets are closest and uncovered
-    - Where other agents are relative to targets (coordination signal)
-    - Progress toward task completion
+    - Direction and distance to the nearest target (from LiDAR rays)
+    - Density of nearby agents (from agent LiDAR, if available)
+    - Speed and heading (from velocity)
     $comm_obs_guidance
     """
     ...

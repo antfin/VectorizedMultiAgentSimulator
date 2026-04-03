@@ -1,10 +1,15 @@
 """Monkey-patch Discovery scenario with LLM-generated functions.
 
-VMAS and TorchRL's VmasEnv accept a BaseScenario INSTANCE (not just
-a string name). We create a patched Scenario subclass with the
-LLM-generated reward/observation, then pass it to BenchMARL's env
-factory. This way the patched methods are visible when TorchRL
-computes the observation spec during env.__init__.
+Two key design decisions:
+
+1. REWARD = original + LLM bonus (not replacement)
+   The LLM generates a bonus added to the original reward. This prevents
+   reward hacking — the base task signal (covering reward) is always present.
+
+2. TWO-TIER scenario_state (CTDE)
+   - Reward gets FULL global state (centralized training)
+   - Observation enhancement gets LOCAL sensor state only (decentralized execution)
+   This ensures agents don't get oracle information at execution time.
 """
 
 import logging
@@ -22,8 +27,12 @@ _EXEC_NAMESPACE = {
 }
 
 
-def _build_scenario_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
-    """Build the scenario_state dict passed to LLM-generated functions."""
+def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
+    """Build FULL scenario_state for reward function (centralized training).
+
+    The reward function can see everything — this is standard CTDE
+    (Centralized Training, Decentralized Execution).
+    """
     agents_pos = getattr(scenario, "agents_pos", None)
     if agents_pos is None:
         agents_pos = torch.stack(
@@ -84,6 +93,50 @@ def _build_scenario_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
     return state
 
 
+def _build_obs_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
+    """Build LOCAL sensor state for observation enhancement (decentralized).
+
+    Only includes information derivable from the agent's own sensors.
+    No global state — agents can't see other agents' positions, which
+    targets are covered, or how many agents are at each target.
+    """
+    batch_dim = scenario.world.batch_dim
+    device = scenario.world.device
+
+    state = {
+        "agent_pos": agent.state.pos,
+        "agent_vel": agent.state.vel,
+        "agent_idx": agent_idx,
+        "n_agents": len(scenario.world.agents),
+        "n_targets": scenario.n_targets,
+        "covering_range": scenario._covering_range,
+        "agents_per_target_required": scenario._agents_per_target,
+        # LiDAR sensor readings (local, what the agent actually sees)
+        "lidar_targets": agent.sensors[0].measure(),
+    }
+    if scenario.use_agent_lidar and len(agent.sensors) > 1:
+        state["lidar_agents"] = agent.sensors[1].measure()
+
+    # Communication messages (if enabled — these ARE part of the obs)
+    if scenario.dim_c > 0:
+        messages = []
+        for other in scenario.world.agents:
+            if other is not agent and other.state.c is not None:
+                msg = other.state.c
+                if scenario.comm_proximity:
+                    dist = torch.linalg.vector_norm(
+                        agent.state.pos - other.state.pos,
+                        dim=-1, keepdim=True,
+                    )
+                    in_range = (dist <= scenario._comms_range).float()
+                    msg = msg * in_range
+                messages.append(msg)
+        if messages:
+            state["messages"] = torch.stack(messages, dim=1)
+
+    return state
+
+
 def _compile_function(source: str, func_name: str) -> Callable:
     """Compile LLM-generated source into a callable function."""
     namespace = dict(_EXEC_NAMESPACE)
@@ -102,128 +155,43 @@ def make_patched_scenario_class(
 ):
     """Create a Discovery Scenario subclass with LLM-generated methods.
 
-    Returns a NEW class (not instance) that can be instantiated by
-    VMAS/TorchRL. The subclass overrides reward() and/or observation()
-    with the LLM-generated functions.
+    Reward: R = R_original + compute_reward_bonus(full_state)
+      The LLM generates a BONUS added to the original reward.
+      The original covering reward is always present.
 
-    This is the correct approach because:
-    - VMAS dynamically loads scenarios, so class-level patching on the
-      imported Scenario class doesn't propagate.
-    - TorchRL computes observation_spec during env.__init__, so
-      instance-level patching after creation is too late.
-    - A subclass carries the patched methods from the start.
+    Observation: obs = base_obs || enhance_observation(local_state)
+      The LLM enhancement only sees local sensor data (CTDE).
     """
     from vmas.scenarios.discovery import Scenario as OrigScenario
 
     reward_fn = None
     obs_fn = None
     if reward_source:
-        reward_fn = _compile_function(reward_source, "compute_reward")
+        reward_fn = _compile_function(reward_source, "compute_reward_bonus")
     if obs_source:
         obs_fn = _compile_function(obs_source, "enhance_observation")
 
     class PatchedDiscoveryScenario(OrigScenario):
-        """Discovery scenario with LLM-generated reward/observation."""
+        """Discovery scenario with LLM reward bonus + obs enhancement."""
 
         if reward_fn is not None:
             def reward(self, agent):
-                is_first = agent == self.world.agents[0]
-                is_last = agent == self.world.agents[-1]
+                # Compute ORIGINAL reward (always present)
+                original_reward = super().reward(agent)
 
-                if is_first:
-                    self.time_rew = torch.full(
-                        (self.world.batch_dim,),
-                        self.time_penalty,
-                        device=self.world.device,
-                    )
-                    self.agents_pos = torch.stack(
-                        [a.state.pos for a in self.world.agents], dim=1,
-                    )
-                    self.targets_pos = torch.stack(
-                        [t.state.pos for t in self._targets], dim=1,
-                    )
-                    self.agents_targets_dists = torch.cdist(
-                        self.agents_pos, self.targets_pos,
-                    )
-                    self.agents_per_target = torch.sum(
-                        (self.agents_targets_dists
-                         < self._covering_range).int(),
-                        dim=1,
-                    )
-                    self.covered_targets = (
-                        self.agents_per_target >= self._agents_per_target
-                    )
-                    self.shared_covering_rew[:] = 0
-                    for a in self.world.agents:
-                        self.shared_covering_rew += self.agent_reward(a)
-                    self.shared_covering_rew[
-                        self.shared_covering_rew != 0
-                    ] /= 2
-
-                # Collision penalty
-                agent.collision_rew[:] = 0
-                for a in self.world.agents:
-                    if a != agent:
-                        agent.collision_rew[
-                            self.world.get_distance(a, agent)
-                            < self.min_collision_distance
-                        ] += self.agent_collision_penalty
-
-                # Target handling (last agent)
-                if is_last:
-                    if self.targets_respawn:
-                        from vmas.simulator.utils import ScenarioUtils
-                        occupied_agents = [self.agents_pos]
-                        for i, target in enumerate(self._targets):
-                            occupied_targets = [
-                                o.state.pos.unsqueeze(1)
-                                for o in self._targets
-                                if o is not target
-                            ]
-                            occupied = torch.cat(
-                                occupied_agents + occupied_targets,
-                                dim=1,
-                            )
-                            pos = ScenarioUtils.find_random_pos_for_entity(
-                                occupied, env_index=None,
-                                world=self.world,
-                                min_dist_between_entities=(
-                                    self._min_dist_between_entities
-                                ),
-                                x_bounds=(
-                                    -self.world.x_semidim,
-                                    self.world.x_semidim,
-                                ),
-                                y_bounds=(
-                                    -self.world.y_semidim,
-                                    self.world.y_semidim,
-                                ),
-                            )
-                            target.state.pos[
-                                self.covered_targets[:, i]
-                            ] = pos[
-                                self.covered_targets[:, i]
-                            ].squeeze(1)
-                    else:
-                        self.all_time_covered_targets += (
-                            self.covered_targets
-                        )
-                        for i, target in enumerate(self._targets):
-                            target.state.pos[
-                                self.covered_targets[:, i]
-                            ] = self.get_outside_pos(None)[
-                                self.covered_targets[:, i]
-                            ]
-
+                # Add LLM-generated bonus
                 agent_idx = self.world.agents.index(agent)
-                state = _build_scenario_state(self, agent, agent_idx)
-                return reward_fn(state)
+                state = _build_reward_state(self, agent, agent_idx)
+                bonus = reward_fn(state)
+
+                return original_reward + bonus
 
         if obs_fn is not None:
             def observation(self, agent):
                 base_obs = super().observation(agent)
                 agent_idx = self.world.agents.index(agent)
-                state = _build_scenario_state(self, agent, agent_idx)
+                # LOCAL state only — no oracle information
+                state = _build_obs_state(self, agent, agent_idx)
                 extra = obs_fn(state)
                 if isinstance(base_obs, dict):
                     base_obs["observation"] = torch.cat(
