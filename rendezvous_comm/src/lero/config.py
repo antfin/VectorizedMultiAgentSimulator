@@ -67,3 +67,15 @@ class LeroConfig:
     # What to evolve
     evolve_reward: bool = True
     evolve_observation: bool = True
+
+    # Reward mode: "replace" (paper — LLM designs full reward) or
+    # "bonus" (R = R_original + bonus_scale * tanh(LLM_bonus))
+    reward_mode: str = "replace"
+
+    # Observation state: "global" (paper — full state including all
+    # agent/target positions) or "local" (CTDE — only own sensors)
+    obs_state_mode: str = "global"
+
+    # Bonus normalization (only used when reward_mode="bonus"):
+    # bonus = bonus_scale * tanh(raw_bonus)
+    bonus_scale: float = 0.5

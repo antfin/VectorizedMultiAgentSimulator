@@ -1,14 +1,13 @@
-exp_id: e1_al_lp_sr_ms400
-name: "E1 LERO + AL + LP+SR (max_steps=400)"
+exp_id: e1_R4_bonus_local
+name: "R4: Bonus + Local obs — n=2 k=1"
 description: >
-  LERO framework applied to ER1-equivalent config (no communication).
-  LLM evolves reward + observation for coordination via spatial awareness.
-  Same task params as er1_al_lp_sr_ms400 for direct comparison.
+  Our previous approach: additive bonus + local obs (CTDE).
+  Baseline for comparison — this is what failed before.
 
 task:
-  n_agents: 4
+  n_agents: 2
   n_targets: 4
-  agents_per_target: 2
+  agents_per_target: 1
   lidar_range: 0.35
   covering_range: 0.25
   use_agent_lidar: true
@@ -41,23 +40,25 @@ lero:
   n_iterations: 4
   n_candidates: 3
   top_k: 2
-  eval_frames: 3_000_000
+  eval_frames: 1_000_000
   eval_episodes: 100
   full_frames: 10_000_000
   evolve_reward: true
   evolve_observation: true
-  bonus_scale: 2.0
+  reward_mode: "bonus"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
 
 llm:
   model: "gpt-5.4-mini"
   temperature: 0.8
   max_retries: 3
-  prompt_version: "v1"
+  prompt_version: "v2"
 
 sweep:
   seeds: [0]
-  n_agents: [4]
+  n_agents: [2]
   n_targets: [4]
-  agents_per_target: [2]
+  agents_per_target: [1]
   lidar_range: [0.35]
   algorithms: [mappo]

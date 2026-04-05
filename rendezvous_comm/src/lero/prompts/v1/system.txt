@@ -30,3 +30,11 @@ Design Python functions that improve cooperative multi-agent coordination for th
 - The reward function must return a 1D tensor of shape [batch_dim].
 - The observation enhancement must return a 2D tensor of shape [batch_dim, N] where N is the number of extra features (keep N small, 4-12 features).
 - Do NOT reference undefined variables. Use only the scenario_state dict provided.
+
+CRITICAL — Distance scales: The arena is [-1,1] x [-1,1] (2x2), maximum distance ~2.83. The covering_range ($covering_range) is very small. When computing approach/distance rewards, ALWAYS normalize by arena scale (max_dist ≈ 2.83), NOT by covering_range. Otherwise the gradient is zero for nearly all positions:
+```python
+# WRONG — zero gradient beyond 0.25m:
+closeness = torch.clamp(1 - dist / covering_range, 0, 1)
+# CORRECT — smooth gradient across full arena:
+closeness = 1.0 - dist / 2.83
+```

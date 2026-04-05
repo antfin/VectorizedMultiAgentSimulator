@@ -82,8 +82,45 @@ with tab_launch:
             else:
                 st.error("Upload failed — check logs")
 
+    # Detect LERO config and show LLM key status
+    is_lero = False
+    try:
+        import yaml
+        with open(Path(__file__).parent.parent / "configs" / exp_id / config_name) as _f:
+            _raw = yaml.safe_load(_f)
+        is_lero = "lero" in (_raw or {})
+    except Exception:
+        pass
+
+    if is_lero:
+        env_path = Path(__file__).parent.parent / ".env"
+        if env_path.exists():
+            from dotenv import dotenv_values
+            _env = dotenv_values(env_path)
+            llm_keys_count = sum(
+                1 for k, v in _env.items()
+                if v and any(p in k.upper() for p in ["API_KEY", "ACCESS_TOKEN"])
+            )
+            st.info(
+                f"LERO experiment — {llm_keys_count} LLM key(s) found in `.env`. "
+                f"Keys will be encrypted before submission."
+            )
+        else:
+            st.warning(
+                "LERO experiment but no `.env` file found. "
+                "LLM calls will fail without API keys."
+            )
+
     with col_sub:
         if st.button("Submit Job", type="primary"):
+            # Auto-pass encrypted LLM keys for LERO experiments
+            llm_env = None
+            if is_lero:
+                env_path = Path(__file__).parent.parent / ".env"
+                if env_path.exists():
+                    from dotenv import dotenv_values
+                    llm_env = dotenv_values(env_path)
+
             with st.spinner("Submitting..."):
                 job_id = submit_training_job(
                     config_yaml=config_rel,
@@ -91,9 +128,12 @@ with tab_launch:
                     bucket_code=bucket_code,
                     bucket_results=bucket_results,
                     region=region,
+                    llm_env=llm_env,
                 )
             if job_id:
                 st.success(f"Job submitted: `{job_id}`")
+                if llm_env:
+                    st.caption("LLM keys encrypted and passed to job.")
                 st.session_state["last_job_id"] = job_id
             else:
                 st.error("Submission failed — check ovhai auth and bucket names")

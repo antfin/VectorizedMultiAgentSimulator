@@ -1,0 +1,56 @@
+## Environment
+
+$n_agents agents must cover $n_targets targets. A target is covered when $agents_per_target agent(s) are within $covering_range distance. Arena: [-1,1] x [-1,1].
+
+Current reward function:
+
+```python
+$scenario_reward_code
+```
+
+Current observation function:
+
+```python
+$scenario_observation_code
+```
+
+## Available State
+
+```python
+scenario_state = {
+    "agents_pos":       # [batch, $n_agents, 2]
+    "targets_pos":      # [batch, $n_targets, 2]
+    "agents_targets_dists":  # [batch, $n_agents, $n_targets]
+    "covered_targets":  # [batch, $n_targets] boolean
+    "agents_per_target": # [batch, $n_targets] int
+    "all_time_covered":  # [batch, $n_targets] boolean
+    "agent_pos":        # [batch, 2]
+    "agent_vel":        # [batch, 2]
+    "agent_idx":        # int (0..$n_agents-1)
+    "n_agents":         # $n_agents
+    "n_targets":        # $n_targets
+    "covering_range":   # $covering_range
+    "agents_per_target_required": # $agents_per_target
+    "collision_penalty": # $collision_penalty
+    "collision_rew":    # [batch]
+    "time_penalty":     # $time_penalty
+}
+```
+
+## Generate Functions
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    """Design a reward that maximizes coverage rate.
+    Returns: [batch_dim] tensor.
+    """
+```
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    """Compute extra features to help agents coordinate.
+    Returns: [batch_dim, N] tensor where N is 4-9.
+    """
+```
+
+Wrap each in a separate ```python block.

@@ -20,6 +20,10 @@ $comm_description
 
 $reward_description
 
+### Coordination Challenge
+
+$coordination_guidance
+
 ### Current Implementation
 
 Here is the current reward function:
@@ -76,6 +80,12 @@ obs_state = {
 ```
 NOTE: The observation function does NOT have access to other agents' positions, target positions, covered/uncovered status, or any global state. It can only use the agent's own sensors.
 
+IMPORTANT: All agents share the SAME policy network. The only way an agent can behave differently from others is if its OBSERVATION is different. You MUST include `agent_idx` as a one-hot vector in the enhanced observation so the shared policy can assign different roles to different agents. Example:
+```python
+one_hot = torch.zeros(batch, n_agents, device=device)
+one_hot[:, agent_idx] = 1.0
+```
+
 ### Generate Functions
 
 Please generate TWO functions with these exact signatures:
@@ -94,11 +104,12 @@ def compute_reward_bonus(scenario_state: dict) -> torch.Tensor:
         bonus: torch.Tensor of shape [batch_dim]
 
     The bonus should:
+    - Follow the COORDINATION STRATEGY described above carefully
     - Give dense approach signals (reward getting closer to uncovered targets)
-    - Encourage spatial coordination (agents spreading to different targets)
     - Reward partial progress toward coverage
-    - Be moderate in magnitude (roughly -1 to +1 per step) so it doesn't
-      overwhelm the original reward signal
+    - Focus on the RELATIVE structure (what to reward more vs less).
+      The absolute magnitude does not matter — your output will be
+      automatically normalized via tanh and scaled.
     - NOT duplicate collision or time penalties (already in original reward)
     """
     ...

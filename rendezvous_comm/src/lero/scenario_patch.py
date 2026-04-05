@@ -152,22 +152,32 @@ def _compile_function(source: str, func_name: str) -> Callable:
 def make_patched_scenario_class(
     reward_source: Optional[str] = None,
     obs_source: Optional[str] = None,
+    reward_mode: str = "replace",
+    obs_state_mode: str = "global",
+    bonus_scale: float = 0.5,
 ):
     """Create a Discovery Scenario subclass with LLM-generated methods.
 
-    Reward: R = R_original + compute_reward_bonus(full_state)
-      The LLM generates a BONUS added to the original reward.
-      The original covering reward is always present.
+    reward_mode:
+      "replace" (paper): R = compute_reward(full_state)
+        LLM designs the entire reward. Original reward is NOT used.
+      "bonus": R = R_original + bonus_scale * tanh(compute_reward_bonus(state))
+        LLM designs a bonus added to the original reward.
 
-    Observation: obs = base_obs || enhance_observation(local_state)
-      The LLM enhancement only sees local sensor data (CTDE).
+    obs_state_mode:
+      "global" (paper): enhance_observation gets full state (all positions, coverage)
+      "local" (CTDE): enhance_observation gets only own sensors
     """
     from vmas.scenarios.discovery import Scenario as OrigScenario
 
     reward_fn = None
     obs_fn = None
     if reward_source:
-        reward_fn = _compile_function(reward_source, "compute_reward_bonus")
+        # Accept both names — paper uses compute_reward, bonus mode uses compute_reward_bonus
+        if "def compute_reward_bonus" in reward_source:
+            reward_fn = _compile_function(reward_source, "compute_reward_bonus")
+        else:
+            reward_fn = _compile_function(reward_source, "compute_reward")
     if obs_source:
         obs_fn = _compile_function(obs_source, "enhance_observation")
 
@@ -175,23 +185,38 @@ def make_patched_scenario_class(
         """Discovery scenario with LLM reward bonus + obs enhancement."""
 
         if reward_fn is not None:
-            def reward(self, agent):
-                # Compute ORIGINAL reward (always present)
-                original_reward = super().reward(agent)
+            _rmode = reward_mode
+            _bs = bonus_scale
 
-                # Add LLM-generated bonus
-                agent_idx = self.world.agents.index(agent)
-                state = _build_reward_state(self, agent, agent_idx)
-                bonus = reward_fn(state)
+            if _rmode == "replace":
+                def reward(self, agent):
+                    # Run original reward for side effects (computes
+                    # shared state, collision penalties, target respawning)
+                    _ = super().reward(agent)
 
-                return original_reward + bonus
+                    # Return LLM-generated reward ONLY
+                    agent_idx = self.world.agents.index(agent)
+                    state = _build_reward_state(self, agent, agent_idx)
+                    return reward_fn(state)
+            else:
+                def reward(self, agent, _bonus_scale=_bs):
+                    original_reward = super().reward(agent)
+                    agent_idx = self.world.agents.index(agent)
+                    state = _build_reward_state(self, agent, agent_idx)
+                    raw_bonus = reward_fn(state)
+                    bonus = _bonus_scale * torch.tanh(raw_bonus)
+                    return original_reward + bonus
 
         if obs_fn is not None:
+            _obs_mode = obs_state_mode
+
             def observation(self, agent):
                 base_obs = super().observation(agent)
                 agent_idx = self.world.agents.index(agent)
-                # LOCAL state only — no oracle information
-                state = _build_obs_state(self, agent, agent_idx)
+                if _obs_mode == "global":
+                    state = _build_reward_state(self, agent, agent_idx)
+                else:
+                    state = _build_obs_state(self, agent, agent_idx)
                 extra = obs_fn(state)
                 if isinstance(base_obs, dict):
                     base_obs["observation"] = torch.cat(

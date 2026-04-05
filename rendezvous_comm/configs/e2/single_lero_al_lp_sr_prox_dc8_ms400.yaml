@@ -43,11 +43,12 @@ lero:
   n_iterations: 4
   n_candidates: 3
   top_k: 2
-  eval_frames: 1_000_000
+  eval_frames: 3_000_000
   eval_episodes: 100
   full_frames: 10_000_000
   evolve_reward: true
   evolve_observation: true
+  bonus_scale: 2.0
 
 llm:
   model: "gpt-5.4-mini"

@@ -1,14 +1,13 @@
-exp_id: e1_al_lp_sr_ms400
-name: "E1 LERO + AL + LP+SR (max_steps=400)"
+exp_id: e1_L4_full_prompt
+name: "L4: Full prompt (v1) + Replace + Global — n=2 k=1"
 description: >
-  LERO framework applied to ER1-equivalent config (no communication).
-  LLM evolves reward + observation for coordination via spatial awareness.
-  Same task params as er1_al_lp_sr_ms400 for direct comparison.
+  Paper reward/obs modes but with our full v1 prompt (research context,
+  distance warnings, coordination guidance). Tests H5: minimal vs full.
 
 task:
-  n_agents: 4
+  n_agents: 2
   n_targets: 4
-  agents_per_target: 2
+  agents_per_target: 1
   lidar_range: 0.35
   covering_range: 0.25
   use_agent_lidar: true
@@ -41,12 +40,13 @@ lero:
   n_iterations: 4
   n_candidates: 3
   top_k: 2
-  eval_frames: 3_000_000
+  eval_frames: 1_000_000
   eval_episodes: 100
   full_frames: 10_000_000
   evolve_reward: true
   evolve_observation: true
-  bonus_scale: 2.0
+  reward_mode: "replace"
+  obs_state_mode: "global"
 
 llm:
   model: "gpt-5.4-mini"
@@ -56,8 +56,8 @@ llm:
 
 sweep:
   seeds: [0]
-  n_agents: [4]
+  n_agents: [2]
   n_targets: [4]
-  agents_per_target: [2]
+  agents_per_target: [1]
   lidar_range: [0.35]
   algorithms: [mappo]

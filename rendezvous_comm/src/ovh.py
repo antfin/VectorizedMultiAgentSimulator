@@ -151,10 +151,22 @@ def submit_training_job(
     image: Optional[str] = None,
     n_gpu: Optional[int] = None,
     job_name: Optional[str] = None,
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """Submit an OVH AI Training job.
 
     All parameters default to values from configs/ovh.yaml.
+
+    For LERO experiments that need LLM access, pass API keys via llm_env:
+        llm_env={"OPENAI_API_KEY": "sk-..."}
+    Keys are passed as --env flags to the container. They are NOT stored
+    in git, the Docker image, or the code bucket. They are visible in
+    OVH job metadata (ovhai job get) to project members only.
+
+    Tip: read keys from local .env at submit time:
+        from dotenv import dotenv_values
+        llm_env = dotenv_values("rendezvous_comm/.env")
+        submit_training_job(..., llm_env=llm_env)
 
     Args:
         config_yaml: path to config YAML relative to code root
@@ -210,7 +222,7 @@ def submit_training_job(
         f"export HOME=/tmp && "
         f"pip install "
         f"vmas benchmarl tensordict torchrl "
-        f"pyyaml pandas scipy imageio matplotlib && "
+        f"pyyaml pandas scipy imageio matplotlib litellm && "
         f"cd {mount_code}/rendezvous_comm && "
         f"python train.py "
         f"{mount_code}/{config_yaml} "
@@ -230,6 +242,22 @@ def submit_training_job(
         f"{bucket_results}@{region}/{results_prefix}:{mount_results}:rwd",
         "--env", f"RESULTS_DIR={mount_results}",
         "--env", f"CHECKPOINTS_DIR={mount_results}/checkpoints",
+    ]
+    # LLM API keys for LERO experiments — encrypted before submission
+    # so they appear as opaque blobs in `ovhai job get`.
+    if llm_env:
+        from .secrets_util import encrypt_env
+        import secrets
+        passphrase = secrets.token_urlsafe(24)
+        encrypted = encrypt_env(llm_env, passphrase)
+        for key, value in encrypted.items():
+            args.extend(["--env", f"{key}={value}"])
+        _log.info(
+            "LLM keys encrypted (%d keys). "
+            "Passphrase is ephemeral — lost after this session.",
+            len(llm_env),
+        )
+    args.extend([
         "--output", "json",
         "--", "bash", "-c", train_cmd,
     ]

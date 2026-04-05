@@ -46,6 +46,7 @@ lero:
   full_frames: 10_000_000
   evolve_reward: true
   evolve_observation: true
+  bonus_scale: 0.5
 
 llm:
   model: "gpt-5.4-mini"

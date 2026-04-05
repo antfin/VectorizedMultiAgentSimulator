@@ -154,9 +154,17 @@ def main():
     t0 = time.monotonic()
 
     if is_lero:
-        # Load .env for API keys
-        from dotenv import load_dotenv
-        load_dotenv(Path(__file__).parent / ".env")
+        # Load LLM API keys:
+        # 1. From encrypted env vars (OVH AI Training)
+        # 2. From .env file (local development)
+        import os
+        if os.environ.get("LERO_ENCRYPTED"):
+            from src.secrets_util import decrypt_and_load_env
+            n_keys = len(decrypt_and_load_env())
+            log.info(f"Decrypted {n_keys} LLM key(s) from LERO_ENCRYPTED")
+        else:
+            from dotenv import load_dotenv
+            load_dotenv(Path(__file__).parent / ".env")
 
         from src.runner import run_lero
 

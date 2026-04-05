@@ -36,3 +36,4 @@ tqdm
 
 # LERO: LLM-driven evolutionary reward/observation optimization
 litellm>=1.40
+cryptography>=41.0  # for encrypted LLM key passing to OVH jobs

@@ -161,6 +161,94 @@ def _build_experiment_context(
     else:
         obs_lidar_agents = "# agent LiDAR not enabled"
 
+    # ── Task-specific coordination guidance for reward design ──
+    if k == 1 and dim_c == 0:
+        coordination_guidance = (
+            "COORDINATION STRATEGY for k=1 (no communication):\n"
+            f"Each target needs only 1 agent. With {n_agents} agents and "
+            f"{n_targets} targets, agents should SPREAD OUT to different "
+            "targets. The key challenge is avoiding redundancy — two agents "
+            "going to the same target wastes effort.\n\n"
+            "Your reward bonus should:\n"
+            "- Reward approaching uncovered targets\n"
+            "- Penalize multiple agents converging on the same target "
+            "when other targets remain uncovered\n"
+            "- Reward agents that go to targets with fewer nearby agents\n"
+            "- NOT penalize convergence on the LAST remaining target"
+        )
+    elif k >= 2 and dim_c == 0:
+        coordination_guidance = (
+            f"COORDINATION STRATEGY for k={k} (no communication):\n"
+            f"Each target needs EXACTLY {k} agents within covering_range "
+            f"SIMULTANEOUSLY. This is a RENDEZVOUS task — agents must "
+            f"CONVERGE in groups of {k} on the same target.\n\n"
+            f"With {n_agents} agents and {n_targets} targets, the optimal "
+            f"strategy is to ASSIGN agent pairs to targets. For example:\n"
+            f"  - Agents 0,1 → Target A (nearest uncovered)\n"
+            f"  - Agents 2,3 → Target B (next nearest uncovered)\n"
+            f"Then once A and B are covered, reassign to remaining targets.\n\n"
+            "CRITICAL RULES:\n"
+            "- Do NOT penalize agents for being near each other! "
+            f"Co-location at an uncovered target is the GOAL.\n"
+            f"- STRONGLY reward agents that are near a target that already "
+            f"has {k-1} other agent(s) nearby — they are completing a team.\n"
+            "- Use agent_idx to create IMPLICIT ASSIGNMENT: e.g., "
+            "even-indexed agents (0,2) prefer the nearest uncovered target, "
+            "odd-indexed agents (1,3) prefer the target that already has "
+            "a partner approaching.\n\n"
+            "Your reward bonus should:\n"
+            f"1. TEAM COMPLETION (strongest signal, weight ~2-5): "
+            f"Big bonus when this agent is near a target that has "
+            f"{k-1} other agents also within covering_range\n"
+            f"2. PARTNER FOLLOWING (weight ~1-3): Reward approaching a "
+            f"target that already has 1+ agents nearby (join the team)\n"
+            f"3. APPROACH (weight ~0.5-1): Reward getting closer to any "
+            f"uncovered target (basic shaping)\n"
+            f"4. LONE PENALTY: Small penalty for being "
+            f"the only agent near a target when other agents are also "
+            f"alone elsewhere (should join forces instead)\n\n"
+            "Focus on relative weights between components. The absolute "
+            "magnitude will be automatically normalized."
+        )
+    elif k == 1 and dim_c > 0:
+        coordination_guidance = (
+            f"COORDINATION STRATEGY for k=1 (with {dim_c}-dim communication):\n"
+            f"Each target needs 1 agent. Agents can communicate via "
+            f"{dim_c}-float messages each step.\n\n"
+            "Your reward bonus should:\n"
+            "- Reward approaching uncovered targets\n"
+            "- Penalize redundant coverage (two agents at same target)\n"
+            "- Encourage informative communication — agents should "
+            "broadcast which target they are heading to so others avoid it\n"
+            "- Reward message diversity (different agents sending different "
+            "messages suggests they are communicating distinct intentions)"
+        )
+    else:  # k >= 2 and dim_c > 0
+        coordination_guidance = (
+            f"COORDINATION STRATEGY for k={k} (with {dim_c}-dim communication):\n"
+            f"Each target needs EXACTLY {k} agents simultaneously. This is "
+            f"a RENDEZVOUS task with communication channels.\n\n"
+            f"With {n_agents} agents and {n_targets} targets, agents must "
+            f"form {k}-agent teams. Communication should enable EXPLICIT "
+            f"coordination — agents can signal their target choice.\n\n"
+            "CRITICAL RULES:\n"
+            "- Co-location at an uncovered target is the GOAL, not a problem.\n"
+            f"- STRONGLY reward agents completing a team of {k} at a target.\n"
+            "- Use communication to avoid conflicts — reward message diversity "
+            "(agents signaling different target choices).\n\n"
+            "Your reward bonus should:\n"
+            f"1. TEAM COMPLETION (weight ~2-5): Big bonus when this agent "
+            f"is at a target with {k-1} other agents nearby\n"
+            f"2. PARTNER FOLLOWING (weight ~1-3): Reward joining a target "
+            f"that already has 1+ agents\n"
+            f"3. COMM INCENTIVE (weight ~0.5-1): Reward sending non-zero "
+            f"messages and reward when received messages correlate with "
+            f"the agent's target choice\n"
+            f"4. APPROACH (weight ~0.5-1): Basic approach shaping\n\n"
+            "Focus on relative weights between components. The absolute "
+            "magnitude will be automatically normalized."
+        )
+
     if dim_c > 0:
         obs_comm_state = (
             f'"messages":        '
@@ -182,6 +270,7 @@ def _build_experiment_context(
         "agent_lidar_description": agent_lidar_description,
         "comm_description": comm_description,
         "reward_description": reward_description,
+        "coordination_guidance": coordination_guidance,
         "comm_state_description": comm_state_description,
         "obs_lidar_agents": obs_lidar_agents,
         "obs_comm_state": obs_comm_state,
@@ -271,6 +360,9 @@ def _build_patched_experiment(
     save_folder: Optional[str] = None,
     reward_source: Optional[str] = None,
     obs_source: Optional[str] = None,
+    reward_mode: str = "replace",
+    obs_state_mode: str = "global",
+    bonus_scale: float = 0.5,
 ):
     """Build a BenchMARL Experiment with LLM-patched scenario.
 
@@ -287,6 +379,9 @@ def _build_patched_experiment(
     # Create patched scenario class
     PatchedScenario = make_patched_scenario_class(
         reward_source, obs_source,
+        reward_mode=reward_mode,
+        obs_state_mode=obs_state_mode,
+        bonus_scale=bonus_scale,
     )
     # Configure the task
     task = VmasTask.DISCOVERY.get_from_yaml()
@@ -522,9 +617,13 @@ class LeroLoop:
             valid_results = [
                 (c, m) for c, m in results if "_error" not in m
             ]
+            # Fitness: M1 primary, M6 secondary (fallback when all M1=0)
+            # This handles hard tasks (k>=2) where no candidate achieves
+            # full coverage at short eval, but M6 still differentiates.
             valid_results.sort(
                 key=lambda x: (
                     x[1].get("M1_success_rate", 0),
+                    x[1].get("M6_coverage_progress", 0),
                     x[1].get("M2_avg_return", -1e9),
                 ),
                 reverse=True,
@@ -534,13 +633,21 @@ class LeroLoop:
             iter_best_metrics = valid_results[0][1]
 
             # Track global best across ALL iterations
-            iter_m1 = iter_best_metrics.get("M1_success_rate", 0)
-            global_m1 = best_metrics.get("M1_success_rate", -1) if best_metrics else -1
-            if iter_m1 > global_m1 or (
-                iter_m1 == global_m1
-                and iter_best_metrics.get("M2_avg_return", -1e9)
-                > (best_metrics or {}).get("M2_avg_return", -1e9)
-            ):
+            # Use (M1, M6, M2) as composite fitness — M6 breaks ties
+            # when all candidates have M1=0 (common for hard k>=2 tasks)
+            iter_fitness = (
+                iter_best_metrics.get("M1_success_rate", 0),
+                iter_best_metrics.get("M6_coverage_progress", 0),
+                iter_best_metrics.get("M2_avg_return", -1e9),
+            )
+            global_fitness = (
+                (best_metrics or {}).get("M1_success_rate", -1),
+                (best_metrics or {}).get("M6_coverage_progress", -1),
+                (best_metrics or {}).get("M2_avg_return", -1e9),
+            ) if best_metrics else (-1, -1, -1e9)
+            iter_m1 = iter_fitness[0]
+            global_m1 = global_fitness[0]
+            if iter_fitness > global_fitness:
                 best_candidate = iter_best_candidate
                 best_metrics = iter_best_metrics
                 _log.info(
@@ -649,6 +756,7 @@ class LeroLoop:
         system_prompt = self.prompt_loader.render(
             "system.txt",
             experiment_context=ctx["experiment_context"],
+            covering_range=task_params.get("covering_range", 0.25),
         )
 
         user_prompt = self.prompt_loader.render(
@@ -668,6 +776,7 @@ class LeroLoop:
             agent_lidar_description=ctx["agent_lidar_description"],
             comm_description=ctx["comm_description"],
             reward_description=ctx["reward_description"],
+            coordination_guidance=ctx["coordination_guidance"],
             comm_state_description=ctx["comm_state_description"],
             obs_lidar_agents=ctx["obs_lidar_agents"],
             obs_comm_state=ctx["obs_comm_state"],
@@ -720,6 +829,9 @@ class LeroLoop:
             task_overrides, save_folder,
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
+            reward_mode=self.lero.reward_mode,
+            obs_state_mode=self.lero.obs_state_mode,
+            bonus_scale=self.lero.bonus_scale,
         )
 
         experiment.run()
@@ -749,6 +861,9 @@ class LeroLoop:
             task_overrides, save_folder,
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
+            reward_mode=self.lero.reward_mode,
+            obs_state_mode=self.lero.obs_state_mode,
+            bonus_scale=self.lero.bonus_scale,
         )
 
         t0 = time.monotonic()
