@@ -363,6 +363,7 @@ def _build_patched_experiment(
     reward_mode: str = "replace",
     obs_state_mode: str = "global",
     bonus_scale: float = 0.5,
+    reward_clip: Optional[float] = 50.0,
 ):
     """Build a BenchMARL Experiment with LLM-patched scenario.
 
@@ -382,6 +383,7 @@ def _build_patched_experiment(
         reward_mode=reward_mode,
         obs_state_mode=obs_state_mode,
         bonus_scale=bonus_scale,
+        reward_clip=reward_clip,
     )
     # Configure the task
     task = VmasTask.DISCOVERY.get_from_yaml()
@@ -520,6 +522,9 @@ class LeroLoop:
 
         best_candidate = None
         best_metrics = None
+        # Track ALL valid candidates across all iterations so we can
+        # fall back to second/third best if full training crashes.
+        all_valid: List[Tuple[CandidateCode, Dict, int]] = []  # (cand, metrics, iter)
 
         for iteration in range(self.lero.n_iterations):
             iter_dir = self.output_dir / f"iter_{iteration}"
@@ -617,6 +622,9 @@ class LeroLoop:
             valid_results = [
                 (c, m) for c, m in results if "_error" not in m
             ]
+            # Accumulate cross-iteration list for fallback ranking
+            for c, m in valid_results:
+                all_valid.append((c, m, iteration))
             # Fitness: M1 primary, M6 secondary (fallback when all M1=0)
             # This handles hard tasks (k>=2) where no candidate achieves
             # full coverage at short eval, but M6 still differentiates.
@@ -717,11 +725,71 @@ class LeroLoop:
             _log.error("No valid candidates found across all iterations")
             return {"_error": "no valid candidates"}
 
-        # 5. Full training with best candidate
-        _log.info("=== FULL TRAINING with best candidate ===")
-        final_result = self._full_training(
-            best_candidate, task_overrides, algorithm, seed,
+        # 5. Full training with best candidate, with fallback chain.
+        # If the chosen reward causes training to crash (e.g. NaN actions
+        # from PPO gradient explosion on large-magnitude rewards), fall
+        # back to the next-best candidate ranked by (M1, M6, M2).
+        all_valid.sort(
+            key=lambda x: (
+                x[1].get("M1_success_rate", 0),
+                x[1].get("M6_coverage_progress", 0),
+                x[1].get("M2_avg_return", -1e9),
+            ),
+            reverse=True,
         )
+        fallback_chain = []
+        final_result = None
+        chosen_candidate = None
+        for rank, (cand, eval_metrics, src_iter) in enumerate(all_valid):
+            label = (
+                f"rank {rank} (iter {src_iter}, "
+                f"eval M1={eval_metrics.get('M1_success_rate', 0):.3f})"
+            )
+            _log.info(
+                "=== FULL TRAINING with candidate %s ===", label,
+            )
+            try:
+                final_result = self._full_training(
+                    cand, task_overrides, algorithm, seed,
+                )
+                chosen_candidate = cand
+                fallback_chain.append({
+                    "rank": rank, "iter": src_iter,
+                    "eval_M1": eval_metrics.get("M1_success_rate", 0),
+                    "eval_M2": eval_metrics.get("M2_avg_return", 0),
+                    "eval_M6": eval_metrics.get("M6_coverage_progress", 0),
+                    "outcome": "success",
+                })
+                break
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+                _log.warning(
+                    "Full training failed for %s: %s. Trying next candidate.",
+                    label, err[:200],
+                )
+                fallback_chain.append({
+                    "rank": rank, "iter": src_iter,
+                    "eval_M1": eval_metrics.get("M1_success_rate", 0),
+                    "eval_M2": eval_metrics.get("M2_avg_return", 0),
+                    "eval_M6": eval_metrics.get("M6_coverage_progress", 0),
+                    "outcome": "crashed",
+                    "error": err[:200],
+                })
+                continue
+
+        if final_result is None:
+            _log.error(
+                "ALL %d candidates crashed during full training",
+                len(all_valid),
+            )
+            self._save_json("fallback_chain.json", fallback_chain)
+            return {
+                "_error": "all candidates crashed at full training",
+                "fallback_chain": fallback_chain,
+            }
+
+        # Save the candidate that actually completed training
+        best_candidate = chosen_candidate
 
         # Save best candidate source
         if best_candidate.reward_source:
@@ -737,6 +805,8 @@ class LeroLoop:
         final_result["lero_candidates_per_iter"] = self.lero.n_candidates
         final_result["llm_model"] = self.llm_config.model
         final_result["prompt_version"] = self.llm_config.prompt_version
+        final_result["fallback_chain"] = fallback_chain
+        self._save_json("fallback_chain.json", fallback_chain)
 
         self._save_json("final_metrics.json", final_result)
         _log.info("=== LERO COMPLETE ===")
@@ -832,6 +902,7 @@ class LeroLoop:
             reward_mode=self.lero.reward_mode,
             obs_state_mode=self.lero.obs_state_mode,
             bonus_scale=self.lero.bonus_scale,
+            reward_clip=self.lero.reward_clip,
         )
 
         experiment.run()
@@ -864,6 +935,7 @@ class LeroLoop:
             reward_mode=self.lero.reward_mode,
             obs_state_mode=self.lero.obs_state_mode,
             bonus_scale=self.lero.bonus_scale,
+            reward_clip=self.lero.reward_clip,
         )
 
         t0 = time.monotonic()

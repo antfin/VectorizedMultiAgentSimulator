@@ -156,12 +156,29 @@ def _compile_function(source: str, func_name: str) -> Callable:
     return namespace[func_name]
 
 
+def _sanitize_reward(r: torch.Tensor, clip: Optional[float]) -> torch.Tensor:
+    """Defensive cleanup of LLM-generated reward output.
+
+    1. Replace NaN/inf with 0 (in case the LLM's reward function divides by
+       zero or takes log(0) on degenerate states).
+    2. If `clip` is set, soft-cap magnitude to [-clip, +clip] to prevent
+       PPO gradient explosion when LLM produces large-magnitude rewards.
+       Without this, observed NaN crashes in policy actions ~70-90% into
+       10M-frame training when chosen reward had |M2| > 100.
+    """
+    r = torch.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
+    if clip is not None and clip > 0:
+        r = torch.clamp(r, -clip, clip)
+    return r
+
+
 def make_patched_scenario_class(
     reward_source: Optional[str] = None,
     obs_source: Optional[str] = None,
     reward_mode: str = "replace",
     obs_state_mode: str = "global",
     bonus_scale: float = 0.5,
+    reward_clip: Optional[float] = 50.0,
 ):
     """Create a Discovery Scenario subclass with LLM-generated methods.
 
@@ -174,6 +191,10 @@ def make_patched_scenario_class(
     obs_state_mode:
       "global" (paper): enhance_observation gets full state (all positions, coverage)
       "local" (CTDE): enhance_observation gets only own sensors
+
+    reward_clip:
+      LLM reward output is run through nan_to_num then clamped to [-clip, +clip]
+      before being passed to PPO. Set to None to disable. Default 50.0.
     """
     from vmas.scenarios.discovery import Scenario as OrigScenario
 
@@ -204,24 +225,27 @@ def make_patched_scenario_class(
         if reward_fn is not None:
             _rmode = reward_mode
             _bs = bonus_scale
+            _clip = reward_clip
 
             if _rmode == "replace":
-                def reward(self, agent):
+                def reward(self, agent, _rc=_clip):
                     # Run original reward for side effects (computes
                     # shared state, collision penalties, target respawning)
                     _ = super().reward(agent)
 
-                    # Return LLM-generated reward ONLY
+                    # Return sanitized + clipped LLM-generated reward ONLY
                     agent_idx = self.world.agents.index(agent)
                     state = _build_reward_state(self, agent, agent_idx)
-                    return reward_fn(state)
+                    return _sanitize_reward(reward_fn(state), _rc)
             else:
-                def reward(self, agent, _bonus_scale=_bs):
+                def reward(self, agent, _bonus_scale=_bs, _rc=_clip):
                     original_reward = super().reward(agent)
                     agent_idx = self.world.agents.index(agent)
                     state = _build_reward_state(self, agent, agent_idx)
                     raw_bonus = reward_fn(state)
                     bonus = _bonus_scale * torch.tanh(raw_bonus)
+                    # Sanitize the bonus then add (original is unaffected)
+                    bonus = _sanitize_reward(bonus, _rc)
                     return original_reward + bonus
 
         if obs_fn is not None:

@@ -79,3 +79,13 @@ class LeroConfig:
     # Bonus normalization (only used when reward_mode="bonus"):
     # bonus = bonus_scale * tanh(raw_bonus)
     bonus_scale: float = 0.5
+
+    # Clip LLM reward output to [-reward_clip, +reward_clip] before passing
+    # to PPO. NaN/inf are first replaced with 0. Disable by setting to None
+    # or a very large number (e.g. 1e9). Default 50.0 prevents PPO gradient
+    # explosion observed when LLM produces large-magnitude rewards (M2 in
+    # ±200..±1000 range), which causes NaN actions ~70-90% into 10M training.
+    # NOTE: This deviates from the LERO paper's "raw rewards" — the paper's
+    # MPE Simple Spread had naturally bounded rewards [0,5]; Discovery does
+    # not, hence the need for a soft cap.
+    reward_clip: Optional[float] = 50.0

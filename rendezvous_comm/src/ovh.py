@@ -216,7 +216,17 @@ def submit_training_job(
         exp_id = _raw.get("exp_id", "")
     except Exception:
         exp_id = ""
-    results_prefix = f"{exp_id}/" if exp_id else ""
+    # OVH volume syntax: `container@alias[/prefix]:mount:perm` —
+    # the prefix is optional and must NOT have a trailing slash.
+    # Without this, OVH parses the trailing slash as part of the
+    # prefix string, fails silently, and falls back to bucket root,
+    # causing parallel jobs to overwrite each other's results.
+    results_volume = (
+        f"{bucket_results}@{region}/{exp_id}:{mount_results}:rwd"
+        if exp_id
+        else f"{bucket_results}@{region}:{mount_results}:rwd"
+    )
+    code_volume = f"{bucket_code}@{region}:{mount_code}:ro"
 
     train_cmd = (
         f"export HOME=/tmp && "
@@ -237,9 +247,8 @@ def submit_training_job(
         "--name", job_name,
         "--flavor", flavor,
         "--gpu", str(n_gpu),
-        "--volume", f"{bucket_code}@{region}/:{mount_code}:ro",
-        "--volume",
-        f"{bucket_results}@{region}/{results_prefix}:{mount_results}:rwd",
+        "--volume", code_volume,
+        "--volume", results_volume,
         "--env", f"RESULTS_DIR={mount_results}",
         "--env", f"CHECKPOINTS_DIR={mount_results}/checkpoints",
     ]
