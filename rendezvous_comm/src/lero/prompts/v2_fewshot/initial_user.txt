@@ -1,0 +1,88 @@
+## Environment
+
+$n_agents agents must cover $n_targets targets. A target is covered when $agents_per_target agent(s) are within $covering_range distance. Arena: [-1,1] x [-1,1].
+
+Current reward function:
+
+```python
+$scenario_reward_code
+```
+
+Current observation function:
+
+```python
+$scenario_observation_code
+```
+
+## Available State
+
+```python
+scenario_state = {
+    "agents_pos":       # [batch, $n_agents, 2]
+    "targets_pos":      # [batch, $n_targets, 2]
+    "agents_targets_dists":  # [batch, $n_agents, $n_targets]
+    "covered_targets":  # [batch, $n_targets] boolean
+    "agents_per_target": # [batch, $n_targets] int
+    "all_time_covered":  # [batch, $n_targets] boolean
+    "agent_pos":        # [batch, 2]
+    "agent_vel":        # [batch, 2]
+    "agent_idx":        # int (0..$n_agents-1)
+    "n_agents":         # $n_agents
+    "n_targets":        # $n_targets
+    "covering_range":   # $covering_range
+    "agents_per_target_required": # $agents_per_target
+    "collision_penalty": # $collision_penalty
+    "collision_rew":    # [batch]
+    "time_penalty":     # $time_penalty
+}
+```
+
+## Examples
+
+Below are two example reward functions from related MPE Simple Spread tasks. They illustrate vectorized patterns, credit assignment (individual vs team), and shaping terms. Use them as references, not templates — design the function best suited to THIS task.
+
+### Example A — dense shaping
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    # Each agent penalized by distance to its nearest landmark
+    dists = torch.cdist(
+        scenario_state["agent_pos"].unsqueeze(1),
+        scenario_state["targets_pos"],
+    ).squeeze(1)                                  # [B, n_targets]
+    nearest = dists.min(dim=-1).values            # [B]
+    # Team-wise landmark coverage: sum of min agent-landmark distance
+    all_dists = scenario_state["agents_targets_dists"]        # [B, n_agents, n_targets]
+    team_penalty = all_dists.min(dim=1).values.sum(dim=-1)    # [B]
+    return -nearest - 0.1 * team_penalty + scenario_state["collision_rew"]
+```
+
+### Example B — coverage bonus + collision penalty
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    covered = scenario_state["covered_targets"].float().sum(dim=-1)   # [B]
+    all_covered = scenario_state["covered_targets"].all(dim=-1).float()
+    reward = 5.0 * covered + 20.0 * all_covered
+    reward = reward + scenario_state["collision_rew"]
+    reward = reward + scenario_state["time_penalty"]
+    return reward
+```
+
+## Generate Functions
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    """Design a reward that maximizes coverage rate.
+    Returns: [batch_dim] tensor.
+    """
+```
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    """Compute extra features to help agents coordinate.
+    Returns: [batch_dim, N] tensor where N is 4-9.
+    """
+```
+
+Wrap each in a separate ```python block.

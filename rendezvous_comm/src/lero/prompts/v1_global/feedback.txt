@@ -1,0 +1,21 @@
+Here are the results from evaluating $n_candidates candidate function pairs on the Discovery task ($n_agents agents, $n_targets targets, k=$agents_per_target):
+
+$candidates_results
+
+Key metrics:
+- M1 (Success Rate): fraction of episodes where ALL targets were covered. Higher is better.
+- M2 (Avg Return): cumulative reward per episode. Higher is better.
+- M4 (Avg Collisions): collision events per episode. Lower is better.
+- M6 (Coverage Progress): fraction of targets covered (partial credit). Higher is better.
+$comm_metrics
+
+Analysis guidance:
+- If M1 = 0 for all candidates: the reward provides no useful learning signal. Completely redesign the reward with stronger, more direct incentives.
+- If M6 is high but M1 is low: agents cover some targets but fail to coordinate for full coverage. Improve the coordination component of the reward.
+- If M4 is high: add or strengthen collision avoidance in the reward.
+- If a reward component appears to have constant or near-zero values: rescale it or replace it.
+- If observation features are not helping: consider what information the agent is missing that would help it coordinate.
+
+The best-performing candidate was #$best_idx. Please generate $n_candidates improved versions.
+Keep what worked in the best candidate and fix what failed in the others.
+Use the same function signatures as before.

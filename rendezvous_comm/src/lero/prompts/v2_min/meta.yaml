@@ -1,0 +1,7 @@
+version: v2_min
+author: rendezvous_comm
+date: 2026-04-16
+description: >
+  Minimal prompt (L1 ablation). Strips task description, role elaboration,
+  and reminders from v2. Only: "reward engineer" + env source + state dict
+  + signatures. Tests whether any framing at all is necessary.

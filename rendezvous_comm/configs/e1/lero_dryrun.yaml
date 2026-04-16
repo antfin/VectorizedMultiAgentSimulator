@@ -1,0 +1,66 @@
+exp_id: lero_dryrun2
+name: "LERO dry run 2 — v2_twofn + M8 fix validation"
+description: >
+  Second smoke test, targeting the new code paths added since dry run 1:
+  (a) v2_twofn prompt (nested agent_reward/global_reward inside compute_reward),
+  (b) scenario_patch.info() override that makes M8 non-zero with shared_reward=True.
+  Task matches P1 (n=3, t=3, k=1). Runtime ~6 min on V100S.
+
+task:
+  n_agents: 3
+  n_targets: 3
+  agents_per_target: 1
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+
+train:
+  algorithm: mappo
+  max_n_frames: 200_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 20_000
+  on_policy_n_envs_per_worker: 100
+  on_policy_n_minibatch_iters: 20
+  on_policy_minibatch_size: 2048
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 60_000
+  evaluation_episodes: 20
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 2
+  n_candidates: 2
+  top_k: 2
+  eval_frames: 100_000
+  eval_episodes: 20
+  full_frames: 200_000
+  evolve_reward: true
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "global"
+  bonus_scale: 0.5
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_twofn"
+
+sweep:
+  seeds: [0]
+  n_agents: [3]
+  n_targets: [3]
+  agents_per_target: [1]
+  lidar_range: [0.35]
+  algorithms: [mappo]

@@ -1,0 +1,7 @@
+version: v2_fewshot
+author: rendezvous_comm
+date: 2026-04-16
+description: >
+  L8 ablation — v2 paper-faithful prompt augmented with 2 few-shot example
+  reward functions (MPE Simple Spread-style). Tests hypothesis H8: do
+  examples improve LLM-generated reward quality?

@@ -1,0 +1,7 @@
+Results from $n_candidates candidates:
+
+$candidates_results
+
+Best candidate was #$best_idx. Generate $n_candidates improved versions.
+
+Reconsider the decomposition: is alpha right? Is the individual/team split pulling the policy in a useful direction? Keep what works, fix what doesn't.

@@ -1,0 +1,35 @@
+```python
+$scenario_reward_code
+```
+
+```python
+$scenario_observation_code
+```
+
+```python
+scenario_state = {
+    "agents_pos":       # [batch, $n_agents, 2]
+    "targets_pos":      # [batch, $n_targets, 2]
+    "agents_targets_dists":  # [batch, $n_agents, $n_targets]
+    "covered_targets":  # [batch, $n_targets] boolean
+    "agents_per_target": # [batch, $n_targets] int
+    "all_time_covered":  # [batch, $n_targets] boolean
+    "agent_pos":        # [batch, 2]
+    "agent_vel":        # [batch, 2]
+    "agent_idx":        # int
+    "n_agents":         # $n_agents
+    "n_targets":        # $n_targets
+    "covering_range":   # $covering_range
+    "agents_per_target_required": # $agents_per_target
+    "collision_penalty": # $collision_penalty
+    "collision_rew":    # [batch]
+    "time_penalty":     # $time_penalty
+}
+```
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor: ...
+def enhance_observation(scenario_state: dict) -> torch.Tensor: ...
+```
+
+Wrap each in a separate ```python block.

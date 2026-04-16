@@ -64,7 +64,10 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         "agents_targets_dists": agents_targets_dists,
         "covered_targets": covered_targets,
         "agents_per_target": agents_per_target,
-        "all_time_covered": scenario.all_time_covered_targets,
+        "all_time_covered": getattr(
+            scenario, "all_time_covered_targets",
+            torch.zeros_like(covered_targets),
+        ),
         "agent_pos": agent.state.pos,
         "agent_vel": agent.state.vel,
         "agent_idx": agent_idx,
@@ -78,7 +81,8 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         )),
         "time_penalty": scenario.time_penalty,
     }
-    if scenario.dim_c > 0:
+    dim_c = getattr(scenario, "dim_c", 0)
+    if dim_c > 0:
         messages = []
         for other in scenario.world.agents:
             if other is not agent and other.state.c is not None:
@@ -88,7 +92,7 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         else:
             state["messages"] = torch.zeros(
                 batch_dim, len(scenario.world.agents) - 1,
-                scenario.dim_c, device=device,
+                dim_c, device=device,
             )
     return state
 
@@ -114,21 +118,24 @@ def _build_obs_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         # LiDAR sensor readings (local, what the agent actually sees)
         "lidar_targets": agent.sensors[0].measure(),
     }
-    if scenario.use_agent_lidar and len(agent.sensors) > 1:
+    if getattr(scenario, "use_agent_lidar", False) and len(agent.sensors) > 1:
         state["lidar_agents"] = agent.sensors[1].measure()
 
     # Communication messages (if enabled — these ARE part of the obs)
-    if scenario.dim_c > 0:
+    dim_c = getattr(scenario, "dim_c", 0)
+    if dim_c > 0:
         messages = []
+        comm_proximity = getattr(scenario, "comm_proximity", False)
+        comms_range = getattr(scenario, "_comms_range", None)
         for other in scenario.world.agents:
             if other is not agent and other.state.c is not None:
                 msg = other.state.c
-                if scenario.comm_proximity:
+                if comm_proximity and comms_range is not None:
                     dist = torch.linalg.vector_norm(
                         agent.state.pos - other.state.pos,
                         dim=-1, keepdim=True,
                     )
-                    in_range = (dist <= scenario._comms_range).float()
+                    in_range = (dist <= comms_range).float()
                     msg = msg * in_range
                 messages.append(msg)
         if messages:
@@ -184,6 +191,16 @@ def make_patched_scenario_class(
     class PatchedDiscoveryScenario(OrigScenario):
         """Discovery scenario with LLM reward bonus + obs enhancement."""
 
+        def info(self, agent):
+            # Always return per-agent covering_reward (not the shared total)
+            # so metrics.M8 (agent_utilization CV) can measure per-agent
+            # contribution variance. Discovery's upstream info() returns
+            # self.shared_covering_rew for every agent when shared_reward=True,
+            # which makes M8 structurally zero.
+            base = super().info(agent)
+            base["covering_reward"] = agent.covering_reward
+            return base
+
         if reward_fn is not None:
             _rmode = reward_mode
             _bs = bonus_scale
@@ -208,12 +225,13 @@ def make_patched_scenario_class(
                     return original_reward + bonus
 
         if obs_fn is not None:
-            _obs_mode = obs_state_mode
-
-            def observation(self, agent):
+            # obs_state_mode is captured via closure of make_patched_scenario_class.
+            # Do NOT redefine it as a class attribute — class-body names aren't
+            # visible inside method bodies (Python scoping rule).
+            def observation(self, agent, _mode=obs_state_mode):
                 base_obs = super().observation(agent)
                 agent_idx = self.world.agents.index(agent)
-                if _obs_mode == "global":
+                if _mode == "global":
                     state = _build_reward_state(self, agent, agent_idx)
                 else:
                     state = _build_obs_state(self, agent, agent_idx)

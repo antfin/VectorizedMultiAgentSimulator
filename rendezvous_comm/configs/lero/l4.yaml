@@ -1,0 +1,68 @@
+exp_id: lero_l4
+name: "LERO L4 — full v1_global prompt (n=3, t=3, k=1)"
+description: >
+  Phase 4A L4: verbose prompt (v1_global) with research history, technical
+  constraints, distance warnings, magnitude tips. Tests H5 from the
+  opposite end: does more context help or confuse the LLM?
+  Uses v1_global — v1's verbose body adapted to replace+global mode
+  (single state dict, compute_reward signature). Same task/train/lero
+  params as P1; differs only in llm.prompt_version.
+
+task:
+  n_agents: 3
+  n_targets: 3
+  agents_per_target: 1
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 400
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 4
+  n_candidates: 3
+  top_k: 2
+  eval_frames: 1_000_000
+  eval_episodes: 100
+  full_frames: 10_000_000
+  evolve_reward: true
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "global"
+  bonus_scale: 0.5
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v1_global"
+
+sweep:
+  seeds: [0]
+  n_agents: [3]
+  n_targets: [3]
+  agents_per_target: [1]
+  lidar_range: [0.35]
+  algorithms: [mappo]

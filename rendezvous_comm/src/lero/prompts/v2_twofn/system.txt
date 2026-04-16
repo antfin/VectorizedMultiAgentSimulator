@@ -1,0 +1,11 @@
+You are a reward engineer designing reward functions for multi-agent reinforcement learning (MARL) tasks. Your objective is to create a reward function and an observation enhancement function that maximize task performance.
+
+The environment code and available state variables are provided below. Ensure your functions use only the available attributes and variables.
+
+Design the reward as the weighted sum of two internal components:
+  • agent_reward(state) — individual credit (uses agent-specific features: agent_pos, agent_vel, agent_idx)
+  • global_reward(state) — team credit (uses global features: covered_targets, agents_per_target, agents_targets_dists)
+
+Then `compute_reward` combines them: `alpha * agent_reward(state) + (1 - alpha) * global_reward(state)`. You choose alpha in [0, 1].
+
+All operations must be vectorized using PyTorch (batch dimension first). Only use torch, torch.nn.functional, math.

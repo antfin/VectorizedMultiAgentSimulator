@@ -260,7 +260,7 @@ def submit_training_job(
     args.extend([
         "--output", "json",
         "--", "bash", "-c", train_cmd,
-    ]
+    ])
 
     r = _run_ovhai(args, timeout=30)
     if r.returncode != 0:
