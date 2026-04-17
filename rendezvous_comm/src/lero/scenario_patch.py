@@ -71,15 +71,27 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         "agent_pos": agent.state.pos,
         "agent_vel": agent.state.vel,
         "agent_idx": agent_idx,
-        "n_agents": len(scenario.world.agents),
-        "n_targets": scenario.n_targets,
-        "covering_range": scenario._covering_range,
-        "agents_per_target_required": scenario._agents_per_target,
-        "collision_penalty": scenario.agent_collision_penalty,
+        "n_agents": torch.tensor(
+            len(scenario.world.agents), device=device,
+        ).long(),
+        "n_targets": torch.tensor(
+            scenario.n_targets, device=device,
+        ).long(),
+        "covering_range": torch.tensor(
+            scenario._covering_range, device=device,
+        ).float(),
+        "agents_per_target_required": torch.tensor(
+            scenario._agents_per_target, device=device,
+        ).float(),
+        "collision_penalty": torch.tensor(
+            scenario.agent_collision_penalty, device=device,
+        ).float(),
         "collision_rew": getattr(agent, "collision_rew", torch.zeros(
             batch_dim, device=device,
         )),
-        "time_penalty": scenario.time_penalty,
+        "time_penalty": torch.tensor(
+            scenario.time_penalty, device=device,
+        ).float(),
     }
     dim_c = getattr(scenario, "dim_c", 0)
     if dim_c > 0:
@@ -111,10 +123,18 @@ def _build_obs_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         "agent_pos": agent.state.pos,
         "agent_vel": agent.state.vel,
         "agent_idx": agent_idx,
-        "n_agents": len(scenario.world.agents),
-        "n_targets": scenario.n_targets,
-        "covering_range": scenario._covering_range,
-        "agents_per_target_required": scenario._agents_per_target,
+        "n_agents": torch.tensor(
+            len(scenario.world.agents), device=device,
+        ).long(),
+        "n_targets": torch.tensor(
+            scenario.n_targets, device=device,
+        ).long(),
+        "covering_range": torch.tensor(
+            scenario._covering_range, device=device,
+        ).float(),
+        "agents_per_target_required": torch.tensor(
+            scenario._agents_per_target, device=device,
+        ).float(),
         # LiDAR sensor readings (local, what the agent actually sees)
         "lidar_targets": agent.sensors[0].measure(),
     }

@@ -1,0 +1,10 @@
+Results from $n_candidates candidates:
+
+$candidates_results
+
+Best candidate was #$best_idx. Generate $n_candidates improved versions.
+
+REMEMBER: This is k=$agents_per_target rendezvous. If M1 is low, agents are NOT converging in groups. Check:
+- Are you accidentally penalizing multiple agents near the same target?
+- Is your approach shaping encouraging the k nearest agents toward EACH target (not just each agent toward its nearest target)?
+- Is the completion bonus large enough to incentivize full coverage?

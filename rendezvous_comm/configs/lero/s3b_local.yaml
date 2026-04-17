@@ -1,0 +1,70 @@
+exp_id: lero_s3b_local
+name: "LERO S3b-local — obs-only LERO with LOCAL sensors only (fair comparison)"
+description: >
+  Same as S3b (obs-only, ER1 reward kept, evolve_reward=false) but with
+  obs_state_mode=local — the LLM can only use lidar readings, own
+  position/velocity, and agent_idx. NO access to global target positions,
+  agent counts, or coverage status. Fair comparison to ER1/ER2/ER3
+  which also use only local information.
+  Tests: can the LLM design useful observation features from local
+  sensors alone that improve coordination beyond ER1's 40.5%?
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 400
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 4
+  n_candidates: 3
+  top_k: 2
+  eval_frames: 1_000_000
+  eval_episodes: 100
+  full_frames: 10_000_000
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_fewshot_k2_local"
+
+sweep:
+  seeds: [0]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

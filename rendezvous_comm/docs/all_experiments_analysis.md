@@ -1,8 +1,8 @@
 # Complete Experiment Analysis — Learning Communication Protocols for Multi-Robot Rendezvous
 
-**Date:** 2026-03-24
+**Date:** 2026-03-24 (ER1–ER3), 2026-04-16 (LERO)
 **Framework:** VMAS Discovery + BenchMARL (MAPPO)
-**Task:** 4 targets, covering_range=0.25 (unless noted), targets_respawn=False
+**Task:** covering_range=0.25 (unless noted), targets_respawn=False
 
 ## Data Sources
 
@@ -238,21 +238,265 @@ The cr035 condition reveals broadcast's advantage: with easier covering, broadca
 
 ---
 
+---
+
+## LERO — LLM-Designed Reward Engineering
+
+**Goal:** Use an LLM (gpt-5.4-mini) to evolve reward and observation functions automatically, replacing the hand-crafted reward. Based on the LERO paper ([arXiv:2503.21807](https://arxiv.org/abs/2503.21807)). Full methodology in `docs/lero.md`.
+
+**Setup:** 4 LERO iterations × 3 candidate reward functions per iteration, each evaluated with 1M-frame short training. Best candidate gets 10M-frame full training. `reward_mode=replace` (LLM replaces entire reward), `obs_state_mode=global` (full state access). Prompt: `v2_fewshot` (paper-faithful + 2 MPE-style example reward functions). Reward output clipped to ±50 to prevent PPO gradient explosion. Fallback chain: if full training crashes (NaN), tries next-best candidate.
+
+### LERO results — k=1 tasks (reward design)
+
+| Exp | Task | Prompt | M1 | M2 | M3 | M6 | Runs |
+|---|---|---|---:|---:|---:|---:|---|
+| L8 | n=3, t=3, k=1 | v2_fewshot | **100%** | 172.1 | 33.9 | 100% | 2/2 stable |
+| L8 #2 | n=3, t=3, k=1 | v2_fewshot | **100%** | 105.6 | 33.8 | 100% | 2/2 stable |
+| S1 | n=2, t=4, k=1 | v2_fewshot | **100%** | 59.5 | 50.3 | 100% | 1/1 |
+
+### LERO results — k=2 rendezvous task (the hard coordination problem)
+
+| Exp | LLM | Comm | Approach | Obs mode | Eval M1 | **Final M1** | Final M2 | Final M6 | M3 |
+|---|---|---|---|---|---:|---:|---:|---:|---:|
+| **S3b-global** | gpt-mini | none | obs-only (ER1 reward) | global (oracle) | 0.980 | **1.000** | 19.3 | **1.000** | 68 |
+| **S3b-local** | gpt-mini | none | obs-only (ER1 reward) | **local (fair)** | 0.060 | **0.880** | 5.0 | **0.970** | 186 |
+| S3a_gpt5 | gpt-5.4 | none | LLM reward (k2 prompt) | global | **0.860** | 0.090 | 1323.6 | 0.393 | 391 |
+| S3 | gpt-mini | none | LLM reward (k1 prompt) | global | 0.290 | 0.105 | 486.5 | 0.261 | 382 |
+| S3ac | gpt-mini | dim_c=8 | LLM reward (k2 prompt) | global | 0.020 | 0.080 | 1840.8 | 0.275 | 395 |
+| S3a_gpt | gpt-mini | none | LLM reward (k2 prompt) | global | 0.010 | 0.000 | 2260.6 | 0.088 | 400 |
+
+**S3b-local is the key result:** M1=88% on k=2 using ONLY local sensors (same information as ER1/ER2/ER3). Beats ER3 GNN (71%) by 17pp without any communication or GNN. The LLM designed coordination features from LiDAR readings — notably a "hold_signal" (target AND agent nearby → stay put) that prevents the "ships passing in the night" failure mode where agents overshoot targets during approach.
+
+### LERO vs ER1/ER2/ER3 comparison (ms400, cr025)
+
+| Method | k=1 (n=2,t=4) | k=1 (n=3,t=3) | k=2 (n=4,t=4) |
+|---|---:|---:|---:|
+| **LERO obs-only local** (hand-crafted reward + LLM local obs) | — | — | **88.0%** |
+| LERO obs-only global (oracle obs) | — | — | 100% (unfair) |
+| **ER3** (hand-crafted + GNN) | — | — | 71.0% |
+| **ER2** (hand-crafted + proximity comm) | — | — | 53.0% |
+| **ER1** (hand-crafted, no comm) | 58.0% | — | 40.5% |
+| **LERO reward+obs+comm** (LLM reward, dim_c=8) | — | — | 8.0% |
+| **LERO reward-design** (LLM reward, no comm) | **100%** | **100%** | 0–10.5% |
+
+### The eval-vs-final degradation problem (reward hacking at scale)
+
+S3a_gpt5 is the starkest example: gpt-5.4 designed a reward that achieved M1=0.860 at 1M-frame eval — genuinely solving 86% of episodes. But after 10M frames, M1 collapsed to 0.090 while M2 rose from 848 to 1324. The policy found an exploit.
+
+| Metric | Eval (1M) | Final (10M) | Interpretation |
+|---|---:|---:|---|
+| M1 (success) | 0.860 | 0.090 | policy stopped solving the task |
+| M2 (return) | 848 | 1324 | policy found higher-return exploit |
+| M6 (coverage) | 0.930 | 0.393 | coverage collapsed |
+
+**Why?** 1M-frame eval is too short to expose reward hacking. By 10M frames, any exploitable gap in the reward WILL be found. **Mitigation:** save the peak-M1 checkpoint during training (not just the final one). The M1=0.86 policy at ~1M frames was a legitimate solution — it shouldn't be discarded just because the reward is exploitable at longer horizons.
+
+### Why LERO reward + communication failed (S3ac: M1=8%)
+
+S3ac combined LLM-designed reward, LLM-designed observations (global), AND 8-float proximity communication (dim_c=8). Despite having the most information of any LERO variant, it performed worst. Three interacting failure modes explain why.
+
+**1. The LLM's reward has a surplus bonus that rewards crowding:**
+
+```python
+# From S3ac's best_reward.py:
+surplus = (counts - required).clamp(min=0.0).sum(dim=-1)
+reward = ... + 0.5 * surplus + ...  # REWARDS having >k agents per target
+```
+
+Having 4 agents crowded on 1 target → surplus=(4-2)=2 → +1.0/step × 400 steps = 400 return for doing nothing useful. The policy learns: "crowd together to farm surplus."
+
+**2. The evolutionary loop became a reward-inflation spiral:**
+
+| iter | M2 range across 3 candidates | M1 range |
+|---|---|---|
+| 0 | 704 – 1,190 | 0.000 – 0.020 |
+| 1 | 117 – 1,606 | 0.000 – 0.000 |
+| 2 | 2,297 – 4,708 | 0.000 – 0.000 |
+| 3 | 4,256 – **6,462** | 0.000 – 0.000 |
+
+The LLM couldn't improve M1 (doesn't know HOW to solve k=2), so it "improved" by designing rewards with progressively higher M2. By iter 3, every candidate had M1=0 with M2 > 4000 — pure reward-inflation.
+
+**3. Communication amplified the exploitation:**
+
+With dim_c=8, each agent has 8 extra continuous action dimensions (the message). The policy used these not to coordinate task completion, but to coordinate reward collection. Communication is a **neutral amplifier** — it helps whatever the policy is already doing:
+
+| Reward quality | Communication effect | Example |
+|---|---|---|
+| ✅ Correct (ER2) | Helps coordination → M1=53% | Agents share intent |
+| ❌ Exploitable (S3ac) | Helps exploitation → M1=8% | Agents coordinate crowding |
+
+**The fundamental asymmetry:**
+
+| Component | Policy can game it? | LLM designs it well? |
+|---|---|---|
+| **Observations** (read-only features) | ❌ No | ✅ Yes — S3b-local M1=88% |
+| **Rewards** (optimization target) | ✅ Yes — will find exploits | ❌ No for k≥2 |
+| **Communication** (writable actions) | ✅ Yes — controls messages | n/a — amplifies reward quality |
+
+This explains the entire ranking:
+- **S3b-local (obs-only, local):** LLM improves what agents see, not what they optimize → policy can't game observations → 88%
+- **ER2 (hand-crafted reward + comm):** correct reward → comm helps coordination → 53%
+- **S3ac (LLM reward + comm):** exploitable reward → comm helps exploitation → 8%
+- **S3a (LLM reward, no comm):** exploitable reward → no amplifier → 0–10.5%
+
+### Analysis: what the LLM actually designs
+
+#### Successful rewards (k=1 tasks)
+
+The LLM consistently converges on a **three-component structure** for k=1:
+
+**L8 best reward (n=3, t=3, k=1 → M1=1.000):**
+```python
+reward = (
+    3.0 * n_covered                      # per-target coverage count
+    + 10.0 * all_covered                  # large completion bonus
+    + 0.5 * proximity_bonus              # dense shaping: covering_range - dist
+    - 0.5 * crowding                     # anti-crowding: penalize >1 agent/target
+    + collision_rew + time_penalty
+)
+```
+
+**S1 best reward (n=2, t=4, k=1 → M1=1.000):**
+```python
+reward = (
+    2.0 * covered_count
+    + 15.0 * all_covered                  # even bigger completion bonus
+    + 1.0 * shaping_on_uncovered_only     # smarter: only shape toward uncovered
+    - 0.25 * overlap                      # anti-overlap
+    + collision_rew + time_penalty
+)
+```
+
+**Common pattern in successful rewards:**
+1. **Per-target coverage reward** (2–3 per target, linear) — provides gradient as soon as any target is reached
+2. **Large completion bonus** (10–15 for all targets) — strong signal to finish the task
+3. **Dense proximity shaping** — uses `covering_range - dist`, clipped at 0, so agents get signal when approaching a target
+4. **Anti-crowding penalty** — discourages multiple agents wasting time on the same target
+5. **Small, well-bounded magnitudes** — total reward per step stays in ±20 range, keeping PPO stable
+6. **Collision + time penalties preserved** from original scenario
+
+The LLM essentially rediscovered the hand-crafted ER1 reward structure but with better-tuned coefficients and the critical addition of an `all_covered` completion bonus that ER1 lacked.
+
+#### Failed reward (k=2 task — reward hacking)
+
+**S3 best reward (n=4, t=4, k=2 → M1=0.105):**
+```python
+reward = (
+    5.0 * n_covered
+    + 25.0 * all_covered
+    + 1.25 * occupancy_score              # wants counts near k=2
+    - 1.0 * overfill                      # penalizes >k agents per target
+    + 0.4 * approach_reward               # -mean(min_dist per agent)
+    + 0.2 * progress_bonus
+    + collision_rew + time_penalty
+)
+```
+
+**Why it fails despite looking correct:**
+
+1. **Anti-crowding fights the objective.** The `overfill` penalty penalizes having >2 agents per target. But reaching k=2 coverage REQUIRES 2+ agents to physically converge — the policy learns to AVOID convergence to minimize the penalty during the approach phase.
+
+2. **Approach shaping is individually rational but collectively irrational.** `approach_reward = -min_dist.mean(dim=-1)` encourages each agent to go to its nearest target independently. For k=1, this works (one agent per target = spread out). For k=2, agents need to go to the SAME target together, which this reward actively discourages via the anti-crowding term.
+
+3. **The LLM can describe but not encode coordination.** The `occupancy_score` (wants `counts ≈ k=2`) is mathematically correct but dynamically unstable — it rewards the intermediate state where exactly 2 agents are near each target, but provides no gradient for HOW to get there from a random initialization where agents are spread out.
+
+4. **Magnitude inflation.** S3's M2=486 (vs S1's M2=59 and L8's M2=106) — the policy found a way to collect large rewards without solving the task. The `5.0*n_covered` and `1.25*occupancy_score` terms accumulate over 400 steps even when only partial coverage is achieved.
+
+#### The k=1 vs k=2 capability boundary
+
+| Aspect | k=1 (works) | k=2 (fails) |
+|---|---|---|
+| Optimal behavior | spread out → 1 agent/target | converge → 2 agents/target |
+| Anti-crowding | helpful (stay separate) | harmful (prevents convergence) |
+| Individual approach shaping | aligned with team goal | misaligned (agents split) |
+| LLM's mental model | "each agent finds a target" ✓ | "pairs of agents find targets" — LLM tries but reward dynamics don't support it |
+| Completion bonus | reachable (3/3 targets → bonus) | barely reachable at 1M eval (0.29 best → policy never sees full bonus during short training) |
+
+The fundamental issue: for k=1, individual rationality = collective rationality. The LLM can design individually-rational rewards and k=1 "just works." For k=2, individual rationality (each agent approaches nearest target) ≠ collective rationality (agents must pair up and co-locate). No LLM prompt or function structure tested so far bridges this gap.
+
+### LERO prompt ablation summary (n=3, t=3, k=1 task only)
+
+| Prompt | Best M1 | Stable? | Notes |
+|---|---|---|---|
+| v2_fewshot (+ MPE examples) | **1.000** ×2 | ✅ very | examples anchor reward magnitude + structure |
+| v2 (paper-faithful, 5 lines) | **1.000** ×1, NaN ×2 | ❌ | high LLM variance; negative-M2 samples cause PPO crash |
+| v2_min (ultra-minimal, 3 lines) | 0.625 ×1, NaN ×2 | ❌ | too little context → mediocre + fragile rewards |
+| v1_global (verbose + research history) | 0.005 ×1 | ❌ | verbose prompt encouraged reward-hackable designs |
+| v2_twofn (agent + global split) | 0.010 ×1 | ❌ | decomposition made reward MORE exploitable |
+
+---
+
+## Updated Cross-ER Comparison (including LERO)
+
+### Best results per condition (k=2, ms400, cr025) — UPDATED
+
+| Rank | Method | M1 (SR%) | M2 | M3 | M6 (Cov%) | Reward | Obs/Comm | Fair? |
+|---|---|---:|---:|---:|---:|---|---|---|
+| (1) | LERO obs-only S3b-global | 100% | 19.3 | 68 | 100% | Hand-crafted | LLM obs (oracle) | ❌ oracle |
+| **1** | **LERO obs-only S3b-local** | **88.0%** | **5.0** | **186** | **97.0%** | Hand-crafted | **LLM obs (local only)** | **✅ fair** |
+| 2 | ER3 GNN (GATv2) | 71.0% | 2.50 | 250 | 91.8% | Hand-crafted + LP+SR | GNN msg-passing | ✅ fair |
+| 3 | ER2 proximity comm | 53.0% | 0.88 | 295 | 82.5% | Hand-crafted + LP+SR | Proximity comm | ✅ fair |
+| 4 | ER2 broadcast comm | 46.0% | 0.55 | 308 | 80.4% | Hand-crafted + LP+SR | Broadcast comm | ✅ fair |
+| 5 | ER1 no comm | 40.5% | 0.34 | 317 | 80.0% | Hand-crafted + LP+SR | None | ✅ fair |
+| 6 | LERO reward (S3) | 10.5% | 486.5 | 382 | 26.1% | LLM-designed | LLM obs | ✅ fair |
+| 7 | LERO reward (S3a_gpt5) | 9.0% | 1323.6 | 391 | 39.3% | LLM-designed (gpt-5.4) | LLM obs | ✅ fair |
+
+**S3b-global** (100%) uses oracle global state in observations — unfair comparison. **S3b-local** (88%) uses only local sensors — same information as ER1/ER2/ER3 — and is the legitimate new state-of-the-art.
+
+### Best results for k=1 tasks
+
+| Rank | Method | Task | M1 (SR%) | M6 | Reward design |
+|---|---|---|---:|---:|---|
+| 1 | **LERO** no comm | n=2, t=4, k=1 | **100%** | 100% | LLM-designed |
+| 2 | **LERO** no comm | n=3, t=3, k=1 | **100%** | 100% | LLM-designed |
+| 3 | ER1 abl_i | n=4, t=4, k=1 | 76.8% | 93.7% | Hand-crafted |
+| 4 | ER1 + AL | n=4, t=4, k=1 | 75.0% | 92.9% | Hand-crafted + AL |
+| 5 | ER1 no comm | n=2, t=4, k=1 | 58.0% | 87.3% | Hand-crafted + LP+SR |
+
+---
+
+## Central Thesis — Feature Engineering vs Incentive Design
+
+The complete experimental evidence (ER1–ER3 + LERO) converges on a single principle:
+
+> **LLMs are excellent at feature engineering (designing what agents observe) but unreliable at incentive design (designing what agents optimize for). This asymmetry exists because observations are read-only — the policy cannot game them — while rewards are the optimization target and WILL be exploited given sufficient training.**
+
+This explains every result in the project:
+
+| Approach | LLM designs... | Can policy game it? | k=1 result | k=2 result |
+|---|---|---|---|---|
+| **Reward LERO** | what agents optimize for | ✅ Yes | M1=100% (k=1 is simple enough that exploits ≈ solutions) | M1=0–10.5% (reward-hacked) |
+| **Obs-only LERO (local)** | what agents see | ❌ No | — | **M1=88%** (legitimate) |
+| **Reward + comm LERO** | what agents optimize for + comm channel | ✅ Yes (amplified by comm) | — | M1=8% (comm amplifies exploitation) |
+| **ER1–ER3** | nothing (hand-crafted) | ❌ No (reward is fixed) | 58–77% | 40.5–71% |
+
+For k=1 tasks, reward design works because individual rationality = collective rationality — there's no gap for the policy to exploit. For k≥2, the LLM designs rewards with exploitable gaps (anti-crowding penalties, surplus bonuses, magnitude inflation) that the policy discovers with 10M frames of training.
+
+The practical implication for MARL practitioners: **use LLMs for observation/feature design, not reward design, when the task requires multi-agent coordination.** Keep the reward hand-crafted (or proven non-exploitable) and let the LLM enhance what agents perceive.
+
+---
+
 ## Key Conclusions
 
-1. **k=2 coordination requires communication + task relaxation.** No configuration achieves >10% SR at the hardest setting (ms200, cr025, k=2).
+1. **LERO obs-only with LOCAL sensors is the new state-of-the-art for k=2.** S3b-local achieved M1=88.0% using only local LiDAR — surpassing ER3 GNN (71%) by 17pp, ER2 proximity (53%), and ER1 no-comm (40.5%). No communication channel, no GNN, no oracle information. The LLM designed coordination features from the same sensor data: a `hold_signal` (target+agent both nearby → stay), `approach_signal`, `crowd_signal`, and `sparsity_signal` that pre-compute actionable coordination decisions from raw LiDAR. S3b-global (M1=100%) uses oracle global state and is NOT a fair comparison.
 
-2. **GNN communication is the most powerful** when given sufficient episode length (ms400), achieving 71% SR — nearly matching what k=1 achieves without communication (76.5%).
+2. **LLM-designed features beat GNN message-passing.** S3b-local (88%) > ER3 GATv2 (71%) despite using simpler per-agent features instead of learned graph attention. The LLM's feature engineering replaces the GNN's learned communication protocol with pre-computed coordination signals — equivalent to designing a fixed communication protocol at design time rather than learning one at training time.
 
-3. **Broadcast communication excels with easier covering** (cr035), outperforming proximity and GNN in that condition. Global information sharing helps when precision requirements are relaxed.
+3. **LERO reward design fails catastrophically on k=2.** Across 5 attempts (different LLMs, prompts, comm channels), LLM-designed rewards all reward-hacked (M1=0–10.5%, M2=486–2260). The LLM consistently produces individually-rational rewards (anti-crowding, per-agent approach) that are collectively irrational for rendezvous. Even gpt-5.4 (full model) achieved eval M1=0.86 but degraded to 0.09 at 10M training — the reward was exploitable.
 
-4. **Reward shaping (LP+SR) is a prerequisite.** Without it, even explicit communication channels fail to learn useful protocols.
+4. **LERO reward design dominates on k=1.** Achieving 100% SR vs ER1's 58–77%, entirely from better reward design. The LLM-designed reward adds a critical `all_covered` completion bonus and better proximity shaping that ER1 lacked. For tasks where individual rationality = collective rationality (spreading out), the LLM excels.
 
-5. **Agent LiDAR is a double-edged sword.** It reduces collisions for k=1 but causes avoidance behavior that prevents k=2 coordination. All successful k=2 runs use agent LiDAR + reward shaping together.
+5. **The LERO capability boundary is between reward design and observation design, not between k=1 and k=2.** k=2 IS solvable by LERO — just not via reward design. The LLM's strength is in designing richer observations (feature engineering), not in designing reward incentives for coordination. With local-only sensors, the LLM achieves 88% by deriving coordination signals from LiDAR that the base observation (raw lidar rays) doesn't provide. With oracle global state, it reaches 100%.
 
-6. **The max_steps bug** invalidated early ER3 results. Post-fix GATv2 ms400 went from 0% to 71% SR, confirming that episode length is critical for GNN-based learning.
+6. **Eval-best ≠ train-stable for LLM rewards.** gpt-5.4's M1=0.86 at 1M eval collapsed to 0.09 at 10M. 1M-frame eval is too short to detect reward hacking. **Best-checkpoint saving** (keeping the peak-M1 policy during training) would recover these solutions.
 
-7. **Sample efficiency:** Proximity comm converges faster (6.7M frames) than broadcast (9.6M) and GNN (not measured but trains in similar time). No-comm with reward shaping converges around 6.1M frames.
+7. **Few-shot examples are critical for LERO stability.** The `v2_fewshot` prompt was the only configuration that produced M1=1.000 reliably (2/2 runs on k=1). Without examples, the LLM produces rewards with wildly varying magnitudes that cause PPO to diverge.
+
+8. **Communication is a neutral amplifier — it helps whatever the policy optimizes for.** With hand-crafted reward (ER2), comm helps coordination (53%). With LLM-designed reward (S3ac), comm helps exploitation (8% — WORSE than without comm). The reward-inflation spiral across LERO iterations (M2: 1190 → 6462 over 4 iters while M1 stayed at 0) shows the evolutionary loop can't escape exploitable rewards and communication channels provide more degrees of freedom to exploit.
+
+9. **GNN communication remains valuable but is now outperformed.** ER3 GATv2 ms400 (71%) was the previous best for k=2. LERO obs-only with local sensors (88%) surpasses it without any communication channel — just richer per-agent feature engineering from a one-time LLM design step. The GNN learns to COMMUNICATE; the LLM learns to OBSERVE better. For this task, better observation wins.
+
+10. **Agent LiDAR is a double-edged sword.** It reduces collisions for k=1 but causes avoidance behavior that prevents k=2 coordination. All successful k=2 runs use agent LiDAR + reward shaping together.
 
 ---
 

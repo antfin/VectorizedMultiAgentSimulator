@@ -1,0 +1,8 @@
+version: v2_fewshot_k2
+author: rendezvous_comm
+date: 2026-04-17
+description: >
+  k=2 rendezvous-aware prompt with convergence examples. Explicitly frames
+  the task as "agents must PAIR UP," provides topk-based reward examples,
+  and warns against anti-crowding penalties. Feedback includes k-specific
+  diagnostic hints.

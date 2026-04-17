@@ -1,0 +1,9 @@
+Results from $n_candidates candidates:
+
+$candidates_results
+
+Best candidate was #$best_idx. Generate $n_candidates improved versions.
+
+REMINDER: You can ONLY use local sensor data (lidar_targets, lidar_agents, agent_pos, agent_vel, agent_idx). Do NOT use agents_pos, targets_pos, covered_targets, or agents_per_target — those are NOT available.
+
+If M1 is low, think about what information the agent is MISSING that would help coordination, and how to approximate it from LiDAR readings.

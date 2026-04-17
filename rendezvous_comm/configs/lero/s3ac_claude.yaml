@@ -1,0 +1,68 @@
+exp_id: lero_s3ac_claude
+name: "LERO S3a+comm — k=2 rendezvous prompt, claude-sonnet-4-6, dim_c=8"
+description: >
+  k=2-aware prompt (v2_fewshot_k2) WITH 8-float proximity communication,
+  using claude-sonnet-4-6. Tests whether Claude's reward design + comm
+  can match or beat ER2/ER3 on rendezvous.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 400
+  dim_c: 8
+  comm_proximity: true
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 4
+  n_candidates: 3
+  top_k: 2
+  eval_frames: 1_000_000
+  eval_episodes: 100
+  full_frames: 10_000_000
+  evolve_reward: true
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "global"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+
+llm:
+  model: "anthropic/claude-sonnet-4-6"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_fewshot_k2"
+
+sweep:
+  seeds: [0]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

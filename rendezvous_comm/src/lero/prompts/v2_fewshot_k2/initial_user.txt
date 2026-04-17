@@ -1,0 +1,113 @@
+## Environment
+
+$n_agents agents must cover $n_targets targets. A target is covered when **$agents_per_target agents** are within $covering_range distance **simultaneously**. This is a RENDEZVOUS task: agents must learn to converge in groups of $agents_per_target on targets, NOT spread out. Arena: [-1,1] x [-1,1].
+
+Current reward function:
+
+```python
+$scenario_reward_code
+```
+
+Current observation function:
+
+```python
+$scenario_observation_code
+```
+
+## Available State
+
+```python
+scenario_state = {
+    "agents_pos":       # [batch, $n_agents, 2]
+    "targets_pos":      # [batch, $n_targets, 2]
+    "agents_targets_dists":  # [batch, $n_agents, $n_targets]
+    "covered_targets":  # [batch, $n_targets] boolean — True when >= $agents_per_target agents within range
+    "agents_per_target": # [batch, $n_targets] int — count of agents currently near each target
+    "all_time_covered":  # [batch, $n_targets] boolean — targets covered at any past step
+    "agent_pos":        # [batch, 2]
+    "agent_vel":        # [batch, 2]
+    "agent_idx":        # int (0..$n_agents-1)
+    "n_agents":         # $n_agents
+    "n_targets":        # $n_targets
+    "covering_range":   # $covering_range
+    "agents_per_target_required": # $agents_per_target
+    "collision_penalty": # $collision_penalty
+    "collision_rew":    # [batch]
+    "time_penalty":     # $time_penalty
+    $comm_state_description
+}
+```
+
+## Coordination Strategy for k=$agents_per_target
+
+The key challenge: each target needs $agents_per_target agents to arrive within $covering_range AT THE SAME TIME. Reward design must:
+
+1. **Reward convergence, not spreading.** Multiple agents near the same target is GOOD (required!), not wasteful.
+2. **Use `agents_per_target` directly.** The state gives exact counts — reward progress toward $agents_per_target per target.
+3. **Avoid penalizing "crowding."** Any anti-crowding or anti-overlap penalty will teach agents to AVOID each other, making rendezvous impossible.
+4. **Reward partial progress.** Having 1/$agents_per_target agents near a target is halfway there — reward it proportionally.
+
+## Examples — k=2 rendezvous rewards
+
+### Example A — convergence shaping
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    counts = scenario_state["agents_per_target"].float()  # [B, n_targets]
+    required = float(scenario_state["agents_per_target_required"])
+    covered = scenario_state["covered_targets"].float()
+
+    # Reward progress: ratio of agents present vs required per target
+    progress = (counts / required).clamp(max=1.0).sum(dim=-1)  # [B]
+
+    # Large bonus for fully covered targets
+    n_covered = covered.sum(dim=-1)
+    all_done = covered.all(dim=-1).float()
+
+    # Dense approach: for each target, reward the k closest agents
+    dists = scenario_state["agents_targets_dists"]  # [B, n_agents, n_targets]
+    topk_dists = dists.topk(int(required), dim=1, largest=False).values  # [B, k, n_targets]
+    approach = -topk_dists.mean(dim=1).sum(dim=-1)  # [B] — reward small distances
+
+    return 2.0 * progress + 5.0 * n_covered + 20.0 * all_done + 0.3 * approach + scenario_state["collision_rew"] + scenario_state["time_penalty"]
+```
+
+### Example B — target assignment via Hungarian-like matching
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    dists = scenario_state["agents_targets_dists"]  # [B, n_agents, n_targets]
+    required = int(scenario_state["agents_per_target_required"])
+    covered = scenario_state["covered_targets"].float()
+
+    # For each target, find the k nearest agents and reward their closeness
+    topk = dists.topk(required, dim=1, largest=False)
+    nearest_dists = topk.values  # [B, k, n_targets]
+    pair_closeness = (-nearest_dists / 0.5).exp().sum(dim=1).sum(dim=-1)  # [B]
+
+    n_covered = covered.sum(dim=-1)
+    all_done = covered.all(dim=-1).float()
+
+    return 1.0 * pair_closeness + 8.0 * n_covered + 25.0 * all_done + scenario_state["collision_rew"] + scenario_state["time_penalty"]
+```
+
+## Generate Functions
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    """Design a reward that maximizes coverage rate for the RENDEZVOUS task.
+    Remember: $agents_per_target agents must reach each target simultaneously.
+    Returns: [batch_dim] tensor.
+    """
+```
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    """Compute extra features to help agents coordinate for rendezvous.
+    Include: which targets still need agents, how many agents are near each target,
+    relative positions to targets that need more agents.
+    Returns: [batch_dim, N] tensor where N is 4-9.
+    """
+```
+
+Wrap each in a separate ```python block.

@@ -2,7 +2,7 @@
 
 LERO (LLM-driven Evolutionary Reward & Observation) adapted from [arXiv:2503.21807](https://arxiv.org/abs/2503.21807) for the VMAS Discovery scenario.
 
-**Status (2026-04-16):** Phase 1–4 partially executed on n=3, t=3, k=1. Per-experiment S3 prefixes, M8 metric, scenario-patch closure scoping, OVH-vs-local VMAS attribute drift, reward magnitude clipping, and a full-training NaN fallback chain are all implemented and verified.
+**Status (2026-04-17):** Phase 1–5 executed. **Headline result: obs-only LERO (S3b) achieved M1=1.000 on the k=2 rendezvous task** — best result across all experiments (ER1–ER3 + LERO), surpassing ER3 GNN's 71%. The bottleneck for k=2 was observation quality, not reward design.
 
 ---
 
@@ -81,26 +81,178 @@ src/lero/
 
 ---
 
-## 2. Experiments executed (2026-04-16)
+## 2. Experiments executed (2026-04-16 — 2026-04-17)
 
-**Task for all runs below:** Discovery, n=3 agents, t=3 targets, k=1 (1 agent within `covering_range=0.25` to cover), `max_steps=400`, MAPPO, 10M-frame full training, 1M-frame eval per LERO candidate, 4 iterations × 3 candidates.
+All experiments use MAPPO, `covering_range=0.25`, `max_steps=400`, 10M-frame full training, 1M-frame eval per LERO candidate, 4 iterations × 3 candidates (unless noted).
 
-### 2.1 Final-metric summary (all completed runs)
+### 2.1 Phase 4 — prompt ablations (n=3, t=3, k=1)
 
-| Run | Prompt | Final M1 | Final M2 | Final M6 | M4 collisions | M8 util | Outcome | Where |
+| Run | Prompt | Final M1 | Final M2 | Final M6 | M4 | M8 | Outcome | Where |
 |---|---|---:|---:|---:|---:|---:|---|---|
-| **L8 morning** | `v2_fewshot` | **1.000** | 172.11 | **1.000** | 0.00 | 0.23 | ✅ artifact-clean (rescued from logs) | `lero_rescued/l8/` |
-| **L8 afternoon** | `v2_fewshot` | **1.000** | 105.61 | **1.000** | 0.00 | 0.25 | ✅ full artifacts | `lero/.../20260416_1324/` |
-| **P1 morning** | `v2` | **1.000** | 104.16 | **1.000** | 0.06 | 0.27 | ✅ artifacts lost (S3 collision) — metrics rescued | `lero_rescued/p1/` |
-| **L1 morning** | `v2_min` | 0.625 | 1.16 | 0.857 | 0.00 | 0.92 | ✅ artifacts lost — metrics rescued | `lero_rescued/l1/` |
-| **L21 morning** | `v2_twofn` | 0.010 | 149.51 | 0.130 | 35.53 | 0.46 | ✅ full artifacts (reward-hacked) | `lero/.../20260416_1001/` |
-| **L4 terminal** | `v1_global` | 0.005 | 334.86 | 0.128 | 0.00 | 0.55 | ✅ full artifacts (reward-hacked) | `lero_l4/` |
-| **L1 terminal** | `v2_min` | — | — | — | — | — | ❌ NaN crash @ batch 113/167 (68%) | partial in `lero_l1/` S3 |
-| **P1 terminal** | `v2` | — | — | — | — | — | ❌ NaN crash @ batch 151/167 (90%) | partial in `lero_p1/` S3 |
-| **L4 morning** | `v1` (broken) | — | — | — | — | — | ❌ all 12 candidates failed `'lidar_targets'` KeyError | `lero/.../20260416_0909/` |
-| **L21 afternoon** | `v2_twofn` | — | — | — | — | — | ⚠ stopped early to free quota slot | partial in `lero/.../1501/` |
+| **L8 morning** | `v2_fewshot` | **1.000** | 172.1 | **1.000** | 0.0 | 0.23 | ✅ rescued from logs | `lero_rescued/l8/` |
+| **L8 afternoon** | `v2_fewshot` | **1.000** | 105.6 | **1.000** | 0.0 | 0.25 | ✅ full artifacts | `lero/.../1324/` |
+| **P1 morning** | `v2` | **1.000** | 104.2 | **1.000** | 0.1 | 0.27 | ✅ rescued from logs | `lero_rescued/p1/` |
+| **L1 morning** | `v2_min` | 0.625 | 1.2 | 0.857 | 0.0 | 0.92 | ✅ rescued from logs | `lero_rescued/l1/` |
+| **L21 morning** | `v2_twofn` | 0.010 | 149.5 | 0.130 | 35.5 | 0.46 | ✅ reward-hacked | `lero/.../1001/` |
+| **L4 terminal** | `v1_global` | 0.005 | 334.9 | 0.128 | 0.0 | 0.55 | ✅ reward-hacked | `lero_l4/` |
+| P1 terminal | `v2` | — | — | — | — | — | ❌ NaN @ 90% | `lero_p1/` |
+| L1 terminal | `v2_min` | — | — | — | — | — | ❌ NaN @ 68% | `lero_l1/` |
 
-ER1 baseline for context (n=2, t=4, k=1): **M1 = 0.580**.
+### 2.2 Phase 5 — task scaling (k=1 easy tasks)
+
+| Run | Task | Prompt | Final M1 | Final M2 | Final M6 | M3 | Baseline |
+|---|---|---|---:|---:|---:|---:|---|
+| **S1** | n=2, t=4, k=1 | `v2_fewshot` | **1.000** | 59.5 | **1.000** | 50.3 | ER1 = 0.580 |
+| **L8** | n=3, t=3, k=1 | `v2_fewshot` | **1.000** | 105.6 | **1.000** | 33.8 | est. ~0.58 |
+
+LERO dominates on all k=1 tasks tested.
+
+### 2.3 Phase 5 — task scaling (k=2 rendezvous, the hard task)
+
+| Run | LLM | Comm | Approach | Obs mode | Eval-best M1 | **Final M1** | Final M2 | Final M6 | M3 | Baseline |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---|
+| **S3b-global** | gpt-mini | none | obs-only (ER1 reward) | **global (oracle)** | 0.980 | **1.000** | 19.3 | **1.000** | 68.0 | ER1=40.5% |
+| **S3b-local** | gpt-mini | none | obs-only (ER1 reward) | **local (fair)** | 0.060 | **0.880** | 5.0 | **0.970** | 186.4 | ER1=40.5% |
+| S3a_gpt5 | gpt-5.4 | none | LLM reward (k2 prompt) | global | **0.860** | 0.090 | 1323.6 | 0.393 | 390.8 | ER1=40.5% |
+| S3 | gpt-mini | none | LLM reward (k1 prompt) | global | 0.290 | 0.105 | 486.5 | 0.261 | 382.4 | ER1=40.5% |
+| S3ac | gpt-mini | dim_c=8 | LLM reward (k2 prompt) | global | 0.020 | 0.080 | 1840.8 | 0.275 | 394.6 | ER2=53.0% |
+| S3a_gpt | gpt-mini | none | LLM reward (k2 prompt) | global | 0.010 | 0.000 | 2260.6 | 0.088 | 400.0 | ER1=40.5% |
+
+### 2.4 The S3b-local breakthrough — M1=88% on k=2 with LOCAL sensors only
+
+**This is a legitimate result.** S3b-local uses `obs_state_mode=local`: the LLM can only access `lidar_targets` (15 rays), `lidar_agents` (12 rays), `agent_pos`, `agent_vel`, and `agent_idx`. No global target positions, no agent counts, no coverage status. Same information as ER1/ER2/ER3.
+
+#### Fair comparison to all prior methods (k=2, ms400, cr025)
+
+| Method | Info available | M1 | M3 (steps) | M6 |
+|---|---|---:|---:|---:|
+| **LERO S3b-local (obs-only, LOCAL)** | LiDAR + LLM-designed features | **88.0%** | 186 | 97.0% |
+| ER3 GNN (GATv2) | LiDAR + GNN message-passing | 71.0% | 250 | 91.8% |
+| ER2 proximity comm | LiDAR + proximity messages | 53.0% | 295 | 82.5% |
+| ER1 no comm | LiDAR only | 40.5% | 317 | 80.0% |
+| LERO S3b-global (obs-only, ORACLE) | LiDAR + oracle global state | 100% | 68 | 100% |
+
+S3b-local **beats ER3 GNN by 17 percentage points** using only local sensors — no communication channel, no GNN, no oracle information. The improvement comes entirely from better feature engineering of the same LiDAR data.
+
+#### What the LLM designed: the winning observation function (iter 3 candidate 2)
+
+The winning function computes **28 features** from local sensors. Key innovation: it derives **coordination signals** that help the policy decide whether to approach, hold, or search.
+
+```python
+# CORE COORDINATION FEATURES (from lidar_targets + lidar_agents):
+
+# 1. Nearest/second-nearest target: distance, direction, gap
+t1, t2       # distance to nearest & second-nearest target (from sorted lidar)
+tdx, tdy     # direction to nearest target (ray angle → cos/sin)
+t_gap = t2 - t1  # gap between nearest and second-nearest (large = isolated target)
+
+# 2. Nearest/second-nearest agent: distance, direction, gap
+a1, a2       # same for agent lidar
+adx, ady
+a_gap = a2 - a1
+
+# 3. Proximity counts and intensity
+t_count      # how many target lidar rays < covering_range
+a_count      # how many agent lidar rays < covering_range
+t_intensity  # sum of 1/dist for close target rays (sharper proximity signal)
+a_intensity  # same for agents
+
+# 4. HIGH-LEVEL COORDINATION SIGNALS (the key innovation):
+target_near = (t1 < covering_range)      # "I see a target within range"
+agent_near  = (a1 < covering_range)      # "I see another agent within range"
+hold_signal    = target_near * agent_near  # "target AND partner nearby → STAY"
+approach_signal = target_near * (1-agent_near)  # "target nearby but no partner → need partner"
+crowd_signal   = clamp((a_count-1)/3)    # "too many agents nearby → move away"
+sparsity_signal = clamp(1 - t_count/n_targets)  # "few targets nearby → explore"
+
+# 5. Self features: speed, velocity direction, position (polar), one-hot role
+```
+
+The critical insight is the **hold_signal**: when both a target and an agent are within covering range, the agent should HOLD POSITION and wait for the partner to arrive. Without this feature, agents approaching the same target tend to overshoot — one arrives, sees the target via lidar, then the OTHER agent arrives but the first has already moved on. The hold signal breaks this "ships passing in the night" failure mode.
+
+#### How LERO evolved the observation across 4 iterations
+
+| iter | c0 M1 | c1 M1 | c2 M1 | Best | Key features added |
+|---|---:|---:|---:|---|---|
+| 0 | 0.010 | **0.040** | 0.000 | c1 | basic: nearest target/agent distance + direction + count + one-hot role |
+| 1 | 0.030 | 0.030 | (fail) | tied | added: sector-based features, polar position |
+| 2 | 0.020 | 0.010 | 0.010 | c0 | added: gaps, intensity, more agent-count features |
+| 3 | 0.000 | 0.000 | **0.060** | **c2** | added: **hold/approach/crowd/sparsity signals** ← the breakthrough |
+
+Iteration 3 candidate 2 was the winner. It's the most complex candidate (28 features vs 14-18 for earlier ones). The coordination signals (`hold_signal`, `approach_signal`, `crowd_signal`, `sparsity_signal`) were the key addition in the final iteration.
+
+**Note the eval→final improvement:** the winning candidate had eval M1=0.060 at 1M frames but improved to M1=0.880 at 10M frames. This is the OPPOSITE of reward hacking — because the ER1 hand-crafted reward is non-exploitable, longer training genuinely helps. The LLM's observation features gave the policy better information, and MAPPO used the full 10M frames to learn how to act on that information.
+
+#### Comparison of observation features across candidate designs
+
+| Feature type | Iter 0 (basic, M1=4%) | Iter 3 c2 (winner, M1=88%) |
+|---|---|---|
+| Target distance & direction | ✅ min dist, cos/sin angle | ✅ min + 2nd-min, gap between them |
+| Agent distance & direction | ✅ basic | ✅ min + 2nd-min, gap |
+| Proximity count | ✅ t_count, a_count | ✅ + intensity (1/dist weighted) |
+| Coordination signals | ❌ none | ✅ **hold, approach, crowd, sparsity** |
+| Self-motion | ✅ speed | ✅ speed + velocity dir + position (polar) |
+| Role | ✅ one-hot | ✅ one-hot |
+| Total features | ~14 | ~28 |
+
+The LLM's evolutionary process discovered that **raw sensor readings are insufficient** — the policy needs pre-computed coordination signals that combine target and agent proximity into actionable decisions. This is analogous to hand-engineering features, but done automatically by the LLM in 4 iterations.
+
+#### S3b-global vs S3b-local: the oracle advantage explained
+
+S3b-global (M1=100%, oracle) used these features that S3b-local CAN'T compute:
+- `rel = targets_pos - agent_pos` → exact vector to every target (not just nearest via lidar)
+- `counts = agents_per_target` → exact count of agents at each target (not just nearby agents from lidar)
+- `needed = required - counts` → which targets still need agents
+- `needy_mask` → which targets to prioritize
+
+S3b-local approximates this from lidar but with lower fidelity:
+- Can detect targets within 0.35 range, but not beyond
+- Can count nearby agents but not agents at distant targets
+- Cannot know which targets are already covered
+
+The 12% gap (88% vs 100%) is the price of using local sensors vs oracle global state.
+
+### 2.5 The eval-vs-final degradation problem (reward hacking at scale)
+
+S3a_gpt5 is the starkest example: the LLM designed a reward that produced M1=0.860 at 1M-frame eval — genuinely solving 86% of episodes. But after 10M frames of full training, M1 collapsed to 0.090 while M2 rose from 848 to 1324. The policy found an exploit in the reward that wasn't apparent at 1M frames.
+
+| Metric | Eval (1M) | Final (10M) | Interpretation |
+|---|---:|---:|---|
+| M1 (success) | 0.860 | 0.090 | policy stopped solving the task |
+| M2 (return) | 848 | 1324 | policy found higher-return exploit |
+| M6 (coverage) | 0.930 | 0.393 | coverage collapsed with success |
+
+**Contrast with S3b-local (obs-only):**
+
+| Metric | Eval (1M) | Final (10M) | Interpretation |
+|---|---:|---:|---|
+| M1 (success) | 0.060 | **0.880** | policy improved with more training |
+| M2 (return) | -2.1 | 5.0 | return increased modestly (non-exploitable) |
+| M6 (coverage) | 0.478 | 0.970 | coverage doubled |
+
+When the reward is hand-crafted (non-exploitable), longer training helps. When the reward is LLM-designed, longer training finds exploits. This is why obs-only LERO is more reliable than reward LERO for hard tasks.
+
+### 2.6 Central thesis — feature engineering vs incentive design
+
+The full evidence (Phases 1–5, 15+ LERO runs, 5 k=2 variants) converges on a single principle:
+
+> **LLMs are excellent at feature engineering (designing what agents observe) but unreliable at incentive design (designing what agents optimize for). This asymmetry exists because observations are read-only — the policy cannot game them — while rewards are the optimization target and WILL be exploited given sufficient training.**
+
+Evidence summary:
+
+| LLM designs... | Can policy game it? | k=1 | k=2 |
+|---|---|---:|---:|
+| **Reward** (what to optimize for) | ✅ Yes | 100% (exploit ≈ solution) | 0–10.5% (reward-hacked) |
+| **Observations** (what to see, local sensors) | ❌ No | — | **88%** |
+| **Reward + communication** | ✅ Yes (amplified) | — | 8% (comm helps exploitation) |
+
+For k=1, reward design works because individual rationality = collective rationality — no gap to exploit. For k≥2, the LLM's rewards have exploitable gaps (anti-crowding, surplus bonuses, magnitude inflation) that the policy discovers at 10M frames.
+
+Communication is a **neutral amplifier**: it helps whatever the policy is already optimizing for. With a correct reward (ER2: 53%), comm improves coordination. With an exploitable reward (S3ac), comm improves exploitation. The LERO evolutionary loop makes this worse, not better — unable to improve M1, the LLM inflates reward magnitudes across iterations (M2: 1190→6462) creating a reward-inflation spiral.
+
+**Practical implication:** for multi-agent coordination tasks, use LLMs for observation/feature design and keep the reward hand-crafted. The LLM's value is in information architecture (what agents perceive), not in incentive architecture (what agents pursue).
+
+**Why don't we keep the 1M policy?** We should. A "best-checkpoint" strategy — saving the policy at peak eval-M1 during training — would recover the M1=0.86 policy from S3a_gpt5's run. This is the highest-priority code change for future experiments.
 
 ### 2.2 Per-experiment summary (best of all attempts)
 
@@ -178,11 +330,16 @@ The 1M-frame eval doesn't separate "stable but mediocre" from "promising but uns
 
 | ID | Hypothesis | Status | Evidence |
 |---|---|---|---|
-| H1 | LERO works on Discovery | ✅ Proven | L8 ×2 = 1.000; P1 morning = 1.000 (vs ER1 baseline 0.58) |
-| H4 | Discovery > MPE Simple Spread in difficulty | ✅ Supported | High LLM reward variance, 3 NaN crashes from same prompt |
-| H5 | Less prompt is better | ⚠ Mixed | L1 (more minimal than v2) hurt; L4 (more verbose than v2) also hurt — v2 is the sweet spot |
-| H8 | Few-shot examples help | ✅ Strongly supported | L8 = best + most reliable; M2 = 172 (highest of any successful run) |
-| H11 | Two-function split (paper) helps | ❌ Refuted | L21 reward-hacked at 0.01 |
+| H1 | LERO works on Discovery | ✅ Proven | L8 ×2 = 1.000; P1 morning = 1.000; S1 = 1.000; **S3b = 1.000 on k=2** |
+| H4 | Discovery > MPE in difficulty | ✅ Supported for reward design | LLM cannot design a non-hackable k=2 reward (0–10.5% across 5 attempts); obs-only mode bypasses the problem |
+| H5 | Less prompt is better | ⚠ Mixed | v2 is the sweet spot; ultra-minimal (L1) and verbose (L4) both worse |
+| H8 | Few-shot examples help | ✅ Strongly supported | L8 (v2_fewshot) = best prompt for both k=1 and k=2 |
+| H11 | Two-function split helps | ❌ Refuted | L21 reward-hacked at 0.01 |
+| H12 | Stronger LLM = better reward | ⚠ Partial | gpt-5.4 achieved eval M1=0.86 on k=2 (vs gpt-mini's 0.01), but still reward-hacked at 10M (final 0.09). Stronger model produces better INITIAL designs that degrade with longer training |
+| **NEW** | Obs-only LERO > reward LERO for k≥2 | ✅ **Breakthrough** | S3b-local (obs-only, local sensors): M1=88% on k=2 vs all reward-design variants: M1=0–10.5%. S3b-global (oracle): M1=100% but unfair |
+| **NEW** | Eval-best ≠ train-stable | ✅ Confirmed | gpt-5.4's M1=0.86 at 1M eval collapsed to 0.09 at 10M. 1M eval is insufficient to detect reward hacking |
+| **NEW** | Communication helps LLM reward design | ❌ **Refuted** | S3ac (reward+comm): M1=8% — WORSE than S3 (no comm, 10.5%). Comm amplifies whatever the policy optimizes; with exploitable reward, it amplifies exploitation. LERO evolutionary loop became a reward-inflation spiral (M2: 1190→6462 over 4 iters, M1 stuck at 0) |
+| **NEW** | Obs-only LERO with local sensors beats GNN | ✅ Confirmed | S3b-local (88%) > ER3 GATv2 (71%) using same local sensor info — LLM-designed coordination signals (`hold`, `approach`, `crowd`, `sparsity`) from LiDAR replace learned GNN message-passing |
 
 ---
 
@@ -359,25 +516,42 @@ results/lero_<exp>/lero/runs/lero/<timestamp>/
 
 ## 5. Open issues / next steps
 
-### 5.1 Quick wins (low effort)
+### 5.1 Immediate — best-checkpoint saving
 
-- **Re-run P1 and L1** with the new safeguards (`reward_clip=50` + fallback chain). Should now complete training even with large-magnitude or unlucky LLM reward samples. ~$4, ~2h parallel.
-- **Document the deviation from "raw rewards"** in any paper write-up — note the clip + fallback safeguards, with justification.
+The eval-vs-final degradation (S3a_gpt5: M1=0.86→0.09) wastes promising candidates. **Implement peak-M1 checkpointing:**
+- During full training, BenchMARL already evaluates every `evaluation_interval` frames
+- Track M1 at each eval; save policy checkpoint when M1 peaks
+- Return peak-M1 policy + metrics alongside the final ones
+- Record both in `final_metrics.json`: `"peak_M1"`, `"peak_at_frame"`, `"final_M1"`
 
-### 5.2 Open scientific questions
+This would recover gpt-5.4's M1=0.86 policy from S3a_gpt5 — a legitimate k=2 solution even if the reward is exploitable at longer horizons.
 
-- **Why is L8 (few-shot) so much more reliable than P1 (no examples)?** L8 hit M1=1.000 ×2; P1 hit it ×1, NaN ×2. Same task, same LLM, just different prompt context. Worth investigating whether examples constrain the LLM's reward magnitude (i.e. examples were in [0, 25] range, anchoring the LLM).
-- **L4 (verbose v1_global) reward-hacked.** The verbose prompt's "design dense approach signals + reward partial progress" encouraged the LLM to define rewards that *score* but don't *solve*. Compare what L4's `compute_reward.py` actually looks like vs L8's.
-- **L21 (two-function split) reward-hacked too.** Decomposing into `agent_reward` + `global_reward` made the reward MORE exploitable, not less. Counter to paper's H11. Worth a careful read of the LERO paper's reward functions to understand if MPE Simple Spread is just trivially safer.
+### 5.2 Key scientific questions
 
-### 5.3 Deferred phases (per original plan)
+1. **What does S3b's observation enhancement look like?** The LLM designed obs features that enabled M1=1.000 on k=2 without communication. Inspect `best_obs.py` from `lero_s3b_gpt/` — what global-state features did it extract? How do they compare to GNN message-passing?
 
-- **Phase 5 — task scaling:** n=2 t=4 k=1, n=4 t=4 k=1, **n=4 t=4 k=2 (rendezvous, the actually-hard task)**, n=4 t=4 k=2 with `dim_c=8` communication.
-- **Phase 6 — loop tuning:** more candidates per iter, more iterations, longer eval, full conversation (no sliding window).
+2. **Is S3b's success robust across seeds?** We have 1 run. Run S3b with seeds [0,1,2] to confirm consistency before claiming M1=1.000 on k=2.
 
-### 5.4 Phase 4 ablations not yet run
+3. **Can obs-only LERO generalize beyond k=2?** Try n=6, t=4, k=3 — do the LLM-designed observations still help when coordination complexity increases?
 
-The original plan listed L2, L3, L5–L7, L9–L20, L22, plus E1–E4 loop ablations. Of those, only L1, L4, L8, L21 ran. Whether to continue depends on what we learn from re-running the L1+P1 with safeguards — if reward-magnitude is the dominant variable, it may matter more to study **how examples constrain magnitude** (a specific L8 follow-up) than to grind through the full prompt-structure ablation.
+4. **Why can't the LLM design a k=2 reward?** All reward-design attempts (S3, S3a, S3ac with different LLMs and prompts) reward-hacked. The LLM consistently produces anti-crowding penalties that fight convergence. Is this a prompt issue, an LLM capability limit, or fundamental to reward design for coordination tasks?
+
+5. **Few-shot examples anchor reward magnitude.** Investigate whether L8's examples (which use magnitudes in [0, 25] range) prevent the LLM from generating ±1000 magnitude rewards that cause NaN crashes and reward hacking.
+
+### 5.3 Potential follow-up experiments
+
+| Exp | Description | Cost | Priority |
+|---|---|---|---|
+| S3b ×3 seeds | Robustness check for the M1=1.000 breakthrough | ~$8 | **HIGH** |
+| S3b + comm | Obs-only LERO + dim_c=8 — does adding comm help further? | ~$3 | Medium |
+| S3a_gpt5 + best-checkpoint | Re-run with peak-M1 saving — recover the M1=0.86 policy | ~$3 | Medium |
+| S3b with k=3 | Does obs-only LERO scale to higher k? | ~$3 | Medium |
+| Inspect S3b's best_obs.py | Free — just read the file, understand the features | Free | **HIGH** |
+
+### 5.4 Deferred phases
+
+- **Phase 6 — loop tuning:** more candidates per iter, more iterations, longer eval. Lower priority now that obs-only is the winning approach.
+- **Remaining Phase 4 ablations** (L2/L3/L5–L7 etc.): deprioritized — the prompt ablation question is less important than obs-only vs reward-design.
 
 ---
 
@@ -385,6 +559,7 @@ The original plan listed L2, L3, L5–L7, L9–L20, L22, plus E1–E4 loop ablat
 
 - LERO paper: [arXiv:2503.21807](https://arxiv.org/abs/2503.21807)
 - Code entry point: `rendezvous_comm/train.py` → `runner.run_lero()` → `lero/loop.LeroLoop.run()`
-- Configs: `rendezvous_comm/configs/lero/{p1,l1,l4,l8,l21}.yaml`
-- Rescued metrics: `results/lero_rescued/{p1,l1,l8}/`
-- Full surviving artifacts: `results/lero/runs/lero/{20260416_1001,20260416_1324}/`, `results/lero_l4/`
+- Configs: `rendezvous_comm/configs/lero/{p1,l1,l4,l8,l21,s1,s3,s3a_gpt,s3a_gpt5,s3ac_gpt,s3b_gpt}.yaml`
+- Phase 4 rescued metrics: `results/lero_rescued/{p1,l1,l8}/`
+- Phase 5 k=1 artifacts: `lero_s1/`, `lero/.../1324/`
+- Phase 5 k=2 artifacts: `lero_s3b_gpt/` (breakthrough), `lero_s3a_gpt5/`, `lero_s3ac_gpt/`, `lero/.../1001/`

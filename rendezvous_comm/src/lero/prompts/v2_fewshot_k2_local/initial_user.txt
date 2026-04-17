@@ -1,0 +1,78 @@
+## Environment
+
+$n_agents agents must cover $n_targets targets. A target is covered when **$agents_per_target agents** are within $covering_range distance **simultaneously**. This is a RENDEZVOUS task. Arena: [-1,1] x [-1,1].
+
+Agents observe via LiDAR sensors (rays cast in fixed directions). Each ray returns distance to nearest object (0.0 = contact, max range = out of range). Agents do NOT know absolute target positions, other agents' positions, or coverage status.
+
+### Available State (LOCAL sensors only)
+
+```python
+obs_state = {
+    "agent_pos":        # [batch, 2] — this agent's own position
+    "agent_vel":        # [batch, 2] — this agent's own velocity
+    "agent_idx":        # int (0..$n_agents-1) — this agent's index
+    "n_agents":         # $n_agents
+    "n_targets":        # $n_targets
+    "covering_range":   # $covering_range
+    "agents_per_target_required": # $agents_per_target
+    "lidar_targets":    # [batch, $n_lidar_rays_entities] — distance to nearest TARGET in each ray direction (0=touching, larger=farther, max=nothing detected)
+    $obs_lidar_agents
+}
+```
+
+**You do NOT have access to:** `agents_pos`, `targets_pos`, `agents_targets_dists`, `covered_targets`, `agents_per_target`, `all_time_covered`, or any global state. Only the sensor readings above.
+
+### What you CAN infer from LiDAR
+
+- **Direction to nearest target:** the ray with smallest value points toward the closest target
+- **Distance to nearest target:** min of lidar_targets rays
+- **Number of nearby targets:** count of rays below a threshold (e.g. < covering_range)
+- **Agent density nearby:** from lidar_agents, count of rays below threshold → how crowded the area is
+- **Angular distribution:** which directions have targets vs agents → helps decide where to go
+- **Role differentiation:** agent_idx as one-hot so the shared policy can assign different roles
+
+### Example — local observation enhancement
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    lidar_t = scenario_state["lidar_targets"]       # [B, 15]
+    agent_idx = scenario_state["agent_idx"]
+    n_agents = int(scenario_state["n_agents"])
+    B = lidar_t.shape[0]
+    device = lidar_t.device
+
+    # Direction to nearest target (which ray is closest)
+    min_dist, min_ray = lidar_t.min(dim=-1)         # [B], [B]
+    # Encode ray index as angle: ray_i / n_rays * 2*pi
+    angle = min_ray.float() / lidar_t.shape[-1] * 2 * 3.14159
+    dir_x = torch.cos(angle)                         # [B]
+    dir_y = torch.sin(angle)                         # [B]
+
+    # Count of nearby targets (within covering range)
+    n_close = (lidar_t < 0.25).float().sum(dim=-1)   # [B]
+
+    # One-hot agent index for role specialization
+    one_hot = torch.zeros(B, n_agents, device=device)
+    one_hot[:, agent_idx] = 1.0
+
+    return torch.cat([
+        min_dist.unsqueeze(-1),   # [B,1] — distance to nearest target
+        dir_x.unsqueeze(-1),      # [B,1] — direction x
+        dir_y.unsqueeze(-1),      # [B,1] — direction y
+        n_close.unsqueeze(-1),    # [B,1] — nearby target count
+        one_hot,                  # [B,4] — agent role
+    ], dim=-1)  # [B, 8]
+```
+
+### Generate Function
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    """Compute extra features from LOCAL sensor data to help agents coordinate.
+    You can ONLY use: agent_pos, agent_vel, agent_idx, lidar_targets, lidar_agents.
+    Do NOT reference: agents_pos, targets_pos, covered_targets, agents_per_target.
+    Returns: [batch_dim, N] tensor where N is 4-9.
+    """
+```
+
+Wrap in a ```python block.
