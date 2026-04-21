@@ -152,6 +152,8 @@ def submit_training_job(
     n_gpu: Optional[int] = None,
     job_name: Optional[str] = None,
     llm_env: Optional[Dict[str, str]] = None,
+    runner: str = "train.py",
+    extra_cli: str = "--device cuda",
 ) -> Optional[str]:
     """Submit an OVH AI Training job.
 
@@ -228,15 +230,19 @@ def submit_training_job(
     )
     code_volume = f"{bucket_code}@{region}:{mount_code}:ro"
 
+    # Entry script + trailing CLI args are parametrized so the same
+    # submitter works for plain LERO runs (train.py --device cuda) and
+    # LERO-MP runs (run_lero_mp.py --seed 0). The train_device for the
+    # latter comes from the YAML config, not a CLI flag.
     train_cmd = (
         f"export HOME=/tmp && "
         f"pip install "
         f"vmas benchmarl tensordict torchrl "
         f"pyyaml pandas scipy imageio matplotlib litellm && "
         f"cd {mount_code}/rendezvous_comm && "
-        f"python train.py "
+        f"python {runner} "
         f"{mount_code}/{config_yaml} "
-        f"--device cuda"
+        f"{extra_cli}"
     )
 
     # Map GPU model name to OVH flavor ID
@@ -389,7 +395,8 @@ def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[s
 
     # Upload only code-relevant subdirectories and top-level files
     _CODE_DIRS = ["src", "configs", "notebooks", "tests"]
-    _CODE_FILES = ["train.py", "setup.py", "setup.cfg",
+    _CODE_FILES = ["train.py", "run_lero_mp.py",
+                   "setup.py", "setup.cfg",
                    "pyproject.toml", "requirements.txt"]
 
     success = True

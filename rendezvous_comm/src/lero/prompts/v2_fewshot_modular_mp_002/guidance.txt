@@ -1,0 +1,5 @@
+When generating PyTorch reward/observation code, keep all observations strictly local: use only each agent’s own sensors and any explicitly received messages available at execution time. Do not reference global/oracle state, hidden simulator variables, or future information in observation logic.
+
+For rewards, prefer smooth, bounded shaping that encourages coverage progress, task completion, and coordination from local signals. Keep every reward term numerically stable, clamp or scale outputs to stay within |r| <= 50, and avoid sparse spikes, division by zero, NaNs, and dimension mismatches.
+
+If multiple agents are present, compute per-agent outputs independently unless a shared message-based signal is explicitly available. Favor simple tensor operations, explicit shape checks, and deterministic behavior over complex heuristics.

@@ -1,0 +1,100 @@
+exp_id: lero_mp_dryrun_meta
+name: "LERO-MP P0 meta-enabled dry-run (small, local)"
+description: >
+  Smoke test that EXERCISES the meta-prompt outer loop. Two outer
+  iterations so the meta-LLM gets called once: inner LeroLoop runs under
+  v2_fewshot_modular, outer loop classifies, meta-LLM proposes a guidance
+  edit, materializes v2_fewshot_modular_mp_001, second inner run uses it.
+  Small frame budget (100k eval per candidate, no 10M full training) so
+  it finishes in ~5-8 min on CPU.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 200_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 60_000
+  evaluation_episodes: 50
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 2
+  top_k: 1
+  eval_frames: 100_000
+  eval_episodes: 20
+  # Keep full_frames small so even if Tier-2 runs, it finishes fast.
+  full_frames: 200_000
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular"
+
+meta_prompt:
+  enabled: true
+  # Switched from claude-opus-4-7 to a working OpenAI model for the
+  # local dry-run — the ANTHROPIC_API_KEY in .env is invalid in this
+  # environment. Production configs (e.g. mp_k2_obsonly_cr035.yaml)
+  # can prefer a stronger meta-LLM when auth is available.
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 0.3
+  seeds: [0]
+  slot_policy: "failmode_taxonomy"
+  trigger:
+    # Plateau detection needs ``plateau_iters+1`` records to measure
+    # improvements between them. With plateau_iters=1 we need ≥2
+    # records, and we want at least one post-mutation record, so
+    # max_outer_iters must be ≥ 3. See plan §6.2.
+    plateau_iters: 1
+    plateau_delta: 0.99          # forces plateau: any inner result < 0.99 M1 gain triggers
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+  budget:
+    max_outer_iters: 3           # 1 pre-mutation + 1 mutation + 1 post-mutation
+    max_total_inner_candidates: 10
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

@@ -1,7 +1,7 @@
 """LERO configuration dataclasses."""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -89,3 +89,81 @@ class LeroConfig:
     # MPE Simple Spread had naturally bounded rewards [0,5]; Discovery does
     # not, hence the need for a soft cap.
     reward_clip: Optional[float] = 50.0
+
+    # Fairness guard (LERO-MP §4.3). When True AND obs_state_mode=="local",
+    # the state dict passed to enhance_observation is wrapped in an
+    # AllowedKeysDict — forbidden-key lookups raise FairnessViolation.
+    # No-op in "global" mode. Defaults to False for backward compatibility
+    # with existing LERO configs; LERO-MP configs set it True.
+    whitelist_strict: bool = False
+
+
+@dataclass
+class MetaPromptTrigger:
+    """When the outer (meta-prompt) loop decides to emit a new template."""
+
+    # Plateau: best_peak_M1 hasn't moved by ≥ plateau_delta for N inner iters.
+    plateau_iters: int = 2
+    plateau_delta: float = 0.03
+    # Seed-variance ceiling at the best candidate (Tier-1).
+    variance_threshold: float = 0.15
+    # Reward-hack guard: Tier-2 peak-M1 minus final-M1 > this → hack.
+    peak_vs_final_gap_max: float = 0.20
+    # Hard cooldown regardless of triggers.
+    cooldown_inner_iters: int = 3
+
+
+@dataclass
+class MetaPromptBudget:
+    """Cost ceilings for the outer loop."""
+
+    max_outer_iters: int = 3
+    max_total_inner_candidates: int = 200
+    # Tier-2 (full training) is run only for templates whose Tier-1 best
+    # is within this gap of the current champion.
+    tier2_promotion_gap: float = 0.05
+
+
+@dataclass
+class MetaPromptFairness:
+    """Fairness policy at the outer-loop level."""
+
+    whitelist_strict: bool = True
+    # If set to a non-null string, the run is a diagnostic one that is
+    # explicitly allowed to cheat on observation information (e.g. an
+    # oracle-comparison baseline). The string is logged into final
+    # metrics for provenance.
+    waiver: Optional[str] = None
+
+
+@dataclass
+class MetaPromptConfig:
+    """Outer loop that evolves prompt templates across inner runs.
+
+    When ``enabled=False`` (default), LERO behaves exactly as before —
+    no outer loop, no meta-LLM calls, no fairness whitelist.
+
+    See docs/lero_metaprompt_plan.md for the full design.
+    """
+
+    enabled: bool = False
+
+    # Meta-LLM that rewrites prompt slots. May differ from the
+    # inner-loop LLMConfig. Kept loose (dict) to avoid tight coupling —
+    # the runner instantiates an LLMClient from these fields.
+    meta_model: str = "claude-opus-4-7"
+    meta_temperature: float = 0.3
+    meta_api_base: Optional[str] = None
+
+    trigger: MetaPromptTrigger = field(default_factory=MetaPromptTrigger)
+    budget: MetaPromptBudget = field(default_factory=MetaPromptBudget)
+    fairness: MetaPromptFairness = field(default_factory=MetaPromptFairness)
+
+    # Seeds used at Tier-1 (screen) and Tier-2 (confirm). Three seeds
+    # is the minimum to detect reward-hacking that is seed-specific.
+    seeds: List[int] = field(default_factory=lambda: [0, 1, 2])
+
+    # Slot-picking policy for the meta-LLM. "failmode_taxonomy" uses
+    # the detected dominant failure mode (see meta/failmode.py). Other
+    # options: "round_robin", "fixed:<slot_name>".
+    slot_policy: str = "failmode_taxonomy"

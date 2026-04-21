@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, Optional
 
 import torch
 
+from .meta.fairness import AllowedKeysDict
+
 _log = logging.getLogger("rendezvous.lero")
 
 # Namespace available to LLM-generated code
@@ -176,6 +178,27 @@ def _compile_function(source: str, func_name: str) -> Callable:
     return namespace[func_name]
 
 
+def _maybe_wrap_obs_state(
+    state: Dict[str, Any],
+    mode: str,
+    whitelist_strict: bool,
+) -> Any:
+    """Wrap observation state in AllowedKeysDict when fairness-strict.
+
+    In ``local`` mode with ``whitelist_strict=True``, the state dict
+    handed to ``enhance_observation`` is read-only and gated by the
+    local-sensors whitelist; forbidden-key lookups raise
+    FairnessViolation. In any other configuration, the state dict is
+    returned unchanged (paper-faithful behavior).
+
+    Extracted from ``observation()`` so it is unit-testable without
+    instantiating a full VMAS scenario.
+    """
+    if mode != "local" or not whitelist_strict:
+        return state
+    return AllowedKeysDict(state)
+
+
 def _sanitize_reward(r: torch.Tensor, clip: Optional[float]) -> torch.Tensor:
     """Defensive cleanup of LLM-generated reward output.
 
@@ -199,6 +222,7 @@ def make_patched_scenario_class(
     obs_state_mode: str = "global",
     bonus_scale: float = 0.5,
     reward_clip: Optional[float] = 50.0,
+    whitelist_strict: bool = False,
 ):
     """Create a Discovery Scenario subclass with LLM-generated methods.
 
@@ -215,6 +239,12 @@ def make_patched_scenario_class(
     reward_clip:
       LLM reward output is run through nan_to_num then clamped to [-clip, +clip]
       before being passed to PPO. Set to None to disable. Default 50.0.
+
+    whitelist_strict:
+      When True AND obs_state_mode=="local", the dict passed to
+      enhance_observation is wrapped in an AllowedKeysDict that raises
+      FairnessViolation on any forbidden-key lookup. LERO-MP default
+      (see docs/lero_metaprompt_plan.md §4). No-op in "global" mode.
     """
     from vmas.scenarios.discovery import Scenario as OrigScenario
 
@@ -272,13 +302,17 @@ def make_patched_scenario_class(
             # obs_state_mode is captured via closure of make_patched_scenario_class.
             # Do NOT redefine it as a class attribute — class-body names aren't
             # visible inside method bodies (Python scoping rule).
-            def observation(self, agent, _mode=obs_state_mode):
+            def observation(
+                self, agent,
+                _mode=obs_state_mode, _strict=whitelist_strict,
+            ):
                 base_obs = super().observation(agent)
                 agent_idx = self.world.agents.index(agent)
                 if _mode == "global":
                     state = _build_reward_state(self, agent, agent_idx)
                 else:
                     state = _build_obs_state(self, agent, agent_idx)
+                    state = _maybe_wrap_obs_state(state, _mode, _strict)
                 extra = obs_fn(state)
                 if isinstance(base_obs, dict):
                     base_obs["observation"] = torch.cat(

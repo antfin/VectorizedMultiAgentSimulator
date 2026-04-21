@@ -1,0 +1,93 @@
+exp_id: lero_mp_k2_obsonly_cr035
+name: "LERO-MP k=2 obs-only (covering_range=0.35) — ER1/ER3 comparable"
+description: >
+  LERO-MP reference configuration. Mirrors ER1/ER3 covering_range=0.35
+  task setup exactly (n=4, t=4, k=2, lidar=0.35, ms=200, shared_reward,
+  targets_respawn=false, use_agent_lidar) so results land in the same
+  comparison table as er1_al_lp_sr_cr035 and er3_al_lp_sr_gatv2_cr035.
+
+  Obs-only mode (evolve_reward=false, evolve_observation=true) with
+  obs_state_mode=local and whitelist_strict=true per the LERO-MP §4
+  fairness constraint. Meta-prompt outer loop ENABLED.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 3
+  n_candidates: 5
+  top_k: 2
+  eval_frames: 1_000_000
+  eval_episodes: 100
+  full_frames: 10_000_000
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular"
+
+meta_prompt:
+  enabled: true
+  meta_model: "claude-opus-4-7"
+  meta_temperature: 0.3
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"
+  trigger:
+    plateau_iters: 2
+    plateau_delta: 0.03
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 3
+  budget:
+    max_outer_iters: 3
+    max_total_inner_candidates: 200
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

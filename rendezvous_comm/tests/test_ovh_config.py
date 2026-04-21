@@ -84,7 +84,11 @@ class TestGpuModels:
         for name, info in GPU_MODELS.items():
             assert "vram_gb" in info, f"{name} missing vram_gb"
             assert "eur_per_hr" in info, f"{name} missing eur_per_hr"
-            assert info["vram_gb"] > 0
+            # Compute flavors include CPU entries (vram_gb=0 is valid);
+            # only real GPUs must have positive VRAM.
+            assert info["vram_gb"] >= 0
+            if name.upper() != "CPU":
+                assert info["vram_gb"] > 0, f"{name} should have VRAM > 0"
             assert info["eur_per_hr"] > 0
 
     def test_estimate_cost_uses_config_gpu(self):

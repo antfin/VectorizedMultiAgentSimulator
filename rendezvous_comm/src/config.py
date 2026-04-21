@@ -117,6 +117,8 @@ class ExperimentSpec:
     # LERO evolutionary loop (None = not a LERO experiment)
     lero: Optional[Any] = None   # LeroConfig
     llm: Optional[Any] = None    # LLMConfig
+    # LERO-MP meta-prompt outer loop (None = disabled / not configured)
+    meta_prompt: Optional[Any] = None  # MetaPromptConfig
 
     @property
     def family(self) -> str:
@@ -226,6 +228,26 @@ def load_experiment(yaml_path) -> ExperimentSpec:
         else:
             llm_config = LLMConfig()  # defaults
 
+    # Optional LERO-MP meta-prompt config (nested sub-sections).
+    meta_prompt_config = None
+    if "meta_prompt" in raw:
+        from .lero.config import (
+            MetaPromptBudget,
+            MetaPromptConfig,
+            MetaPromptFairness,
+            MetaPromptTrigger,
+        )
+        mp_raw = dict(raw["meta_prompt"])
+        trigger = MetaPromptTrigger(**mp_raw.pop("trigger", {}))
+        budget = MetaPromptBudget(**mp_raw.pop("budget", {}))
+        fairness = MetaPromptFairness(**mp_raw.pop("fairness", {}))
+        meta_prompt_config = MetaPromptConfig(
+            trigger=trigger,
+            budget=budget,
+            fairness=fairness,
+            **mp_raw,
+        )
+
     return ExperimentSpec(
         exp_id=raw["exp_id"],
         name=raw["name"],
@@ -236,6 +258,7 @@ def load_experiment(yaml_path) -> ExperimentSpec:
         source_path=yaml_path.resolve(),
         lero=lero_config,
         llm=llm_config,
+        meta_prompt=meta_prompt_config,
     )
 
 

@@ -1,0 +1,38 @@
+version: v2_fewshot_modular_mp_002
+author: rendezvous_comm
+date: '2026-04-21'
+parent: v2_fewshot_modular
+description: 'Slot-decomposed version of v2_fewshot for LERO-MP meta-prompting. Renders
+  behavior-identically to v2_fewshot when slots are assembled in the declared order.
+  Adds a frozen `fairness` slot that the meta-LLM may read but never edit.
+
+  '
+initial_user_slots:
+- name: task_context
+  file: task_context.txt
+- name: current_code
+  file: current_code.txt
+- name: state_schema
+  file: state_schema.txt
+- name: fairness
+  file: fairness.txt
+  frozen: true
+- name: guidance
+  file: guidance.txt
+- name: examples
+  file: examples.txt
+- name: output_spec
+  file: output_spec.txt
+frozen_hashes:
+  fairness: 95d5ca8be490f622afd72e630f12124e71e8e5e236b927e2d7671e8a7715c831
+mutation:
+  operator: rewrite_slot
+  target_slots:
+  - guidance
+  rationale: Add concise guidance that prioritizes local-sensor-safe shaping, stable
+    reward scaling, and coverage-progress incentives while explicitly avoiding oracle-state
+    leakage and reward spikes. This should help the template produce non-empty, well-formed
+    code with better M6 without increasing hacking or instability.
+provenance:
+  generated_by: gpt-5.4-mini
+  generated_at: '2026-04-21T18:02:09+00:00'

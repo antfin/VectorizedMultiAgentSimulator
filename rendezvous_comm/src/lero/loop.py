@@ -364,6 +364,8 @@ def _build_patched_experiment(
     obs_state_mode: str = "global",
     bonus_scale: float = 0.5,
     reward_clip: Optional[float] = 50.0,
+    whitelist_strict: bool = False,
+    callbacks: Optional[List[Any]] = None,
 ):
     """Build a BenchMARL Experiment with LLM-patched scenario.
 
@@ -384,6 +386,7 @@ def _build_patched_experiment(
         obs_state_mode=obs_state_mode,
         bonus_scale=bonus_scale,
         reward_clip=reward_clip,
+        whitelist_strict=whitelist_strict,
     )
     # Configure the task
     task = VmasTask.DISCOVERY.get_from_yaml()
@@ -467,6 +470,7 @@ def _build_patched_experiment(
         critic_model_config=critic_model_config,
         seed=seed,
         config=experiment_config,
+        callbacks=callbacks or None,
     )
     return experiment
 
@@ -610,7 +614,27 @@ class LeroLoop:
                     _log.warning(
                         "  Candidate %d failed: %s", j, e,
                     )
-                    results.append((cand, {"_error": str(e)}))
+                    # Tag the error type so the outer LERO-MP fail-mode
+                    # classifier can distinguish fairness violations,
+                    # NaN crashes, etc. without string-matching.
+                    err_type = type(e).__name__
+                    # FairnessViolation subclasses KeyError; record the
+                    # original class name so classify_inner_result sees
+                    # "FairnessViolation", not "KeyError".
+                    err_entry = {
+                        "_error": str(e),
+                        "_error_type": err_type,
+                    }
+                    results.append((cand, err_entry))
+                    # Persist the error payload to disk so the LERO-MP
+                    # outer loop's _collect_candidate_metrics can see it.
+                    # Without this, failed candidates are invisible to
+                    # the fail-mode classifier → mutations mis-target.
+                    if iter_dir is not None:
+                        self._save_json(
+                            str(iter_dir / f"candidate_{j}_metrics.json"),
+                            err_entry, absolute=True,
+                        )
 
             if not any(
                 "_error" not in r[1] for r in results
@@ -903,6 +927,7 @@ class LeroLoop:
             obs_state_mode=self.lero.obs_state_mode,
             bonus_scale=self.lero.bonus_scale,
             reward_clip=self.lero.reward_clip,
+            whitelist_strict=self.lero.whitelist_strict,
         )
 
         experiment.run()
@@ -919,13 +944,36 @@ class LeroLoop:
         algorithm: str,
         seed: int,
     ) -> Dict[str, float]:
-        """Full training run with the best candidate."""
-        from ..runner import build_experiment, evaluate_trained
+        """Full training run with the best candidate.
+
+        Enables peak-M1 checkpointing: an _EvalMetricsCallback computes
+        M1 on each evaluation, and a PeakM1Callback snapshots the
+        policy state_dict whenever M1 reaches a new peak. Closes
+        lero.md §5.1.
+        """
+        from ..runner import _BenchMARLCallback, _EvalMetricsCallback, evaluate_trained
+        from .meta.peak_checkpoint import (
+            PeakM1Tracker, make_peak_m1_callback,
+        )
 
         full_train = copy.copy(self.spec.train)
         full_train.max_n_frames = self.lero.full_frames
 
         save_folder = str(self.output_dir / "benchmarl_final")
+
+        task_params = self._effective_task_params(task_overrides)
+        n_targets = int(task_params.get("n_targets", 4))
+
+        eval_cb = _EvalMetricsCallback(n_targets=n_targets)
+        tracker = PeakM1Tracker()
+        peak_cb = make_peak_m1_callback(
+            tracker=tracker,
+            eval_source=eval_cb,
+            frames_per_iteration=int(
+                full_train.on_policy_collected_frames_per_batch,
+            ),
+            bench_callback_base=_BenchMARLCallback,
+        )
 
         experiment = _build_patched_experiment(
             self.spec.task, full_train, algorithm, seed,
@@ -936,6 +984,8 @@ class LeroLoop:
             obs_state_mode=self.lero.obs_state_mode,
             bonus_scale=self.lero.bonus_scale,
             reward_clip=self.lero.reward_clip,
+            whitelist_strict=self.lero.whitelist_strict,
+            callbacks=[eval_cb, peak_cb],
         )
 
         t0 = time.monotonic()
@@ -945,11 +995,22 @@ class LeroLoop:
         metrics = evaluate_trained(self.spec, experiment, task_overrides)
         metrics["training_seconds"] = elapsed
 
-        # Save policy
+        # Final policy (last frame).
         policy_path = self.output_dir / "best_policy.pt"
         torch.save(experiment.policy.state_dict(), policy_path)
-        _log.info("Saved best policy to %s", policy_path)
+        _log.info("Saved final policy to %s", policy_path)
 
+        # Peak-M1 policy (best intermediate checkpoint).
+        if tracker.save_peak_policy(self.output_dir / "best_policy_peak.pt"):
+            _log.info(
+                "Saved peak-M1 policy (M1=%.3f @ frame %d) to %s",
+                tracker.peak_M1, tracker.peak_at_frame,
+                self.output_dir / "best_policy_peak.pt",
+            )
+        metrics.update(tracker.summary())
+        if metrics.get("peak_M1") is not None:
+            final_m1 = metrics.get("M1_success_rate", 0.0)
+            metrics["peak_vs_final_gap"] = float(tracker.peak_M1) - float(final_m1)
         return metrics
 
     # ── helpers ───────────────────────────────────────────────────

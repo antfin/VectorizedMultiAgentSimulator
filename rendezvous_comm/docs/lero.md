@@ -563,3 +563,112 @@ This would recover gpt-5.4's M1=0.86 policy from S3a_gpt5 — a legitimate k=2 s
 - Phase 4 rescued metrics: `results/lero_rescued/{p1,l1,l8}/`
 - Phase 5 k=1 artifacts: `lero_s1/`, `lero/.../1324/`
 - Phase 5 k=2 artifacts: `lero_s3b_gpt/` (breakthrough), `lero_s3a_gpt5/`, `lero_s3ac_gpt/`, `lero/.../1001/`
+
+---
+
+## 7. LERO-MP — meta-prompting outer loop (2026-04-21)
+
+LERO-MP extends LERO with a second optimization loop that evolves the
+**prompt template itself** when the downstream RL results signal the
+template is the bottleneck (plateaus, reward-hacking, fairness
+violations, seed instability). Inner LERO is unchanged.
+
+Design doc: [`lero_metaprompt_plan.md`](lero_metaprompt_plan.md).
+
+### 7.1 What shipped
+
+| Module | Role |
+| --- | --- |
+| `src/lero/prompts/v2_fewshot_modular/` | v2_fewshot re-sliced into 7 typed slots + a pinned `fairness.txt`. Renders identically to v2_fewshot except for the intentional fairness addition. |
+| `src/lero/prompts/loader.py` | Slot assembly + `FrozenSlotMismatch` guard (tampering with a pinned slot is a hard error). |
+| `src/lero/meta/fairness.py` | `AllowedKeysDict` + `FairnessViolation`. Wraps the local obs-state dict when `whitelist_strict=True`. |
+| `src/lero/meta/failmode.py` | `FailMode` taxonomy + `classify_inner_result` + `pick_slot_to_edit`. |
+| `src/lero/meta/trigger.py` | `should_meta_iterate` — plateau / variance / peak-vs-final / cooldown / budget / cycle / convergence checks. |
+| `src/lero/meta/provenance.py` | `materialize_mutation` writes a fresh prompt-version directory with full lineage; `lineage()` walks it back to the root. |
+| `src/lero/meta/mutation.py` | Builds the structured meta-prompt (OPRO-style sorted history, contrastive analysis, single-slot edit contract), calls the meta-LLM, parses the response via explicit `<<<NEW_SLOT_BEGIN>>>…<<<NEW_SLOT_END>>>` delimiters. |
+| `src/lero/meta/outer_loop.py` | `LeroMpOuterLoop` orchestrator. Runs inner LeroLoop → classifies → mutates → loops. Persists `history.json` after every outer iter. |
+| `src/lero/meta/peak_checkpoint.py` | `PeakM1Tracker` + `PeakM1Callback` — streams per-eval M1 during Tier-2 full training and saves the best intermediate policy as `best_policy_peak.pt`. Closes §5.1 above. |
+| `run_lero_mp.py` | CLI entry point: `python run_lero_mp.py configs/lero_mp/mp_k2_obsonly_cr035.yaml`. |
+| `configs/lero_mp/mp_k2_obsonly_cr035.yaml` | Real experiment config. Task parameters byte-identical to `er1_al_lp_sr_cr035` (verified by a dedicated parity test), so results land in the same comparison table as ER1 / ER3 GNN. |
+| `configs/lero_mp/mp_dryrun.yaml` | P0 smoke (1 outer × 1 inner × 2 candidates × 100k frames). |
+
+### 7.2 Test coverage
+
+134 pytest cases across `test_lero_mp*.py`; 615/615 pass in the full
+suite. Every new symbol has unit coverage, including:
+
+- Fairness: allowed/forbidden/unknown key behavior, missing-key
+  differentiation, `get()` default vs re-raise on violation.
+- Loader: slot assembly, frozen-hash tamper detection, backward-compat
+  with monolithic v1/v2/v2_fewshot.
+- Taxonomy: priority order (fairness > nan > dim > inflation > hack >
+  stuck > healthy), per-failmode slot mapping.
+- Trigger: plateau, variance, peak-vs-final, fail-mode clustering,
+  cycle detection, cooldown blocking, fairness-repeated abort.
+- Provenance: mutation copies parent, applies edits, rejects frozen-slot
+  edits, rejects undeclared slots, refreshes frozen hashes.
+- Mutation: meta-prompt contains all required markers; parsing handles
+  missing rationale / size bounds / case-insensitive matching.
+- Outer loop: stops on convergence / fairness repeat / budget, mutates
+  on reward-hack, version progression traceable in `history.json`.
+- Peak-M1: strict `>` comparison (ties don't re-snapshot), policy dict
+  clone defends against in-place mutation by gradient steps.
+- **ER1 parity**: 14 parametric tests, one per shared task parameter,
+  guarding `mp_k2_obsonly_cr035.yaml` against drift.
+
+### 7.3 Fairness guarantees enforced at runtime
+
+- `obs_state_mode=local` + `whitelist_strict=true` is the LERO-MP
+  default. Any LLM-generated `enhance_observation` that reads
+  `targets_pos`, `covered_targets`, `agents_per_target`,
+  `all_time_covered`, `agents_targets_dists`, `collision_rew`, or
+  `time_penalty` gets a `FairnessViolation` at runtime. The error is
+  recorded as `_error_type` on the candidate so the outer loop's
+  fail-mode classifier can react (edit `state_schema` slot, then abort
+  after 2 repeat offenses).
+- The `fairness.txt` slot is **frozen** — its content hash is pinned in
+  `meta.yaml` and verified by the loader every render. The meta-LLM
+  receives only the hash (never asked to rewrite it). `materialize_mutation`
+  refuses any `slot_edits` dict that targets a frozen slot.
+- Tier-2 full training now runs with a peak-M1 checkpoint callback;
+  `final_metrics.json` gains `peak_M1`, `peak_at_frame`, `peak_iter`,
+  `peak_m1_trajectory`, `peak_vs_final_gap`. A gap ≥ 0.20 is a
+  `REWARD_HACK` fail-mode — directly addresses the S3a_gpt5 pathology
+  (eval M1=0.86 → final 0.09) flagged in §2.5.
+
+### 7.4 Running it
+
+```bash
+# P0 dry-run (smoke test, meta-prompt disabled)
+python rendezvous_comm/run_lero_mp.py \
+    rendezvous_comm/configs/lero_mp/mp_dryrun.yaml
+
+# Real experiment (ER1/ER3-comparable, covering_range=0.35, k=2)
+python rendezvous_comm/run_lero_mp.py \
+    rendezvous_comm/configs/lero_mp/mp_k2_obsonly_cr035.yaml \
+    --seed 0
+
+# Plan without training
+python rendezvous_comm/run_lero_mp.py \
+    rendezvous_comm/configs/lero_mp/mp_k2_obsonly_cr035.yaml --dry-run
+```
+
+Outputs land under `results/lero_mp/<exp_id>/<timestamp>/`:
+`outer_000_<version>/` (inner LeroLoop artifacts), new mutated prompt
+directories under `src/lero/prompts/v2_fewshot_modular_mp_{001,002,…}/`
+with full provenance, `history.json` (appended every outer iter),
+`final_result.json`.
+
+### 7.5 Open items
+
+- Multi-seed Tier-1 (the plan recommends 3 seeds minimum) is not yet
+  wired into `LeroMpOuterLoop.run()` — single-seed for the first
+  version. Adding it is additive; the `seed_M1_std` field on
+  `TemplateRecord` is already threaded through the classifier.
+- Tier-2 promotion gating (only run 10M training on templates within
+  `tier2_promotion_gap` of the champion) is not yet wired; `_full_training`
+  currently runs whenever the inner loop completes. Adding it saves
+  GPU-hours on obviously-bad templates.
+- `lero_integration.py` requires valid API keys; the 2 failing tests
+  there are expected when running offline. They are excluded from the
+  615-test green count.

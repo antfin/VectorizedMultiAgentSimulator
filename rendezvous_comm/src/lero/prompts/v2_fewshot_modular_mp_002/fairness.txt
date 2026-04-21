@@ -1,0 +1,22 @@
+## Fairness constraint (do not violate)
+
+At RL *execution* time, each agent only sees information from its own
+sensors plus optional messages. To stay comparable with the ER1 / ER2 /
+ER3 / GNN baselines, `enhance_observation` must only read keys that an
+agent could actually observe.
+
+- `enhance_observation` may read: `agent_pos`, `agent_vel`, `agent_idx`,
+  `lidar_targets`, `lidar_agents`, `messages` (if the task has comms),
+  `covering_range`, `agents_per_target_required`, `n_agents`, `n_targets`.
+- `enhance_observation` must NOT read: `agents_pos` (of all agents),
+  `targets_pos`, `covered_targets`, `agents_per_target`, `all_time_covered`,
+  `agents_targets_dists`, `collision_rew`, `time_penalty`.
+- `compute_reward` is allowed to read any key, because it runs only
+  during centralized training (CTDE). But the induced behavior must
+  survive 10M-frame training without reward-hacking; avoid rewards that
+  monotonically grow without bound, and keep magnitudes small (the
+  framework clips to ±50 for safety).
+
+Violating the observation-side rule makes the result incomparable to
+prior work and will be rejected.
+

@@ -50,8 +50,9 @@ class LLMClient:
         # Resolve context window once at init
         self._context_window = self._resolve_context_window()
         _log.info(
-            "LLM: %s (context=%d tokens, max_output=%d tokens)",
-            config.model, self._context_window, config.max_tokens,
+            "LLM: %s (context=%d tokens, max_output=%s tokens)",
+            config.model, self._context_window,
+            config.max_tokens if config.max_tokens is not None else "provider-default",
         )
 
     @property
