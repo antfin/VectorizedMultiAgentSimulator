@@ -1,0 +1,100 @@
+exp_id: lero_mp_quick_v2_k2_cr035
+name: "LERO-MP v2 quick validation — two-level meta, 3 sub-slots"
+description: >
+  Validates the v2 meta-prompt design:
+    - two-level pipeline: Strategist (Level 1) → Editor (Level 2)
+    - 3 guidance sub-slots (reward / observation / shared)
+    - cross-run mutation_log.jsonl memory
+    - per-seed strategy bias (seed 0=obs, 1=reward, 2=exploratory)
+
+  Same task + frames as mp_quick_k2_cr035.yaml (1M full training,
+  3 outer iters) so results are directly comparable to the v1
+  quick-validation baseline we ran yesterday. Budget: ~2.5h per seed.
+
+  If this dry-run produces DIVERSE mutations across seeds (each
+  seed targets a different sub-slot that matches its bias, rationales
+  cite mutation_log evidence), we have confidence to commit the full
+  10M experiment. If not, we tweak the Strategist prompt and repeat.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 1_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 2
+  n_candidates: 3
+  top_k: 2
+  eval_frames: 500_000
+  eval_episodes: 100
+  full_frames: 1_000_000
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2"
+
+meta_prompt:
+  enabled: true
+  two_level_meta: true                       # ← v2 pipeline
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 0.3
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"           # unused when two_level_meta=true
+  trigger:
+    plateau_iters: 1
+    plateau_delta: 0.99                      # force plateau for the quick run
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+  budget:
+    max_outer_iters: 3
+    max_total_inner_candidates: 30
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

@@ -40,6 +40,9 @@ from .provenance import (
 )
 from .trigger import TemplateRecord
 
+# Imported lazily to avoid circular imports at module load time.
+# from .strategy import StrategyCard
+
 _log = logging.getLogger("rendezvous.lero.mp")
 
 
@@ -497,6 +500,132 @@ def parse_mutation_response(
 MetaLLMCallable = Callable[[List[Dict[str, str]]], str]
 
 
+def build_editor_prompt(
+    parent_version: str,
+    strategy_card,  # StrategyCard (lazy import)
+    top_candidates: Sequence[Dict[str, Any]],
+    loader: Optional[PromptLoader] = None,
+    prior_slot_versions: Optional[Sequence[Any]] = None,
+) -> str:
+    """Level 2 prompt. Receives a StrategyCard and rewrites ONLY the
+    slot it names. Does not re-decide domain or strategy — the
+    Strategist already did that.
+
+    ``prior_slot_versions`` is an optional list of MutationLogEntry
+    instances that previously edited this same slot. When provided,
+    the Editor sees what was tried before + the verdicts, and is
+    told to DIVERGE rather than duplicate. Fixes the v2 dry-run
+    finding that Editor outputs on the same slot converge across
+    seeds.
+    """
+    target_slot = strategy_card.target_slot
+    if loader is None:
+        cur_slot_text = f"(would inline current {target_slot} slot here)"
+        fairness_text = "(fairness slot not available in this context)"
+        fairness_hash = "(unknown)"
+    else:
+        cur_slot_text = loader.slot_text(target_slot)
+        fairness_hash = ""
+        if "fairness" in loader.frozen_slot_names():
+            fairness_text = loader.slot_text("fairness")
+            fairness_hash = sha256_text(fairness_text)
+        else:
+            fairness_text = "(no frozen fairness slot)"
+
+    focus_block = "\n".join(f"  - {f}" for f in strategy_card.focus) or "  (none)"
+    avoid_block = "\n".join(f"  - {a}" for a in strategy_card.avoid) or "  (none)"
+
+    # Prior versions of the SAME slot (from mutation_log). If this
+    # slot has been edited before, show what was tried and how it
+    # scored so the Editor DIVERGES rather than rewriting the same
+    # text. Without this, independent seeds that land on the same
+    # slot keep proposing near-identical content.
+    prior_block = ""
+    if prior_slot_versions:
+        lines = ["[PRIOR VERSIONS OF THIS SAME SLOT — diverge, don't duplicate]"]
+        for i, e in enumerate(prior_slot_versions, 1):
+            verdict = getattr(e, "verdict", None) or "pending"
+            dp = getattr(e, "delta_peak_M1", None)
+            dp_s = f"Δpeak_M1={dp:+.3f}" if dp is not None else "outcome pending"
+            excerpt = (getattr(e, "slot_content_excerpt", "") or "")[:300]
+            lines.append(
+                f"### version {i}  "
+                f"({getattr(e, 'new_version', '?')})  "
+                f"verdict={verdict}  {dp_s}"
+            )
+            lines.append(f"    {excerpt}")
+        lines.append(
+            "\nYour output must be SUBSTANTIVELY different from every "
+            "prior version above. If multiple priors tried the same "
+            "pattern and scored regression/collapse, avoid that pattern "
+            "entirely. If a prior scored marginal/strong improvement, "
+            "build on it instead of repeating it verbatim."
+        )
+        prior_block = "\n".join(lines) + "\n"
+
+    return f"""[ROLE]
+You are the LERO-MP Editor. A separate Strategist LLM has already
+decided what to improve. Your job is to rewrite ONE specific sub-slot
+with targeted, evidence-cited text that implements the Strategist's
+focus ideas and avoids the patterns it flagged.
+
+[HARD CONSTRAINTS — NEVER VIOLATE]
+- Edit ONLY the `{target_slot}` slot. Do not propose changes to any
+  other slot; the outer loop applies single-slot edits.
+- The `fairness` slot is FROZEN (hash={fairness_hash[:12]}…, DO NOT
+  EDIT, DO NOT RESTATE). It is ALREADY in every rendered prompt.
+  Restating it wastes tokens without helping the inner-loop LLM.
+- Rewards must stay within |r| ≤ 50 (already enforced at runtime;
+  don't need to repeat this).
+
+[FAIRNESS SLOT — shown here so you know what NOT to restate]
+------------------------------------------------------------
+{fairness_text.strip()}
+------------------------------------------------------------
+
+[STRATEGY CARD  —  your instructions from the Strategist]
+  target_domain: {strategy_card.target_domain}
+  target_slot:   {target_slot}
+  confidence:    {strategy_card.confidence}
+  rationale:     {strategy_card.rationale}
+
+[FOCUS — implement these specifically, 1-2 ideas only]
+{focus_block}
+
+[AVOID — the Strategist has ruled these out based on prior evidence]
+{avoid_block}
+
+[CURRENT `{target_slot}` TEXT — what you are replacing]
+------------------------------------------------------------
+{cur_slot_text}
+------------------------------------------------------------
+
+{prior_block}
+[TOP CANDIDATES — evidence you may cite]
+{_format_top_candidates(top_candidates)}
+
+[OUTPUT FORMAT]
+Write the new `{target_slot}` text. Requirements:
+  - Target ONLY the Strategist's focus ideas. Don't wander.
+  - Name specific features / patterns / signals by exact identifier
+    (e.g. `lidar_targets`, `hold_signal`, `2nd-nearest`, `gap`,
+    `proximity_count`, `intensity`, `potential shaping`, …).
+  - Do NOT restate the fairness contract.
+  - Keep the new slot concise (roughly the same order of magnitude
+    as the focus — a few short paragraphs, not an essay).
+
+Return EXACTLY this format:
+
+Rationale: <1-3 sentences mapping the focus to your edit>
+Expected-improvement: small | medium | large
+
+{SLOT_BEGIN}
+<the complete new text of the `{target_slot}` slot — targeted,
+specific, non-overlapping with fairness>
+{SLOT_END}
+"""
+
+
 def propose_new_template(
     parent_version: str,
     target_slot: str,
@@ -507,6 +636,8 @@ def propose_new_template(
     outer_iter: int,
     prompts_dir: Optional[Path] = None,
     generated_by: str = "",
+    strategy_card=None,  # optional StrategyCard for v2 two-level pipeline
+    prior_slot_versions: Optional[Sequence[Any]] = None,
 ) -> MutationResult:
     """Compose meta-prompt → call LLM → parse → materialize.
 
@@ -534,14 +665,37 @@ def propose_new_template(
         ``materialize_mutation``.
     """
     loader = PromptLoader(parent_version)
-    prompt = build_meta_prompt(
-        parent_version=parent_version,
-        target_slot=target_slot,
-        history=history,
-        top_candidates=top_candidates,
-        fail_mode=fail_mode,
-        loader=loader,
-    )
+
+    # v2 pipeline: StrategyCard provided → use focused Editor prompt.
+    # v1 pipeline: no StrategyCard → use the original single-call
+    # meta-prompt (kept for backward compatibility + rollback).
+    if strategy_card is not None:
+        # Strategist already decided the slot; override the caller's
+        # target_slot to match (defensive; caller should pass them
+        # consistently, but we don't trust them blindly).
+        if strategy_card.target_slot != target_slot:
+            _log.warning(
+                "propose_new_template: target_slot=%r but "
+                "strategy_card.target_slot=%r. Using the card.",
+                target_slot, strategy_card.target_slot,
+            )
+            target_slot = strategy_card.target_slot
+        prompt = build_editor_prompt(
+            parent_version=parent_version,
+            strategy_card=strategy_card,
+            top_candidates=top_candidates,
+            loader=loader,
+            prior_slot_versions=prior_slot_versions,
+        )
+    else:
+        prompt = build_meta_prompt(
+            parent_version=parent_version,
+            target_slot=target_slot,
+            history=history,
+            top_candidates=top_candidates,
+            fail_mode=fail_mode,
+            loader=loader,
+        )
     messages = [
         {"role": "system", "content":
             "You are a careful prompt-engineering assistant. "

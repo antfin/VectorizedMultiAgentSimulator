@@ -1,0 +1,12 @@
+Current reward function:
+
+```python
+$scenario_reward_code
+```
+
+Current observation function:
+
+```python
+$scenario_observation_code
+```
+

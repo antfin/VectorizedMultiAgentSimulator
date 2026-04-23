@@ -35,6 +35,15 @@ from ..config import LLMConfig, LeroConfig, MetaPromptConfig
 from ..loop import LeroLoop
 from .failmode import FailMode, classify_inner_result, pick_slot_to_edit
 from .mutation import MetaLLMCallable, propose_new_template
+from .mutation_log import (
+    MutationLogEntry,
+    append_entry,
+    new_entry as new_log_entry,
+    read_prior_slot_versions,
+    read_recent,
+    update_last_entry_with_post,
+)
+from .strategy import bias_for_seed, strategize
 from .trigger import (
     TemplateRecord,
     TriggerConfig,
@@ -174,19 +183,46 @@ def _trigger_config_from(mp: MetaPromptConfig) -> TriggerConfig:
     )
 
 
-def _default_meta_llm_call(meta_config: MetaPromptConfig) -> MetaLLMCallable:
-    """Build a default meta-LLM callable using LLMClient."""
+def _default_meta_llm_call(
+    meta_config: MetaPromptConfig,
+    temperature: Optional[float] = None,
+) -> MetaLLMCallable:
+    """Build a default meta-LLM callable using LLMClient.
+
+    ``temperature`` overrides ``meta_config.meta_temperature``. Used
+    by the per-seed temperature diversification in the outer loop —
+    seeds 0/1/2 cycle through cool/medium/warm to encourage divergent
+    Editor outputs even when the Strategist picks the same slot.
+    """
     # Lazy import keeps this module cheap when we only want pure helpers.
     from ..llm_client import LLMClient
     client = LLMClient(LLMConfig(
         model=meta_config.meta_model,
-        temperature=meta_config.meta_temperature,
+        temperature=(
+            temperature if temperature is not None
+            else meta_config.meta_temperature
+        ),
         api_base=meta_config.meta_api_base,
     ))
 
     def call(messages: List[Dict[str, str]]) -> str:
         return client.generate(messages, n=1)[0]
     return call
+
+
+# Per-seed meta-LLM temperature cycle (D). Cool → medium → warm so
+# that three parallel seeds exploring the same slot produce more
+# diverse outputs. Override via MetaPromptConfig.meta_temperature
+# for a flat temperature across seeds.
+SEED_META_TEMPERATURE = {
+    0: 0.1,  # cool: exploit the strongest pattern
+    1: 0.3,  # medium: balanced (v2 default)
+    2: 0.7,  # warm: broader exploration
+}
+
+
+def meta_temperature_for_seed(seed: int) -> float:
+    return SEED_META_TEMPERATURE[seed % 3]
 
 
 # ── orchestrator ─────────────────────────────────────────────────
@@ -222,8 +258,21 @@ class LeroMpOuterLoop:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Hold onto the user-provided callable (if any) so `run()` can
+        # build a per-seed variant with a custom temperature when none
+        # is supplied. See meta_temperature_for_seed() above.
+        self._meta_llm_override = meta_llm_call
         self.meta_llm_call = meta_llm_call or _default_meta_llm_call(meta_config)
         self.inner_loop_factory = inner_loop_factory or LeroLoop
+
+        # v2: per-run mutation_log path. Lives under RESULTS_DIR (OVH-
+        # writable) so it survives job FINALIZE. A `run_id` lets multi-
+        # seed parallel jobs distinguish their own entries.
+        self._run_id = (
+            f"{getattr(spec, 'exp_id', 'lero_mp')}_"
+            f"{time.strftime('%Y%m%d_%H%M')}"
+        )
+        self._mutation_log_path = self.output_dir / "mutation_log.jsonl"
 
     # ── public API ────────────────────────────────────────────
 
@@ -242,6 +291,29 @@ class LeroMpOuterLoop:
         inner_iters_since_last_mutation = 0
         total_candidates = 0
         outer_iter = 0
+
+        # Per-seed meta-LLM temperature when no explicit override was
+        # passed at __init__. Only used when two_level_meta is on
+        # (otherwise the v1 meta_llm_call already in place is fine).
+        if self._meta_llm_override is None and self.meta.two_level_meta:
+            seed_temp = meta_temperature_for_seed(base_seed)
+            self.meta_llm_call = _default_meta_llm_call(
+                self.meta, temperature=seed_temp,
+            )
+            _log.info(
+                "Meta-LLM temperature for seed %d = %.2f",
+                base_seed, seed_temp,
+            )
+
+        # Verdict threshold scaling (C): at 10M frames the noise floor
+        # is ~10× tighter than at 1M, so the classifier needs to scale.
+        # Base thresholds were calibrated at 1M.
+        full_frames = max(int(self.lero_config.full_frames), 1)
+        self._verdict_scale = max(1.0, full_frames / 1_000_000)
+        _log.info(
+            "Verdict threshold scale = %.2f (for full_frames=%d)",
+            self._verdict_scale, full_frames,
+        )
 
         _log.info(
             "=== LERO-MP START === seed_version=%s, meta_enabled=%s, "
@@ -294,6 +366,24 @@ class LeroMpOuterLoop:
             )
             history.append(record)
             self._persist(history, current_version, total_candidates)
+
+            # v2: if the prior outer iter mutated the template, resolve
+            # the pending mutation_log entry with the post-mutation
+            # metrics we just collected on this record.
+            if self.meta.two_level_meta and last_mutation_target_slot is not None:
+                try:
+                    update_last_entry_with_post(
+                        path=self._mutation_log_path,
+                        post_peak_M1=record.best_peak_M1,
+                        post_M6=record.best_M6,
+                        fail_modes=[record.fail_mode.value],
+                        verdict_scale=self._verdict_scale,
+                    )
+                except Exception as e:  # pragma: no cover
+                    _log.warning(
+                        "Failed to update mutation_log post fields: %s",
+                        e,
+                    )
             _log.info(
                 "  record: peak_M1=%.3f  final_M1=%s  fail_mode=%s",
                 record.best_peak_M1,
@@ -345,28 +435,77 @@ class LeroMpOuterLoop:
                 continue
 
             # 4. Classify + pick slot + mutate.
-            target_slot = pick_slot_to_edit(
-                record.fail_mode,
-                history=[r.mutation_target_slot for r in history
-                         if r.mutation_target_slot],
-                policy=self.meta.slot_policy,
-            )
-            _log.info(
-                "  TRIGGER %s → editing slot '%s' via meta-LLM",
-                decision.reason.value, target_slot,
+            top_cands = self._top_candidates(candidate_metrics, inner_dir)
+
+            # v2 PATH: call the Strategist first, let it pick domain +
+            # slot + focus + avoid from history + mutation_log. v1 PATH:
+            # pick_slot_to_edit heuristic.
+            strategy_card = None
+            if self.meta.two_level_meta:
+                try:
+                    strategy_card = strategize(
+                        history=history,
+                        mutation_log_entries=read_recent(
+                            self._mutation_log_path,
+                            n=10, task_id=self.spec.exp_id,
+                        ),
+                        top_candidates=top_cands,
+                        seed_bias=bias_for_seed(base_seed),
+                        fail_mode=record.fail_mode,
+                        meta_llm_call=self.meta_llm_call,
+                        fairness_slot_excerpt=self._fairness_excerpt(current_version),
+                    )
+                    target_slot = strategy_card.target_slot
+                    _log.info(
+                        "  TRIGGER %s → Strategist chose slot=%s "
+                        "domain=%s confidence=%s",
+                        decision.reason.value, target_slot,
+                        strategy_card.target_domain,
+                        strategy_card.confidence,
+                    )
+                except Exception as e:
+                    _log.error(
+                        "Strategist (Level 1) failed: %s: %s. "
+                        "Falling back to v1 slot-picker.",
+                        type(e).__name__, e,
+                    )
+                    strategy_card = None
+
+            if strategy_card is None:
+                target_slot = pick_slot_to_edit(
+                    record.fail_mode,
+                    history=[r.mutation_target_slot for r in history
+                             if r.mutation_target_slot],
+                    policy=self.meta.slot_policy,
+                )
+                _log.info(
+                    "  TRIGGER %s → editing slot '%s' via meta-LLM (v1)",
+                    decision.reason.value, target_slot,
+                )
+            # Prior versions of the same slot — fed to the Editor so
+            # it diverges from past attempts. Pulled from our own
+            # mutation_log (extensible to cross-run shared logs later).
+            prior_versions = (
+                read_prior_slot_versions(
+                    self._mutation_log_path,
+                    slot_name=target_slot,
+                    task_id=self.spec.exp_id,
+                    n=5,
+                )
+                if self.meta.two_level_meta else None
             )
             try:
                 mutation = propose_new_template(
                     parent_version=current_version,
                     target_slot=target_slot,
                     history=history,
-                    top_candidates=self._top_candidates(
-                        candidate_metrics, inner_dir,
-                    ),
+                    top_candidates=top_cands,
                     fail_mode=record.fail_mode,
                     meta_llm_call=self.meta_llm_call,
                     outer_iter=outer_iter + 1,
                     generated_by=self.meta.meta_model,
+                    strategy_card=strategy_card,
+                    prior_slot_versions=prior_versions,
                 )
             except Exception as e:
                 # Meta-LLM failures (auth, rate limit, malformed output)
@@ -391,6 +530,27 @@ class LeroMpOuterLoop:
                     elapsed_seconds=elapsed,
                 )
 
+            # Append a mutation_log entry at mutation time (post-fields
+            # null). They get filled in at the START of the NEXT outer
+            # iter once the new template's first record exists.
+            if self.meta.two_level_meta:
+                entry = new_log_entry(
+                    run_id=self._run_id,
+                    task_id=self.spec.exp_id,
+                    seed=base_seed,
+                    outer_iter=outer_iter,
+                    parent_version=current_version,
+                    new_version=mutation.new_version,
+                    strategy_card=(
+                        strategy_card.to_dict() if strategy_card else {}
+                    ),
+                    slot_name=target_slot,
+                    slot_content=mutation.new_slot_content,
+                    pre_peak_M1=record.best_peak_M1,
+                    pre_M6=record.best_M6,
+                )
+                append_entry(self._mutation_log_path, entry)
+
             current_version = mutation.new_version
             last_mutation_target_slot = target_slot
             last_mutation_rationale = mutation.rationale
@@ -398,6 +558,18 @@ class LeroMpOuterLoop:
             outer_iter += 1
 
     # ── internals ────────────────────────────────────────────
+
+    def _fairness_excerpt(self, prompt_version: str) -> str:
+        """Read the current prompt version's fairness slot (for Level 1
+        context). Returns empty on any error; Level 1 tolerates that."""
+        try:
+            from ..prompts.loader import PromptLoader
+            loader = PromptLoader(prompt_version)
+            if "fairness" in loader.frozen_slot_names():
+                return loader.slot_text("fairness")
+        except Exception:
+            pass
+        return ""
 
     def _llm_config_for(self, prompt_version: str) -> LLMConfig:
         """Clone ``self.llm_config`` with a different prompt_version."""

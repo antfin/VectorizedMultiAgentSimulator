@@ -167,3 +167,11 @@ class MetaPromptConfig:
     # the detected dominant failure mode (see meta/failmode.py). Other
     # options: "round_robin", "fixed:<slot_name>".
     slot_policy: str = "failmode_taxonomy"
+
+    # v2 two-level pipeline (Strategist + Editor). When True, the outer
+    # loop calls a separate "strategist" LLM to pick (target_domain,
+    # target_slot, focus, avoid) before the Editor rewrites the slot.
+    # Also turns on the cross-run mutation_log.jsonl memory. See
+    # docs/lero_metaprompt_v2_plan.md for the full design. False keeps
+    # the v1 single-call behavior as a rollback path.
+    two_level_meta: bool = False
