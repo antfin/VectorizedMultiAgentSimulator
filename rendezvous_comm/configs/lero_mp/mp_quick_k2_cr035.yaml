@@ -1,14 +1,19 @@
-exp_id: lero_mp_k2_obsonly_cr035
-name: "LERO-MP k=2 obs-only (covering_range=0.35) — ER1/ER3 comparable"
+exp_id: lero_mp_quick_k2_cr035
+name: "LERO-MP quick validation — k=2 cr=0.35, 1M frames, 3 outer iters"
 description: >
-  LERO-MP reference configuration. Mirrors ER1/ER3 covering_range=0.35
-  task setup exactly (n=4, t=4, k=2, lidar=0.35, ms=200, shared_reward,
-  targets_respawn=false, use_agent_lidar) so results land in the same
-  comparison table as er1_al_lp_sr_cr035 and er3_al_lp_sr_gatv2_cr035.
+  Compressed version of mp_k2_obsonly_cr035.yaml sized to finish in
+  ~2.5h per seed so 3 seeds in parallel complete in ~2.5h wall clock.
 
-  Obs-only mode (evolve_reward=false, evolve_observation=true) with
-  obs_state_mode=local and whitelist_strict=true per the LERO-MP §4
-  fairness constraint. Meta-prompt outer loop ENABLED.
+  Same task as mp_k2_obsonly_cr035 (n=4 t=4 k=2 lidar=0.35 cr=0.35) —
+  compatible with ER1/ER3 baselines. Meta-prompt outer loop enabled
+  with max_outer_iters=3 so we observe the full mutation cycle
+  (2 baseline records + 1 post-mutation record).
+
+  Purpose: verify on OVH that (a) M1 is non-zero at 1M full training,
+  (b) meta-LLM mutation fires and produces reasonable text, (c) the
+  post-mutation outer iter actually runs under the new template, with
+  3 seeds of variance. NOT a final result run — for that use
+  mp_k2_obsonly_cr035.yaml with 10M full training.
 
 task:
   n_agents: 4
@@ -29,7 +34,7 @@ task:
 
 train:
   algorithm: mappo
-  max_n_frames: 10_000_000
+  max_n_frames: 1_000_000
   gamma: 0.99
   on_policy_collected_frames_per_batch: 60000
   on_policy_n_envs_per_worker: 600
@@ -44,12 +49,12 @@ train:
   lmbda: 0.95
 
 lero:
-  n_iterations: 3
-  n_candidates: 5
+  n_iterations: 2
+  n_candidates: 3
   top_k: 2
-  eval_frames: 1_000_000
+  eval_frames: 500_000
   eval_episodes: 100
-  full_frames: 10_000_000
+  full_frames: 1_000_000
   evolve_reward: false
   evolve_observation: true
   reward_mode: "replace"
@@ -66,28 +71,23 @@ llm:
 
 meta_prompt:
   enabled: true
-  # Use gpt-5.4-mini for meta-LLM too. Original plan was
-  # claude-opus-4-7 but the ANTHROPIC_API_KEY in .env is currently
-  # invalid. Switch back when the key is refreshed — Claude is a
-  # stronger meta-optimizer.
   meta_model: "gpt-5.4-mini"
   meta_temperature: 0.3
   seeds: [0, 1, 2]
   slot_policy: "failmode_taxonomy"
   trigger:
-    # plateau_iters=1 so the plateau check can fire at record #2
-    # (len(history)=2 >= plateau_iters+1=2). With plateau_iters=2 the
-    # check would need len>=3, but max_outer_iters=3 triggers STOP at
-    # len=3 before the plateau evaluation runs → meta-LLM would never
-    # be called. See the 2026-04-22 trigger-math analysis.
+    # plateau_delta=0.99 guarantees plateau fires on record #2 so the
+    # meta-LLM is exercised regardless of M1 fluctuations. Real
+    # experiment uses 0.03 (meaningful improvement threshold).
     plateau_iters: 1
-    plateau_delta: 0.03
+    plateau_delta: 0.99
     variance_threshold: 0.15
     peak_vs_final_gap_max: 0.20
-    cooldown_inner_iters: 3
+    cooldown_inner_iters: 0
   budget:
+    # 3 outer iters = 2 baseline + 1 mutation + 1 post-mutation
     max_outer_iters: 3
-    max_total_inner_candidates: 200
+    max_total_inner_candidates: 30
     tier2_promotion_gap: 0.05
   fairness:
     whitelist_strict: true

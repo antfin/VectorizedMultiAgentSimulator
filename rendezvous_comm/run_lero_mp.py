@@ -83,6 +83,16 @@ def main(argv=None) -> int:
     _configure_logging(args.log_level)
     log = logging.getLogger("rendezvous.lero.mp.cli")
 
+    # On OVH, submit_training_job packs LLM keys as an encrypted env
+    # var (LERO_ENCRYPTED) plus a passphrase (LERO_PASSPHRASE). Decrypt
+    # them into os.environ before any LLM client is constructed. Locally
+    # this is a no-op (LERO_ENCRYPTED is unset and .env was loaded by
+    # LLMClient.__init__'s dotenv auto-load).
+    if os.environ.get("LERO_ENCRYPTED"):
+        from src.secrets_util import decrypt_and_load_env
+        n_keys = len(decrypt_and_load_env())
+        log.info("Decrypted %d LLM key(s) from LERO_ENCRYPTED", n_keys)
+
     cfg_path = Path(args.config).resolve()
     if not cfg_path.exists():
         log.error("Config not found: %s", cfg_path)
@@ -100,13 +110,45 @@ def main(argv=None) -> int:
         )
         return 2
 
-    # Output layout
-    output_root = (
-        Path(args.output_dir)
-        if args.output_dir
-        else _ROOT / "results" / "lero_mp" / spec.exp_id.lower() / time.strftime("%Y%m%d_%H%M")
-    )
+    # Output layout — honor the RESULTS_DIR env var so OVH (where
+    # /workspace/code is READ-ONLY and /workspace/results is writable)
+    # redirects us to the correct volume. Falls back to the repo's
+    # local ``results/`` directory for local runs.
+    if args.output_dir:
+        output_root = Path(args.output_dir)
+    else:
+        base = Path(os.environ.get("RESULTS_DIR", str(_ROOT / "results")))
+        # Include the seed in the run directory so two concurrent jobs
+        # that happen to share a minute-granularity timestamp (rare but
+        # possible when submitting a multi-seed sweep) still write to
+        # distinct subtrees — belt-and-suspenders alongside the S3
+        # prefix isolation in submit_training_job.
+        run_id = f"{time.strftime('%Y%m%d_%H%M')}_s{args.seed}"
+        output_root = base / "lero_mp" / spec.exp_id.lower() / run_id
     output_root.mkdir(parents=True, exist_ok=True)
+
+    # On OVH, /workspace/code is READ-ONLY while /workspace/results is
+    # RWD. The meta-prompt outer loop materializes new prompt version
+    # directories under src/lero/prompts/, which would fail there.
+    # Mirror prompts to a writable dir under the results volume and
+    # redirect both the PromptLoader reader and the provenance writer
+    # to it. Locally (no RESULTS_DIR env set) this is a no-op.
+    if os.environ.get("RESULTS_DIR"):
+        import shutil
+        src_prompts = _ROOT / "src" / "lero" / "prompts"
+        dst_prompts = output_root / "prompts"
+        if src_prompts.exists() and not dst_prompts.exists():
+            shutil.copytree(src_prompts, dst_prompts)
+            log.info(
+                "Mirrored read-only prompts %s → %s (writable)",
+                src_prompts, dst_prompts,
+            )
+        if dst_prompts.exists():
+            from src.lero.prompts import loader as _loader_mod
+            from src.lero.meta import provenance as _prov_mod
+            _loader_mod._PROMPTS_DIR = dst_prompts
+            _prov_mod._PROMPTS_DIR = dst_prompts
+            log.info("Prompts dir redirected to %s", dst_prompts)
 
     # Write a small manifest so post-hoc analysis can find everything.
     (output_root / "run_manifest.json").write_text(json.dumps({

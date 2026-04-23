@@ -114,14 +114,51 @@ def _contrastive_analysis(history: Sequence[TemplateRecord]) -> str:
     )
 
 
+_STATE_KEYS_SIGNAL = [
+    "lidar_targets", "lidar_agents", "agent_pos", "agent_vel", "messages",
+    "covering_range", "agents_per_target_required",
+]
+
+
+def _feature_signals(code: str) -> Dict[str, int]:
+    """Count occurrences of canonical feature-engineering patterns in a
+    candidate's source. Gives the meta-LLM concrete evidence about what
+    the top candidates are (and aren't) using.
+    """
+    if not code:
+        return {}
+    out: Dict[str, int] = {}
+    for k in _STATE_KEYS_SIGNAL:
+        out[k] = code.count(f'"{k}"') + code.count(f"'{k}'")
+    # Coordination-signal patterns from LERO S3b-local (hold/approach/
+    # crowd/sparsity) — made k=2 reach M1=0.88.
+    out["uses_gap_feature"] = int(
+        "gap" in code.lower() or
+        "second" in code.lower() or
+        (".topk(" in code and "2" in code)
+    )
+    out["uses_proximity_count"] = int(
+        "count" in code.lower() and (
+            "lidar" in code.lower() or "< covering_range" in code
+        )
+    )
+    out["uses_hold_or_approach"] = int(
+        "hold" in code.lower() or "approach" in code.lower() or
+        "crowd" in code.lower()
+    )
+    out["uses_intensity"] = int(
+        "1.0/" in code or "1.0 /" in code or "reciprocal" in code.lower() or
+        "torch.exp(-" in code
+    )
+    return out
+
+
 def _format_top_candidates(
     top_candidates: Sequence[Dict[str, Any]], limit: int = 3,
 ) -> str:
-    """Compact dump of top-k candidate code snippets + metrics.
-
-    Each entry is a dict with keys: ``reward_code`` (str), ``obs_code``
-    (str), and metric keys. Missing keys are omitted.
-    """
+    """Compact dump of top-k candidate code snippets + metrics + an
+    auto-computed feature-signal summary so the meta-LLM has concrete
+    evidence to cite (not just code it may or may not read carefully)."""
     if not top_candidates:
         return "(no candidates reported)"
     blocks = []
@@ -131,13 +168,26 @@ def _format_top_candidates(
         m6 = c.get("M6_coverage_progress", 0.0)
         peak = c.get("peak_M1")
         final = c.get("final_M1")
+        code = c.get("obs_code") or c.get("reward_code") or ""
+        sig = _feature_signals(code)
         parts = [
             f"### Candidate {i + 1}",
-            f"M1={m1:.3f}  M2={m2:.2f}  M6={m6:.3f}" + (
+            f"  M1={m1:.3f}  M2={m2:.2f}  M6={m6:.3f}" + (
                 f"  peak_M1={peak:.3f}  final_M1={final:.3f}"
                 if peak is not None and final is not None else ""
             ),
         ]
+        # Feature-signal summary (what the candidate's code references)
+        state_refs = {k: sig[k] for k in _STATE_KEYS_SIGNAL if sig.get(k, 0)}
+        flags = [
+            f"gap_feature={sig.get('uses_gap_feature', 0)}",
+            f"proximity_count={sig.get('uses_proximity_count', 0)}",
+            f"hold_or_approach={sig.get('uses_hold_or_approach', 0)}",
+            f"intensity={sig.get('uses_intensity', 0)}",
+        ]
+        parts.append(
+            f"  state_refs={state_refs}  {' '.join(flags)}"
+        )
         if c.get("reward_code"):
             parts.append("```python")
             parts.append(c["reward_code"].strip())
@@ -148,6 +198,50 @@ def _format_top_candidates(
             parts.append("```")
         blocks.append("\n".join(parts))
     return "\n\n".join(blocks)
+
+
+def _candidate_spread(top_candidates: Sequence[Dict[str, Any]]) -> str:
+    """Quick aggregate stats the LLM can cite directly in its rationale.
+
+    We do the arithmetic once so the LLM doesn't have to — its track
+    record with numerical reasoning in long prompts is shaky.
+    """
+    if not top_candidates:
+        return "(no candidates to aggregate)"
+    valid = [c for c in top_candidates if "_error" not in c]
+    if not valid:
+        return "(all top candidates errored)"
+    m6_vals = [c.get("M6_coverage_progress", 0.0) for c in valid]
+    m2_vals = [c.get("M2_avg_return", 0.0) for c in valid]
+    m1_vals = [c.get("M1_success_rate", 0.0) for c in valid]
+    # Which patterns appear in the BEST vs WORST (by M6)?
+    ranked = sorted(
+        valid, key=lambda c: c.get("M6_coverage_progress", 0.0), reverse=True,
+    )
+    best, worst = ranked[0], ranked[-1]
+    best_sig = _feature_signals(
+        best.get("obs_code") or best.get("reward_code") or ""
+    )
+    worst_sig = _feature_signals(
+        worst.get("obs_code") or worst.get("reward_code") or ""
+    )
+    deltas = {
+        k: best_sig.get(k, 0) - worst_sig.get(k, 0)
+        for k in ("uses_gap_feature", "uses_proximity_count",
+                  "uses_hold_or_approach", "uses_intensity")
+    }
+    return (
+        f"  N valid candidates: {len(valid)}\n"
+        f"  M1 range: [{min(m1_vals):.3f}, {max(m1_vals):.3f}]  "
+        f"mean={sum(m1_vals) / len(m1_vals):.3f}\n"
+        f"  M6 range: [{min(m6_vals):.3f}, {max(m6_vals):.3f}]  "
+        f"mean={sum(m6_vals) / len(m6_vals):.3f}\n"
+        f"  M2 range: [{min(m2_vals):.2f}, {max(m2_vals):.2f}]  "
+        f"mean={sum(m2_vals) / len(m2_vals):.2f}\n"
+        f"  Best-M6 vs Worst-M6 feature deltas: {deltas}\n"
+        f"  (positive delta = the BEST candidate uses that pattern more "
+        f"than the WORST)"
+    )
 
 
 def build_meta_prompt(
@@ -180,25 +274,45 @@ def build_meta_prompt(
         if fairness_hash else "frozen slots: none"
     )
 
+    # Inline the full fairness slot so the LLM can see what rules it
+    # must NOT restate. Empirically (2026-04-22) the meta-LLM would
+    # otherwise "play safe" by reiterating the fairness contract as
+    # generic guidance, producing no real signal for the inner loop.
+    if loader is not None and "fairness" in frozen_slots:
+        fairness_text = loader.slot_text("fairness")
+    else:
+        fairness_text = "(fairness slot not available in this context)"
+
     return f"""[ROLE]
-You are a prompt engineer tuning an instruction template used to
-generate PyTorch reward/observation code for a multi-agent RL task.
+You are a prompt engineer analyzing *actual RL-training evidence* to
+improve the instruction template that generates PyTorch reward /
+observation code for a multi-agent RL task. Your job is diagnostic,
+not advisory. Read the evidence, identify 1-3 *related*, *concrete*
+issues visible in the candidate code or metrics, and propose a
+targeted edit that addresses them.
 
 [HARD CONSTRAINTS — NEVER VIOLATE]
-- The `fairness` slot is FROZEN. You may read it in context but you
-  must never produce edits to it: {frozen_line}
-- Any slot you edit must remain consistent with the fairness rules:
-  the agent policy only sees local sensors + messages at execution
-  time. Do not reintroduce oracle-state references in observation code.
-- Rewards must stay within the magnitude bound (|r| ≤ reward_clip=50).
+- The `fairness` slot is FROZEN. You may read it but never edit it:
+  {frozen_line}
 - The slot you may edit this round is: `{target_slot}`. Do NOT edit
-  any other slot. The outer loop uses single-slot edits so credit
-  assignment is clean.
+  any other slot.
+- Your edit MUST add guidance BEYOND what the fairness slot already
+  says. Do NOT restate, paraphrase, or re-enumerate the fairness
+  rules — those are already in every prompt, and duplicating them
+  wastes context without helping the inner-loop LLM produce better
+  code. If your draft reads like a rephrasing of the fairness slot,
+  throw it out and think harder.
+- Rewards must stay within |r| ≤ 50 (already enforced at runtime).
+
+[FAIRNESS SLOT — already shown to the inner-loop LLM, DO NOT RESTATE]
+------------------------------------------------------------
+{fairness_text.strip()}
+------------------------------------------------------------
 
 [OBJECTIVE]
-Maximize: peak-M1 primary, M6 (coverage progress) tie-break.
-Secondary: do not induce reward-hacking (peak-vs-final gap < 0.20),
-NaN crashes, or dimension mismatches.
+Maximize peak-M1 primary, M6 (coverage progress) tie-break. Secondary:
+avoid reward-hacking (peak-vs-final gap < 0.20), NaN crashes, dim
+mismatches.
 
 [DOMINANT FAIL MODE (from the last inner run)]
 {fail_mode.value}
@@ -209,27 +323,65 @@ NaN crashes, or dimension mismatches.
 [CONTRASTIVE ANALYSIS]
 {_contrastive_analysis(history)}
 
-[CURRENT `{target_slot}` SLOT TEXT]
+[CANDIDATE-AGGREGATE STATS — the numerical evidence]
+{_candidate_spread(top_candidates)}
+
+[TOP CANDIDATES UNDER CURRENT TEMPLATE — code + feature signals]
+{_format_top_candidates(top_candidates)}
+
+[REFERENCE TECHNIQUES KNOWN TO HELP ON THIS TASK CLASS]
+These are patterns that worked in prior rendezvous experiments. Use
+them as *prompts for your reflection*, not text to quote:
+  - Nearest vs 2nd-nearest target/agent distances + the gap between
+    them (tells the policy "is this target isolated vs contested?")
+  - Proximity counts: how many lidar rays return distance < covering_range
+  - Intensity features: sum of 1/dist over close rays (sharper signal
+    than raw distances)
+  - Coordination flags: hold_signal = (target_near AND agent_near) —
+    lets an agent that arrived first wait for a partner rather than
+    overshooting
+  - Crowd / sparsity signals from proximity counts
+  - For rewards: smooth shaping on coverage-progress delta instead of
+    spiky terminal bonuses
+
+[CURRENT `{target_slot}` SLOT TEXT — what you are replacing]
 ------------------------------------------------------------
 {cur_slot_text}
 ------------------------------------------------------------
 
-[TOP CANDIDATES UNDER CURRENT TEMPLATE]
-{_format_top_candidates(top_candidates)}
-
 [TASK]
-Propose a new version of the `{target_slot}` slot. Return EXACTLY
-this format (no other prose, no YAML fences around the whole thing):
+Step 1 — DIAGNOSIS. Read the candidate code and the aggregate stats.
+Identify 1-3 *related* issues visible in the evidence. Good issues
+are of the form:
+  "The top candidates' M6 varies from X to Y, but all of them omit
+   <specific feature>. Adding it might narrow that spread."
+  "Candidate 2 has M2=... but failed with error ...; the pattern
+   suggests <specific cause>."
+Bad issues are generic — "avoid NaN" or "use local sensors" — those
+are already in the fairness slot.
 
-Rationale: <1-3 sentences explaining why this edit should help>
+Step 2 — EDIT. Write a new `{target_slot}` slot whose guidance
+addresses those 1-3 issues (and ONLY those). Mention specific
+sensors, features, or patterns by name.
+
+Return EXACTLY this format (no other prose, no YAML fences around
+the whole thing):
+
+Diagnosis:
+1. <issue 1, cite specific metrics or code lines>
+2. <issue 2 if related>
+3. <issue 3 if related>
+
+Rationale: <1-3 sentences mapping the diagnosis to the edit>
 Expected-improvement: small | medium | large
 
 {SLOT_BEGIN}
-<the complete new text of the `{target_slot}` slot>
+<the complete new text of the `{target_slot}` slot — targeted,
+specific, and non-overlapping with the fairness slot>
 {SLOT_END}
 
-Keep the new slot the same size order-of-magnitude as the current
-one ({len(cur_slot_text)} chars). Do not echo surrounding slots.
+Keep the new slot concise ({max(len(cur_slot_text), 200)} chars order
+of magnitude; hard cap is 20000). Do not restate fairness rules.
 """
 
 
@@ -237,10 +389,48 @@ one ({len(cur_slot_text)} chars). Do not echo surrounding slots.
 
 _RATIONALE_RE = re.compile(r"Rationale:\s*(.+?)(?=\n[A-Z][a-z]+-?[a-z]*:|\n{2,}|\Z)", re.DOTALL)
 _EXPECTED_RE = re.compile(r"Expected-improvement:\s*(small|medium|large)", re.IGNORECASE)
+_DIAGNOSIS_RE = re.compile(r"Diagnosis:\s*(.+?)(?=\nRationale:|\n{2,}|\Z)", re.DOTALL)
 _SLOT_RE = re.compile(
     rf"{re.escape(SLOT_BEGIN)}\s*\n?(.*?)\n?\s*{re.escape(SLOT_END)}",
     re.DOTALL,
 )
+
+
+# Heuristic fairness-restatement detector. Triggered when the new slot
+# is essentially a rephrasing of the frozen fairness contract (which
+# the inner-loop LLM already sees separately). See the 2026-04-22
+# quick-run finding where 3/3 seeds produced near-identical generic
+# restatements.
+_FAIRNESS_RESTATEMENT_MARKERS = [
+    ("local sensor", "oracle"),          # both ⇒ fairness paraphrase
+    ("local sensor", "clamp"),
+    ("reward", "|r| <= 50"),
+]
+
+
+def _is_fairness_restatement(new_slot: str) -> bool:
+    """True if the new slot looks like a paraphrase of the fairness
+    slot — i.e., contains all markers from at least one tuple below
+    and adds nothing beyond them."""
+    low = new_slot.lower()
+    for pair in _FAIRNESS_RESTATEMENT_MARKERS:
+        if all(m.lower() in low for m in pair):
+            # Count how much non-boilerplate content there is. If the
+            # slot is short AND hits every fairness marker, it's a
+            # restatement. We keep this permissive — longer slots with
+            # specific feature names (lidar_targets, hold_signal, gap,
+            # intensity, ...) pass.
+            specific_hits = sum(
+                low.count(tok) for tok in (
+                    "lidar_targets", "lidar_agents", "hold_signal",
+                    "approach_signal", "gap", "intensity",
+                    "2nd-nearest", "second-nearest", "crowd",
+                    "sparsity", "topk", "potential",
+                )
+            )
+            if specific_hits == 0 and len(new_slot) < 1500:
+                return True
+    return False
 
 
 def parse_mutation_response(
@@ -270,6 +460,17 @@ def parse_mutation_response(
     if n > MAX_SLOT_CHARS:
         raise MutationParseError(
             f"New slot exceeds size limit ({n} > {MAX_SLOT_CHARS})."
+        )
+    if _is_fairness_restatement(new_slot):
+        raise MutationParseError(
+            "New slot reads as a paraphrase of the fairness slot "
+            "(contains its markers without any specific feature / "
+            "coordination-signal references). The inner-loop LLM "
+            "already sees the fairness slot verbatim; restating it "
+            "adds no signal. Retry with a targeted edit that cites "
+            "specific features (e.g. lidar_targets proximity count, "
+            "nearest/2nd-nearest gaps, hold/approach/crowd flags, "
+            "intensity) or specific reward-shape patterns."
         )
 
     r = _RATIONALE_RE.search(text)

@@ -95,7 +95,12 @@ def build_template_record(
     M1/M6/M2 out of the ``final_metrics`` section and classify the
     fail-mode using the per-candidate metrics list.
     """
-    fm = inner_result.get("final_metrics") or {}
+    # LeroLoop.run() returns a FLAT dict — M1/M2/M6/peak_M1 etc. are
+    # at the top level alongside bookkeeping fields (lero_iterations,
+    # llm_model, fallback_chain). No nested "final_metrics" key.
+    # (The file written to disk is also flat; only candidate_*_metrics
+    # files are per-candidate.)
+    fm = inner_result or {}
 
     # Tier-2 full-training metrics (may be None for short runs or when
     # the inner loop didn't actually finish training).

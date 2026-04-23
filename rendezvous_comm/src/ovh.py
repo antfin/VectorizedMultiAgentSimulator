@@ -154,6 +154,7 @@ def submit_training_job(
     llm_env: Optional[Dict[str, str]] = None,
     runner: str = "train.py",
     extra_cli: str = "--device cuda",
+    exp_id_suffix: str = "",
 ) -> Optional[str]:
     """Submit an OVH AI Training job.
 
@@ -212,12 +213,52 @@ def submit_training_job(
     # OVH syncs the entire local volume back to the bucket prefix
     # when the job ends — without isolation, the last job to
     # finalize wins and earlier results are lost.
-    try:
-        with open(config_yaml) as _f:
-            _raw = yaml.safe_load(_f)
-        exp_id = _raw.get("exp_id", "")
-    except Exception:
-        exp_id = ""
+    #
+    # Silent-fallback-to-bucket-root was the 2026-04-16 data-loss bug:
+    # if the YAML failed to open (e.g. relative path didn't resolve),
+    # the code set exp_id="" and the job mounted bucket root. Loud
+    # failure is safer here than "maybe everything worked, maybe we
+    # overwrote another job's results."
+    # Support both calling conventions:
+    #   "rendezvous_comm/configs/lero_mp/foo.yaml"  (from repo root)
+    #   "configs/lero_mp/foo.yaml"                   (from rendezvous_comm/)
+    # Normalize to the repo-root form because that's what the container
+    # expects at /workspace/code/rendezvous_comm/<config>. Passing the
+    # shorter form was the 2026-04-22 bug that silently read a stale
+    # bucket-root copy of the config (see docs/ovh_gpu_setup.md).
+    _local_candidates = [Path(config_yaml), Path("rendezvous_comm") / config_yaml]
+    # Also try stripping a leading rendezvous_comm/ (covers callers who
+    # pass the repo-root form while CWD is already rendezvous_comm/).
+    if config_yaml.startswith("rendezvous_comm/"):
+        _local_candidates.append(Path(config_yaml[len("rendezvous_comm/"):]))
+    _abs_config = next(
+        (c.resolve() for c in _local_candidates if c.resolve().exists()),
+        None,
+    )
+    if _abs_config is None:
+        raise FileNotFoundError(
+            f"Config not found: {config_yaml} (tried "
+            f"{[str(c) for c in _local_candidates]})"
+        )
+    # Rewrite to the repo-root form so the container path is correct.
+    if not config_yaml.startswith("rendezvous_comm/"):
+        config_yaml = f"rendezvous_comm/{config_yaml}"
+    with open(_abs_config) as _f:
+        _raw = yaml.safe_load(_f)
+    exp_id = (_raw or {}).get("exp_id", "")
+    if not exp_id:
+        raise ValueError(
+            f"Config {config_yaml} has no 'exp_id' field; refusing to "
+            f"submit a job that would write to bucket root. Add an "
+            f"'exp_id:' to the YAML."
+        )
+    # Optional suffix lets callers submit N parallel jobs with the
+    # same config YAML but distinct S3 prefixes — which is the
+    # documented fix for the 2026-03-21 parallel-FINALIZE data-loss
+    # bug. Each job gets its own prefix, so no job's sync-back
+    # overwrites another's artifacts.
+    if exp_id_suffix:
+        exp_id = f"{exp_id}{exp_id_suffix}"
     # OVH volume syntax: `container@alias[/prefix]:mount:perm` —
     # the prefix is optional and must NOT have a trailing slash.
     # Without this, OVH parses the trailing slash as part of the

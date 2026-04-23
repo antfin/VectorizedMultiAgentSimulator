@@ -64,6 +64,10 @@ llm:
 
 meta_prompt:
   enabled: false
+  # Kept here so the eager LLMClient init doesn't default to
+  # claude-opus-4-7 (invalid key in current .env). Using gpt-5.4-mini
+  # means both inner and (would-be) meta calls share the OpenAI key.
+  meta_model: "gpt-5.4-mini"
 
 sweep:
   seeds: [0]

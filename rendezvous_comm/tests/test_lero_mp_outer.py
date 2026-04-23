@@ -96,7 +96,11 @@ class StubInnerLoop:
         iter_dir.mkdir(exist_ok=True)
         for j, m in enumerate(step.get("candidates", [])):
             (iter_dir / f"candidate_{j}_metrics.json").write_text(json.dumps(m))
-        return {"final_metrics": step["final_metrics"]}
+        # LeroLoop.run() returns a FLAT dict where M1/M2/M6/peak_M1
+        # are at the top level alongside bookkeeping. Mimic that shape
+        # exactly so build_template_record in tests exercises the same
+        # code path as production.
+        return step["final_metrics"]
 
 
 @pytest.fixture(autouse=True)
@@ -176,11 +180,11 @@ class TestBuildTemplateRecord:
     def test_builds_from_inner_result(self):
         rec = build_template_record(
             version="root_v",
-            inner_result={"final_metrics": {
+            inner_result={
                 "M1_success_rate": 0.75,
                 "M6_coverage_progress": 0.9,
                 "M2_avg_return": 12.0,
-            }},
+            },
             candidate_metrics=[
                 {"M1_success_rate": 0.75, "M6_coverage_progress": 0.9,
                  "M2_avg_return": 12.0},
@@ -198,9 +202,9 @@ class TestBuildTemplateRecord:
 
     def test_fail_mode_propagated_from_candidates(self):
         rec = build_template_record(
-            version="v", inner_result={"final_metrics": {
+            version="v", inner_result={
                 "M1_success_rate": 0.0,
-            }},
+            },
             candidate_metrics=[{
                 "_error": "forbidden key",
                 "_error_type": "FairnessViolation",
@@ -212,7 +216,7 @@ class TestBuildTemplateRecord:
 
     def test_seed_std_computed_from_list(self):
         rec = build_template_record(
-            version="v", inner_result={"final_metrics": {"M1_success_rate": 0.5}},
+            version="v", inner_result={"M1_success_rate": 0.5},
             candidate_metrics=[{"M1_success_rate": 0.5}],
             mutation_target_slot=None, mutation_rationale=None,
             seed_M1_values=[0.4, 0.5, 0.6],
@@ -222,7 +226,7 @@ class TestBuildTemplateRecord:
     def test_peak_m1_falls_back_to_final_when_absent(self):
         rec = build_template_record(
             version="v",
-            inner_result={"final_metrics": {"M1_success_rate": 0.42}},
+            inner_result={"M1_success_rate": 0.42},
             candidate_metrics=[{"M1_success_rate": 0.42}],
             mutation_target_slot=None, mutation_rationale=None,
         )
@@ -236,12 +240,12 @@ class TestBuildTemplateRecord:
         """
         rec = build_template_record(
             version="v",
-            inner_result={"final_metrics": {
+            inner_result={
                 # last-frame / 0-learning case
                 "M1_success_rate": 0.0,
                 "M6_coverage_progress": 0.0,
                 "M2_avg_return": 0.0,
-            }},
+            },
             candidate_metrics=[
                 {"M1_success_rate": 0.0, "M6_coverage_progress": 0.10,
                  "M2_avg_return": -1.5},
@@ -259,7 +263,7 @@ class TestBuildTemplateRecord:
     def test_errored_candidates_ignored_by_best_of(self):
         rec = build_template_record(
             version="v",
-            inner_result={"final_metrics": {}},
+            inner_result={},
             candidate_metrics=[
                 {"_error": "oom", "_error_type": "RuntimeError"},
                 {"M1_success_rate": 0.4, "M6_coverage_progress": 0.6,

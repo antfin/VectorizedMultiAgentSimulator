@@ -17,6 +17,7 @@ from src.lero.meta.mutation import (
     SLOT_END,
     MutationParseError,
     MutationResult,
+    _is_fairness_restatement,
     build_meta_prompt,
     parse_mutation_response,
     propose_new_template,
@@ -100,6 +101,10 @@ class TestBuildMetaPrompt:
             "HARD CONSTRAINTS", "frozen", "guidance",
             "OBJECTIVE", "peak-M1", "HISTORY", "CONTRASTIVE",
             "CURRENT `guidance` SLOT", "TOP CANDIDATES",
+            # New sections from the 2026-04-22 redesign
+            "DIAGNOSIS", "REFERENCE TECHNIQUES",
+            "CANDIDATE-AGGREGATE STATS",
+            "DO NOT RESTATE",
             SLOT_BEGIN, SLOT_END, FailMode.REWARD_HACK.value,
         ]:
             assert marker in p, f"missing {marker!r} in prompt"
@@ -190,6 +195,55 @@ class TestParseMutationResponse:
         resp = _canned_response(slot_body=body)
         new_slot, _, _ = parse_mutation_response(resp, "guidance")
         assert len(new_slot.rstrip("\n")) == MIN_SLOT_CHARS
+
+
+class TestFairnessRestatementGuard:
+    """Regression for 2026-04-22: 3/3 quick-run seeds produced
+    near-identical 'use local sensors, clamp |r|<=50' outputs that
+    just paraphrased the fairness slot. Reject those at parse time."""
+
+    def test_generic_fairness_paraphrase_rejected(self):
+        # The actual terse output from seed 0 of the 2026-04-22 run.
+        paraphrase = (
+            "Use only local sensors and received messages in observations; "
+            "never reference global/oracle state. Keep tensors shape-stable "
+            "across agents and timesteps, and ensure all rewards are finite "
+            "and clipped to the configured bound. Prefer simple, monotonic "
+            "shaping terms that encourage coverage progress without large "
+            "spikes or terminal-only bonuses."
+        )
+        assert _is_fairness_restatement(paraphrase) is True
+        resp = _canned_response(slot_body=paraphrase)
+        with pytest.raises(MutationParseError) as exc:
+            parse_mutation_response(resp, "guidance")
+        assert "paraphrase of the fairness slot" in str(exc.value)
+
+    def test_targeted_feature_edit_passes(self):
+        targeted = (
+            "Derive per-agent features from lidar_targets: nearest and "
+            "second-nearest distances, plus the gap (nearest - 2nd-nearest) "
+            "to signal isolated vs contested targets. Add a proximity_count "
+            "feature: number of lidar rays with distance below covering_range. "
+            "Combine target_near with agent_near into a hold_signal so the "
+            "arriving agent waits for a partner instead of overshooting."
+        )
+        assert _is_fairness_restatement(targeted) is False
+        new_slot, _, _ = parse_mutation_response(
+            _canned_response(slot_body=targeted), "guidance",
+        )
+        assert "hold_signal" in new_slot
+
+    def test_long_paraphrase_with_specific_feature_passes(self):
+        # Real-world compromise: an edit that DOES restate fairness
+        # but also introduces ≥1 concrete feature name should pass.
+        mixed = (
+            "Keep logic local — only lidar_targets, lidar_agents, agent_pos, "
+            "agent_vel, and messages are safe at execution time; avoid "
+            "oracle state. Clamp |r|<=50. ALSO: add a hold_signal flag "
+            "(target_near AND agent_near) so arriving agents wait for "
+            "partners."
+        )
+        assert _is_fairness_restatement(mixed) is False
 
 
 # ── propose_new_template (end-to-end, stubbed LLM) ──────────────
