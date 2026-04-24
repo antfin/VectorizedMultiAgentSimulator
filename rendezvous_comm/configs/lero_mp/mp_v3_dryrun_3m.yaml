@@ -1,0 +1,113 @@
+exp_id: lero_mp_v3_dryrun_3m
+name: "LERO-MP v3 dry-run — 3M per seed, 2–3 metaprompts, ER1-comparable"
+description: >
+  First v3 dry-run after the Step 1–9 implementation. Purpose:
+    - Fire every v3 feature (retry loop, conditional output_spec,
+      Pydantic schemas, Temp=1.0, behavioral signals, LLM-gated
+      include_signals, Critic, reproducibility cache, prior-memory)
+      on a 3-seed run before committing to a full sweep.
+    - Validate the §9 success criteria via scripts/review_dry_run.py.
+
+  Task parameters mirror ER1/ER2/ER3/S3b-local exactly so peak-M1
+  is directly comparable:
+    n=4, t=4, k=2, cr=0.35, ms=200, dim_c=0.
+
+  Compute budget per seed (3M target, "2-3 metaprompts"):
+    Inner screen: n_iterations=1 × n_candidates=2 × 200k = 400k
+    Final train:  full_frames=800k per outer iter
+    Per outer:    1.2M
+    Per seed:     max_outer_iters=3 × 1.2M = 3.6M ≈ 3M target
+    Per sweep:    3 seeds × 3.6M = 10.8M total ≈ €22–25 on OVH.
+
+  Three outer iterations means up to 2 metaprompts between runs
+  (outer_0 is the baseline; outer_1 is after the 1st mutation;
+  outer_2 is after the 2nd). If ≥3 of 5 §9 criteria fire in review,
+  green-light the 10M sweep. Otherwise iterate on prompts/priors
+  before burning more compute.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 800_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1         # one screening round per outer iter
+  n_candidates: 2         # 2 candidates per screen
+  top_k: 2
+  eval_frames: 200_000    # 200k per candidate (quick screen)
+  eval_episodes: 100
+  full_frames: 800_000    # 800k final training per outer iter
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0          # v3 default (was 0.8)
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2"
+
+meta_prompt:
+  enabled: true
+  two_level_meta: true              # Strategist + Editor + Critic
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0             # v3 default (was 0.3)
+  meta_api_base: null
+  llm_cache: "off"                  # v3 default: off for fresh runs
+                                    # Flip to "read_write" to build replay cache;
+                                    # re-run with "read_only" to validate §9 #5.
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"  # unused when two_level_meta=true
+  trigger:
+    plateau_iters: 1
+    plateau_delta: 0.99             # force mutation every outer iter for the dry-run
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+  budget:
+    max_outer_iters: 3              # baseline + 2 metaprompts → 2-3 mutations
+    max_total_inner_candidates: 30
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

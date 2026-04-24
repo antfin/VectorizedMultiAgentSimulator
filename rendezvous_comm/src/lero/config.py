@@ -24,7 +24,11 @@ class LLMConfig:
 
     # Model identifier (LiteLLM format: "provider/model" or just "model")
     model: str = "gpt-5.4-mini"
-    temperature: float = 0.8
+    # v3 default: 1.0 (was 0.8). Structured outputs + retry loop make
+    # temperature-for-diversity the preferred design — content variance
+    # comes from *different inputs* (different candidates, different
+    # mutation history), not from same-input/different-sampling.
+    temperature: float = 1.0
     # Max output tokens. None = use provider default.
     max_tokens: Optional[int] = None
 
@@ -152,8 +156,15 @@ class MetaPromptConfig:
     # inner-loop LLMConfig. Kept loose (dict) to avoid tight coupling —
     # the runner instantiates an LLMClient from these fields.
     meta_model: str = "claude-opus-4-7"
-    meta_temperature: float = 0.3
+    # v3 default: 1.0 (was 0.3). See LLMConfig.temperature for rationale.
+    meta_temperature: float = 1.0
     meta_api_base: Optional[str] = None
+    # LLM-call cache mode for reproducibility replay (LERO-MP v3 §5.1).
+    # "off" | "read_write" | "read_only" | "write_only". Env override:
+    # LERO_LLM_CACHE_MODE. Default off so fresh runs don't accidentally
+    # replay stale cached responses.
+    llm_cache: str = "off"
+    llm_cache_dir: Optional[str] = None
 
     trigger: MetaPromptTrigger = field(default_factory=MetaPromptTrigger)
     budget: MetaPromptBudget = field(default_factory=MetaPromptBudget)

@@ -83,6 +83,19 @@ def main(argv=None) -> int:
     _configure_logging(args.log_level)
     log = logging.getLogger("rendezvous.lero.mp.cli")
 
+    # v3 §5.4: torch/numpy/random seed-lock for reproducibility.
+    # Must run before any model/env construction so RNG streams are
+    # pinned. Per-LLM-call seeds are derived separately (see §5.2).
+    import random as _random
+    import numpy as _np
+    import torch as _torch
+    _random.seed(args.seed)
+    _np.random.seed(args.seed)
+    _torch.manual_seed(args.seed)
+    if _torch.cuda.is_available():
+        _torch.cuda.manual_seed_all(args.seed)
+    log.info("RNG seeds locked at seed=%d (random/np/torch)", args.seed)
+
     # On OVH, submit_training_job packs LLM keys as an encrypted env
     # var (LERO_ENCRYPTED) plus a passphrase (LERO_PASSPHRASE). Decrypt
     # them into os.environ before any LLM client is constructed. Locally

@@ -52,7 +52,12 @@ class PromptLoader:
 
     # ── public API ────────────────────────────────────────────────
 
-    def render(self, template_name: str, **kwargs) -> str:
+    def render(
+        self,
+        template_name: str,
+        output_spec_variant: Optional[str] = None,
+        **kwargs,
+    ) -> str:
         """Render a prompt template with variable substitution.
 
         Uses Python's string.Template ($variable syntax) for simplicity.
@@ -64,9 +69,19 @@ class PromptLoader:
         in declared order (with frozen-slot hash verification). This is
         the hook that LERO-MP's meta-prompt optimizer uses to edit
         individual slots without touching the rest of the template.
+
+        ``output_spec_variant`` (LERO-MP v3 §3.2): when set to
+        ``"both" | "reward_only" | "obs_only"``, the ``output_spec``
+        slot is read from ``output_spec_<variant>.txt`` instead of the
+        default ``output_spec.txt``. Lets the outer loop drop the
+        unused function's signature from the inner-LLM prompt when
+        evolve_reward or evolve_observation is False (~40% token
+        savings on obs-only runs).
         """
         if template_name == "initial_user.txt":
-            assembled = self._assemble_initial_user()
+            assembled = self._assemble_initial_user(
+                output_spec_variant=output_spec_variant,
+            )
             if assembled is not None:
                 return string.Template(assembled).safe_substitute(**kwargs)
         if template_name not in self._cache:
@@ -122,7 +137,10 @@ class PromptLoader:
         self._meta = yaml.safe_load(path.read_text()) or {}
         return self._meta
 
-    def _assemble_initial_user(self) -> Optional[str]:
+    def _assemble_initial_user(
+        self,
+        output_spec_variant: Optional[str] = None,
+    ) -> Optional[str]:
         """Concatenate slot files into a single initial_user body.
 
         Returns None if the template does not declare ``initial_user_slots``
@@ -136,7 +154,17 @@ class PromptLoader:
         frozen_hashes = (meta or {}).get("frozen_hashes", {}) or {}
         parts: List[str] = []
         for slot in slots:
-            fpath = self.template_dir / slot["file"]
+            # v3 §3.2: swap output_spec file for the conditional variant
+            file_name = slot["file"]
+            if (
+                slot["name"] == "output_spec"
+                and output_spec_variant in ("both", "reward_only", "obs_only")
+            ):
+                variant_name = f"output_spec_{output_spec_variant}.txt"
+                variant_path = self.template_dir / variant_name
+                if variant_path.exists():
+                    file_name = variant_name
+            fpath = self.template_dir / file_name
             if not fpath.exists():
                 raise FileNotFoundError(
                     f"Slot file not found: {fpath} "

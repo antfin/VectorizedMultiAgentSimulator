@@ -9,6 +9,7 @@ Orchestrates:
 """
 
 import copy
+import hashlib
 import inspect
 import json
 import logging
@@ -23,11 +24,32 @@ from ..config import ExperimentSpec, TaskConfig, TrainConfig
 from ..storage import ExperimentStorage
 from .codegen import CandidateCode, build_feedback, extract_candidates
 from .config import LeroConfig, LLMConfig
+from .inner_llm import CandidateGenerationFailed, InnerLLM
 from .llm_client import LLMClient
 from .prompts.loader import PromptLoader
 from .scenario_patch import make_patched_scenario_class
 
 _log = logging.getLogger("rendezvous.lero")
+
+
+def _derive_seed(
+    run_id: str,
+    seed: int,
+    iteration: int,
+    candidate_idx: int,
+    level: str,
+) -> int:
+    """Per-call OpenAI seed derivation (LERO-MP v3 §5.2).
+
+    Hashing (run_id, seed, iteration, candidate_idx, level) decorrelates
+    each LLM call while keeping reproducible under a fixed run_id.
+    Per-candidate derivation is required: at temperature=1.0 with
+    OpenAI seeding enabled, ``llm.generate(n=3)`` without distinct
+    seeds returns the same text three times.
+    """
+    key = f"{run_id}|{seed}|{iteration}|{candidate_idx}|{level}"
+    h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+    return int(h, 16) % (2 ** 31)
 
 
 def _build_experiment_context(
@@ -489,6 +511,8 @@ class LeroLoop:
         self.lero = lero_config
         self.llm_config = llm_config
         self.prompt_loader = PromptLoader(version=llm_config.prompt_version)
+        # v3 §5.1: shared cache if the outer loop injected one (via
+        # set_llm_cache) — by default off.
         self.llm = LLMClient(llm_config)
 
         # Output directory for LERO artifacts
@@ -539,30 +563,36 @@ class LeroLoop:
                 iteration + 1, self.lero.n_iterations,
             )
 
-            # 1. Generate candidates from LLM
+            # 1. Generate candidates from LLM (v3: retry loop per candidate)
             _log.info("Generating %d candidates...", self.lero.n_candidates)
-            try:
-                responses = self.llm.generate(
-                    messages, n=self.lero.n_candidates,
-                )
-            except Exception as e:
-                _log.warning(
-                    "LLM call failed in iteration %d: %s. "
-                    "Skipping iteration.",
-                    iteration, e,
-                )
-                continue
-
-            candidates = extract_candidates(
-                responses,
+            candidates: List[CandidateCode] = []
+            inner = InnerLLM(
+                self.llm,
                 evolve_reward=self.lero.evolve_reward,
                 evolve_observation=self.lero.evolve_observation,
+                use_structured=False,  # regex path; structured opt-in later
             )
+            for cand_idx in range(self.lero.n_candidates):
+                seed_base = _derive_seed(
+                    run_id=self.output_dir.name,
+                    seed=seed,
+                    iteration=iteration,
+                    candidate_idx=cand_idx,
+                    level="inner",
+                )
+                try:
+                    cand = inner.generate(messages, seed_base=seed_base)
+                    candidates.append(cand)
+                except CandidateGenerationFailed as e:
+                    _log.warning(
+                        "Candidate %d/%d: retries exhausted — %s",
+                        cand_idx + 1, self.lero.n_candidates, e,
+                    )
 
             if not candidates:
                 _log.warning(
-                    "No valid candidates extracted in iteration %d. "
-                    "Retrying with same messages.",
+                    "No valid candidates extracted in iteration %d "
+                    "even after retries. Skipping iteration.",
                     iteration,
                 )
                 continue
@@ -572,7 +602,7 @@ class LeroLoop:
                 len(candidates), len(responses),
             )
 
-            # Save candidate source code
+            # Save candidate source code + retry metadata (v3)
             for j, cand in enumerate(candidates):
                 if cand.reward_source:
                     (iter_dir / f"candidate_{j}_reward.py").write_text(
@@ -584,6 +614,27 @@ class LeroLoop:
                     )
                 (iter_dir / f"candidate_{j}_response.txt").write_text(
                     cand.raw_response
+                )
+                attempts_n = getattr(cand, "attempts", 1)
+                if attempts_n > 1:
+                    _log.info(
+                        "  candidate %d required %d attempts",
+                        j, attempts_n,
+                    )
+                records = getattr(cand, "attempt_records", None)
+                self._save_json(
+                    str(iter_dir / f"candidate_{j}_attempts.json"),
+                    {
+                        "attempts": attempts_n,
+                        "records": [
+                            {
+                                "attempt_index": r.attempt_index,
+                                "error": r.error,
+                            }
+                            for r in (records or [])
+                        ],
+                    },
+                    absolute=True,
                 )
 
             # 2. Evaluate each candidate (short training)
@@ -853,8 +904,19 @@ class LeroLoop:
             covering_range=task_params.get("covering_range", 0.25),
         )
 
+        # v3 §3.2: select output_spec variant matching evolve flags
+        if self.lero.evolve_reward and self.lero.evolve_observation:
+            os_variant = "both"
+        elif self.lero.evolve_reward:
+            os_variant = "reward_only"
+        elif self.lero.evolve_observation:
+            os_variant = "obs_only"
+        else:
+            os_variant = "both"  # safe fallback; caller misconfigured
+
         user_prompt = self.prompt_loader.render(
             "initial_user.txt",
+            output_spec_variant=os_variant,
             # Task params
             n_agents=task_params.get("n_agents", 4),
             n_targets=task_params.get("n_targets", 4),

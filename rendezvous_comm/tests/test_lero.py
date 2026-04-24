@@ -120,7 +120,7 @@ class TestLLMConfig:
     def test_defaults(self):
         cfg = LLMConfig()
         assert "gpt-5.4-mini" == cfg.model
-        assert cfg.temperature == 0.8
+        assert cfg.temperature == 1.0  # v3 default (was 0.8)
         assert cfg.max_tokens is None
         assert cfg.max_tokens is None
         assert cfg.max_retries == 3
@@ -711,7 +711,7 @@ class TestLLMClient:
 
         call_count = 0
 
-        def flaky_call(messages):
+        def flaky_call(messages, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 3:

@@ -45,9 +45,17 @@ VALID_TARGET_SLOTS = frozenset({
 VALID_DOMAINS = frozenset({"reward", "observation", "shared", "both"})
 
 
+VALID_SIGNAL_TIERS = frozenset({"scalar", "fingerprint", "curve_shape"})
+
+
 @dataclass
 class StrategyCard:
-    """Output of Level 1. Consumed by Level 2 mutation.editor."""
+    """Output of Level 1. Consumed by Level 2 mutation.editor.
+
+    v3 adds ``include_signals`` — the Strategist's knob for deciding
+    which tiers of behavioral feedback get forwarded to the Editor
+    and next-iteration inner-loop feedback (LERO-MP v3 §4.1).
+    """
 
     target_domain: Literal["reward", "observation", "shared", "both"]
     target_slot: str  # one of VALID_TARGET_SLOTS
@@ -55,6 +63,8 @@ class StrategyCard:
     avoid: List[str] = field(default_factory=list)
     confidence: Literal["small", "medium", "large"] = "medium"
     rationale: str = ""
+    include_signals: List[str] = field(default_factory=lambda: ["scalar"])
+    signal_rationale: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -64,6 +74,8 @@ class StrategyCard:
             "avoid": list(self.avoid),
             "confidence": self.confidence,
             "rationale": self.rationale,
+            "include_signals": list(self.include_signals),
+            "signal_rationale": self.signal_rationale,
         }
 
 
@@ -198,6 +210,24 @@ delta to peak_M1 given the evidence above. Use the mutation_log to
 AVOID patterns that already underperformed: any entry with
 verdict ∈ {{regression, collapse}} should be listed in `avoid`.
 
+[SIGNAL SELECTION — keep prompts lean]
+You also choose which tiers of behavioral feedback are forwarded
+downstream to the Editor and next-iteration inner-LLM feedback:
+
+  - "scalar":       M1/M2/M3/M4/M6/M8/M9 per candidate — cheap, always
+                    useful. ALWAYS include this.
+  - "fingerprint":  coverage-over-time trace (start/peak/end M1 and
+                    shape tag). Include only when training-stability
+                    issues are visible (e.g. reward-hack shape, peak
+                    collapse).
+  - "curve_shape":  a single shape tag of the learning curve.
+                    Include when candidates differ in stability
+                    (e.g. oscillating vs monotonic) and that
+                    distinction should drive the edit.
+
+Default is ["scalar"] only. Add tiers ONLY when they'll help the
+Editor pick a concrete feature — not just to "have more info".
+
 Output EXACTLY this YAML block, nothing else, no prose outside it:
 
 ```yaml
@@ -212,6 +242,10 @@ confidence: small | medium | large
 rationale: |
   <2-4 sentences citing specific evidence: which record, which
    verdict, which feature-delta. No generic statements.>
+include_signals:
+  - scalar
+  # optionally also "fingerprint" or "curve_shape" — cite the reason below
+signal_rationale: "<1 sentence if include_signals deviates from the default>"
 ```
 """
 
@@ -275,6 +309,20 @@ def parse_strategy_card(text: str) -> StrategyCard:
 
     rationale = str(data.get("rationale", "")).strip()
 
+    # v3: include_signals field is OPTIONAL for backward compat with
+    # existing LLM outputs that don't yet emit it. Default to
+    # ["scalar"] (minimal noise) when absent or invalid.
+    raw_tiers = data.get("include_signals") or ["scalar"]
+    if not isinstance(raw_tiers, list):
+        raw_tiers = ["scalar"]
+    include_signals = [
+        t for t in raw_tiers
+        if isinstance(t, str) and t in VALID_SIGNAL_TIERS
+    ]
+    if not include_signals:
+        include_signals = ["scalar"]
+    signal_rationale = str(data.get("signal_rationale", "") or "").strip()
+
     return StrategyCard(
         target_domain=dom,
         target_slot=slot,
@@ -282,6 +330,8 @@ def parse_strategy_card(text: str) -> StrategyCard:
         avoid=[a.strip() for a in avoid][:5],  # keep ≤ 5
         confidence=conf,
         rationale=rationale,
+        include_signals=include_signals,
+        signal_rationale=signal_rationale,
     )
 
 

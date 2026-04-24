@@ -155,6 +155,7 @@ def submit_training_job(
     runner: str = "train.py",
     extra_cli: str = "--device cuda",
     exp_id_suffix: str = "",
+    history_buckets: Optional[List[str]] = None,
 ) -> Optional[str]:
     """Submit an OVH AI Training job.
 
@@ -299,6 +300,21 @@ def submit_training_job(
         "--env", f"RESULTS_DIR={mount_results}",
         "--env", f"CHECKPOINTS_DIR={mount_results}/checkpoints",
     ]
+    # v3 §6.2: mount prior-sweep buckets read-only for cross-run
+    # mutation_log scan. Format: each entry is a
+    # "bucket@region[/prefix]" spec; the job mounts them under
+    # /workspace/history_<idx> and exposes a LERO_HISTORY_PATHS env var.
+    if history_buckets:
+        paths: List[str] = []
+        for idx, spec in enumerate(history_buckets):
+            mount_point = f"/workspace/history_{idx}"
+            args.extend([
+                "--volume", f"{spec}:{mount_point}:ro",
+            ])
+            paths.append(mount_point)
+        args.extend([
+            "--env", f"LERO_HISTORY_PATHS={':'.join(paths)}",
+        ])
     # LLM API keys for LERO experiments — encrypted before submission
     # so they appear as opaque blobs in `ovhai job get`.
     if llm_env:

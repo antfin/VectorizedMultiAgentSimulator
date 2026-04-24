@@ -506,6 +506,7 @@ def build_editor_prompt(
     top_candidates: Sequence[Dict[str, Any]],
     loader: Optional[PromptLoader] = None,
     prior_slot_versions: Optional[Sequence[Any]] = None,
+    behavioral_block: str = "",
 ) -> str:
     """Level 2 prompt. Receives a StrategyCard and rewrites ONLY the
     slot it names. Does not re-decide domain or strategy — the
@@ -604,6 +605,9 @@ focus ideas and avoids the patterns it flagged.
 [TOP CANDIDATES — evidence you may cite]
 {_format_top_candidates(top_candidates)}
 
+[BEHAVIORAL SIGNALS — filtered per the Strategist's include_signals]
+{behavioral_block or "(no extra behavioral signals forwarded)"}
+
 [OUTPUT FORMAT]
 Write the new `{target_slot}` text. Requirements:
   - Target ONLY the Strategist's focus ideas. Don't wander.
@@ -638,6 +642,8 @@ def propose_new_template(
     generated_by: str = "",
     strategy_card=None,  # optional StrategyCard for v2 two-level pipeline
     prior_slot_versions: Optional[Sequence[Any]] = None,
+    behavioral_block: str = "",
+    critic_llm_call: Optional[MetaLLMCallable] = None,
 ) -> MutationResult:
     """Compose meta-prompt → call LLM → parse → materialize.
 
@@ -686,6 +692,7 @@ def propose_new_template(
             top_candidates=top_candidates,
             loader=loader,
             prior_slot_versions=prior_slot_versions,
+            behavioral_block=behavioral_block,
         )
     else:
         prompt = build_meta_prompt(
@@ -704,6 +711,73 @@ def propose_new_template(
     ]
     response = meta_llm_call(messages)
     new_slot, rationale, expected = parse_mutation_response(response, target_slot)
+
+    # v3 §4.2: optional Critic/revise loop around the Editor output.
+    # Disabled by default (critic_llm_call=None) to keep v2 pipelines
+    # working unchanged. When enabled, the Critic reviews the slot
+    # against fairness + focus + priors; "revise" triggers another
+    # Editor pass with the critique notes appended.
+    critique_outcome = None
+    if critic_llm_call is not None and strategy_card is not None:
+        from .critique import critique_and_revise  # lazy to avoid cycle
+
+        fairness_txt = (
+            loader.slot_text("fairness")
+            if "fairness" in loader.frozen_slot_names() else ""
+        )
+
+        def _editor_revise(critique, current_slot):
+            """Re-invoke the Editor with critique suggestions appended."""
+            notes = "\n".join(
+                f"  - {s}" for s in critique.suggested_edits
+            ) or "  (none)"
+            revision_prompt = prompt + (
+                f"\n\n[CRITIC FEEDBACK ON YOUR LAST DRAFT]\n"
+                f"The critic rated the previous slot as 'revise'.\n"
+                f"addresses_focus_reason: "
+                f"{critique.addresses_focus_reason}\n"
+                f"fairness_restatement_reason: "
+                f"{critique.has_fairness_restatement_reason}\n"
+                f"suggested_edits:\n{notes}\n\n"
+                f"Rewrite the `{target_slot}` slot addressing ALL of "
+                f"the above. Return the same OUTPUT FORMAT as before."
+            )
+            revision_messages = [
+                messages[0],
+                {"role": "user", "content": revision_prompt},
+            ]
+            resp2 = meta_llm_call(revision_messages)
+            s2, r2, e2 = parse_mutation_response(resp2, target_slot)
+            return {"new_slot": s2, "rationale": r2, "expected": e2}
+
+        try:
+            critique_outcome = critique_and_revise(
+                strategy_card=strategy_card,
+                editor_new_slot=new_slot,
+                editor_rationale=rationale,
+                editor_expected=expected,
+                fairness_text=fairness_txt,
+                prior_slot_versions=prior_slot_versions or [],
+                critic_llm_call=critic_llm_call,
+                editor_revise_call=_editor_revise,
+                max_revisions=2,
+            )
+            new_slot = critique_outcome.accepted_slot
+            rationale = critique_outcome.rationale
+            expected = critique_outcome.expected_improvement
+            _log.info(
+                "Editor critique: revisions=%d quality=%s "
+                "suggested_signal_change=%s",
+                critique_outcome.revisions,
+                critique_outcome.critique.overall_quality,
+                critique_outcome.critique.suggested_signal_change,
+            )
+        except Exception as e:
+            _log.warning(
+                "Editor critique pass failed: %s: %s. "
+                "Proceeding with original Editor output.",
+                type(e).__name__, e,
+            )
 
     # Pick a non-colliding version name. Bump outer_iter on collision —
     # robust against stale runs that left a directory on disk.

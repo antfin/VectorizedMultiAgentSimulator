@@ -196,14 +196,25 @@ def _default_meta_llm_call(
     """
     # Lazy import keeps this module cheap when we only want pure helpers.
     from ..llm_client import LLMClient
-    client = LLMClient(LLMConfig(
-        model=meta_config.meta_model,
-        temperature=(
-            temperature if temperature is not None
-            else meta_config.meta_temperature
+    from ..llm_cache import LLMCache
+    cache = None
+    mode = getattr(meta_config, "llm_cache", "off")
+    if mode and mode != "off":
+        cache = LLMCache(
+            mode=mode,
+            root=getattr(meta_config, "llm_cache_dir", None),
+        )
+    client = LLMClient(
+        LLMConfig(
+            model=meta_config.meta_model,
+            temperature=(
+                temperature if temperature is not None
+                else meta_config.meta_temperature
+            ),
+            api_base=meta_config.meta_api_base,
         ),
-        api_base=meta_config.meta_api_base,
-    ))
+        cache=cache,
+    )
 
     def call(messages: List[Dict[str, str]]) -> str:
         return client.generate(messages, n=1)[0]
@@ -273,6 +284,29 @@ class LeroMpOuterLoop:
             f"{time.strftime('%Y%m%d_%H%M')}"
         )
         self._mutation_log_path = self.output_dir / "mutation_log.jsonl"
+        # v3 §6.2: cross-run memory. LERO_HISTORY_PATHS env (colon-
+        # separated mount points injected by submit_training_job) lets
+        # the Strategist see mutation logs from past sweep runs. Falls
+        # back to just this run's log if the env is unset or the files
+        # don't exist.
+        self._history_log_paths: List[Path] = []
+        import os as _os
+        env_paths = _os.environ.get("LERO_HISTORY_PATHS", "")
+        for p in env_paths.split(":") if env_paths else []:
+            p = p.strip()
+            if not p:
+                continue
+            hp = Path(p)
+            # Look for mutation_log.jsonl under each history mount, any depth
+            if hp.exists():
+                for f in hp.rglob("mutation_log.jsonl"):
+                    self._history_log_paths.append(f)
+        if self._history_log_paths:
+            _log.info(
+                "LERO-MP: discovered %d cross-run mutation logs under "
+                "LERO_HISTORY_PATHS",
+                len(self._history_log_paths),
+            )
 
     # ── public API ────────────────────────────────────────────
 
@@ -443,10 +477,14 @@ class LeroMpOuterLoop:
             strategy_card = None
             if self.meta.two_level_meta:
                 try:
+                    # v3: include cross-run history logs when mounted
+                    log_paths = [self._mutation_log_path] + list(
+                        self._history_log_paths
+                    )
                     strategy_card = strategize(
                         history=history,
                         mutation_log_entries=read_recent(
-                            self._mutation_log_path,
+                            log_paths,
                             n=10, task_id=self.spec.exp_id,
                         ),
                         top_candidates=top_cands,
@@ -494,6 +532,11 @@ class LeroMpOuterLoop:
                 )
                 if self.meta.two_level_meta else None
             )
+            # v3 §4.2: behavioral signal block filtered per
+            # include_signals; v3 §4.2: Critic LLM wraps the Editor.
+            behavioral_block = self._behavioral_block(
+                top_cands, strategy_card,
+            )
             try:
                 mutation = propose_new_template(
                     parent_version=current_version,
@@ -506,6 +549,11 @@ class LeroMpOuterLoop:
                     generated_by=self.meta.meta_model,
                     strategy_card=strategy_card,
                     prior_slot_versions=prior_versions,
+                    behavioral_block=behavioral_block,
+                    critic_llm_call=(
+                        self.meta_llm_call
+                        if self.meta.two_level_meta else None
+                    ),
                 )
             except Exception as e:
                 # Meta-LLM failures (auth, rate limit, malformed output)
@@ -570,6 +618,29 @@ class LeroMpOuterLoop:
         except Exception:
             pass
         return ""
+
+    def _behavioral_block(
+        self, top_candidates: Sequence[Dict[str, Any]], strategy_card,
+    ) -> str:
+        """Render behavioral signals honoring include_signals (v3 §4.1).
+
+        Single-candidate (top-1) Tier 1+2+3 summary. Empty string if
+        the strategy_card or candidates are unavailable.
+        """
+        if not top_candidates or strategy_card is None:
+            return ""
+        try:
+            from .behavioral_summary import format_behavioral_block
+            top1 = top_candidates[0]
+            include = getattr(strategy_card, "include_signals", ["scalar"])
+            return format_behavioral_block(
+                top1, include_signals=include,
+            )
+        except Exception as e:
+            _log.warning(
+                "behavioral block render failed: %s: %s", type(e).__name__, e,
+            )
+            return ""
 
     def _llm_config_for(self, prompt_version: str) -> LLMConfig:
         """Clone ``self.llm_config`` with a different prompt_version."""
