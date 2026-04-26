@@ -1,0 +1,48 @@
+version: v2_fewshot_modular_v2_mp_001_mp_002_mp_003_mp_004_mp_005_mp_006_mp_007_mp_008_mp_009
+author: rendezvous_comm
+date: '2026-04-25'
+parent: v2_fewshot_modular_v2_mp_001_mp_002_mp_003_mp_004_mp_005_mp_006_mp_007_mp_008
+description: "Second-generation slot-decomposed prompt for LERO-MP v2 (two-level meta-prompting).\
+  \ Splits the single `guidance` slot into three sub-slots so a single mutation can\
+  \ target reward-specific, observation-specific, or shared advice independently.\
+  \ This lets the Strategist (Level 1) pick a domain and the Editor (Level 2) write\
+  \ targeted text without the two aspects polluting each other.\nAssembly order is:\n\
+  \  task_context \u2192 current_code \u2192 state_schema \u2192 fairness (FROZEN)\n\
+  \  \u2192 guidance_shared \u2192 guidance_reward \u2192 guidance_observation\n \
+  \ \u2192 examples \u2192 output_spec\n\nWhen all three guidance sub-slots are empty\
+  \ (default), the rendered prompt is IDENTICAL to v2_fewshot_modular \u2014 no behavior\
+  \ change for the inner LLM until a mutation lands.\n"
+initial_user_slots:
+- name: task_context
+  file: task_context.txt
+- name: current_code
+  file: current_code.txt
+- name: state_schema
+  file: state_schema.txt
+- name: fairness
+  file: fairness.txt
+  frozen: true
+- name: guidance_shared
+  file: guidance_shared.txt
+- name: guidance_reward
+  file: guidance_reward.txt
+- name: guidance_observation
+  file: guidance_observation.txt
+- name: examples
+  file: examples.txt
+- name: output_spec
+  file: output_spec.txt
+frozen_hashes:
+  fairness: 95d5ca8be490f622afd72e630f12124e71e8e5e236b927e2d7671e8a7715c831
+mutation:
+  operator: rewrite_slot
+  target_slots:
+  - guidance_observation
+  rationale: The edit keeps the observation local but changes the feature pattern
+    by adding only a few compact disambiguation cues that help identify role and immediate
+    coordination context. It emphasizes self-state plus nearby-agent/target relations,
+    and uses `messages` only as a short intent cue when available, rather than repeating
+    the prior nearest-object summary.
+provenance:
+  generated_by: gpt-5.4-mini
+  generated_at: '2026-04-25T18:44:20+00:00'

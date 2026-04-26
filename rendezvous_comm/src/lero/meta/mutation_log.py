@@ -127,6 +127,17 @@ class MutationLogEntry:
     delta_M6: Optional[float] = None
     verdict: Optional[str] = None
     fail_modes_during_next_iter: List[str] = field(default_factory=list)
+    # v3.1 round-history: best inner-LLM-generated code that ran under
+    # the parent_version prompt, captured AFTER the next inner LeroLoop
+    # completes. The Strategist + Editor read these excerpts so the
+    # meta-LLM can see actual code (not just slot text) from prior
+    # rounds when proposing the next mutation.
+    best_reward_code_excerpt: Optional[str] = None
+    best_obs_code_excerpt: Optional[str] = None
+    # Extra mutation-quality signal that the Strategist surfaces as
+    # round-history context.
+    critique_revisions: Optional[int] = None
+    critique_quality: Optional[str] = None  # "keep" / "revise" / "reject"
 
     def to_dict(self) -> Dict[str, Any]:
         out = dict(self.__dict__)
@@ -154,6 +165,10 @@ class MutationLogEntry:
             fail_modes_during_next_iter=d.get(
                 "fail_modes_during_next_iter", [],
             ),
+            best_reward_code_excerpt=d.get("best_reward_code_excerpt"),
+            best_obs_code_excerpt=d.get("best_obs_code_excerpt"),
+            critique_revisions=d.get("critique_revisions"),
+            critique_quality=d.get("critique_quality"),
         )
 
 
@@ -215,12 +230,22 @@ def update_last_entry_with_post(
     post_M6: float,
     fail_modes: Optional[List[str]] = None,
     verdict_scale: float = 1.0,
+    best_reward_code: Optional[str] = None,
+    best_obs_code: Optional[str] = None,
+    critique_revisions: Optional[int] = None,
+    critique_quality: Optional[str] = None,
+    code_excerpt_chars: int = 600,
 ) -> Optional[MutationLogEntry]:
     """Fill the ``post`` fields on the most recent entry in ``path``.
 
     Idempotent: if the last entry already has ``verdict`` set, this is
     a no-op. Returns the updated entry (or ``None`` if file is absent
     or empty).
+
+    v3.1: optionally capture the best inner-LLM-generated reward/obs
+    code from the round that ran under this entry's parent_version.
+    The Strategist + Editor consume these excerpts as round-history
+    context for the next mutation.
     """
     path = Path(path)
     if not path.exists():
@@ -244,6 +269,21 @@ def update_last_entry_with_post(
     )
     if fail_modes:
         last.fail_modes_during_next_iter = list(fail_modes)
+    # v3.1: round-history fields
+    if best_reward_code:
+        excerpt = best_reward_code[:code_excerpt_chars]
+        if len(best_reward_code) > code_excerpt_chars:
+            excerpt = excerpt + " …"
+        last.best_reward_code_excerpt = excerpt
+    if best_obs_code:
+        excerpt = best_obs_code[:code_excerpt_chars]
+        if len(best_obs_code) > code_excerpt_chars:
+            excerpt = excerpt + " …"
+        last.best_obs_code_excerpt = excerpt
+    if critique_revisions is not None:
+        last.critique_revisions = int(critique_revisions)
+    if critique_quality is not None:
+        last.critique_quality = str(critique_quality)
     # Rewrite: everything except the last line, then the updated last.
     with open(path, "w", encoding="utf-8") as f:
         for prev in lines[:-1]:
@@ -336,4 +376,77 @@ def summarize_for_prompt(entries: List[MutationLogEntry]) -> str:
             f"- {e.new_version}  slot={e.slot_name}  domain={dom}{focus}"
         )
         parts.append(f"    verdict={verdict}  {delta}")
+    return "\n".join(parts)
+
+
+def summarize_round_history_for_prompt(
+    entries: List[MutationLogEntry],
+    obs_excerpt_chars: int = 300,
+    reward_excerpt_chars: int = 300,
+) -> str:
+    """Multi-round prompt block — full code excerpts + outcome per round.
+
+    Used when the meta-LLM needs to see the actual generated code from
+    prior rounds (not just slot text). Output is verbose; only call
+    with the most recent 3–5 entries to keep prompt size bounded.
+
+    Each entry renders as ~25–40 lines including code excerpts.
+    """
+    if not entries:
+        return "(no prior rounds — this is round 0)"
+
+    parts = []
+    for i, e in enumerate(entries, 1):
+        verdict = e.verdict or "pending"
+        peak = (
+            f"peak_M1={e.post_mutation_peak_M1:.3f}"
+            if e.post_mutation_peak_M1 is not None else "peak_M1=pending"
+        )
+        m6 = (
+            f"M6={e.post_mutation_best_M6:.3f}"
+            if e.post_mutation_best_M6 is not None else "M6=pending"
+        )
+        slot = e.slot_name
+        focus = ""
+        if e.strategy_card and e.strategy_card.get("focus"):
+            focus = "; focus=" + " | ".join(e.strategy_card["focus"][:2])
+        rationale = ""
+        if e.strategy_card and e.strategy_card.get("rationale"):
+            rat = e.strategy_card["rationale"].replace("\n", " ")[:200]
+            rationale = f"\n    rationale: {rat}"
+        critic = ""
+        if e.critique_quality is not None:
+            critic = (
+                f"\n    critic: quality={e.critique_quality}"
+                + (
+                    f", revisions={e.critique_revisions}"
+                    if e.critique_revisions is not None else ""
+                )
+            )
+        header = (
+            f"=== Round {i} — slot edited: {slot}{focus} ===\n"
+            f"    verdict={verdict}  {peak}  {m6}"
+            f"{critic}"
+            f"{rationale}"
+        )
+        parts.append(header)
+        if e.best_obs_code_excerpt:
+            obs_text = e.best_obs_code_excerpt[:obs_excerpt_chars]
+            if len(e.best_obs_code_excerpt) > obs_excerpt_chars:
+                obs_text = obs_text + " …"
+            parts.append("    best_obs_code (under this round's prompt):")
+            parts.append("    ```python")
+            for line in obs_text.splitlines():
+                parts.append("    " + line)
+            parts.append("    ```")
+        if e.best_reward_code_excerpt:
+            rew_text = e.best_reward_code_excerpt[:reward_excerpt_chars]
+            if len(e.best_reward_code_excerpt) > reward_excerpt_chars:
+                rew_text = rew_text + " …"
+            parts.append("    best_reward_code (under this round's prompt):")
+            parts.append("    ```python")
+            for line in rew_text.splitlines():
+                parts.append("    " + line)
+            parts.append("    ```")
+        parts.append("")
     return "\n".join(parts)

@@ -27,7 +27,11 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 from .failmode import FailMode
-from .mutation_log import MutationLogEntry, summarize_for_prompt
+from .mutation_log import (
+    MutationLogEntry,
+    summarize_for_prompt,
+    summarize_round_history_for_prompt,
+)
 from .trigger import TemplateRecord
 
 
@@ -124,6 +128,77 @@ def _bias_hint(bias: str) -> str:
 
 # ── Level 1 prompt ────────────────────────────────────────────
 
+def _build_strategist_prompt_reasoning(
+    hist_block: str,
+    log_block: str,
+    cand_block: str,
+    fail_mode: FailMode,
+    fairness_ref: str,
+    seed_bias: str,
+    round_history_block: str = "",
+) -> str:
+    """Slim Strategist prompt for reasoning-mode LLMs.
+
+    The model decides slot, focus, and signal-tier inclusion from
+    evidence + fairness contract directly. We don't enumerate
+    interpretation rules — the model derives them.
+    """
+    rh_block = (
+        f"\n[ROUND HISTORY — best inner-LLM code from each prior round]\n{round_history_block}\n"
+        if round_history_block.strip() else ""
+    )
+    return f"""You are choosing the next mutation for a multi-agent RL prompt template.
+
+[OBJECTIVE]
+Maximize peak-M1 (primary) and M6 (tie-break). Avoid reward-hacking
+(peak-vs-final gap < 0.20), NaN crashes, and dim mismatches.
+
+[SOFT BIAS — override when evidence contradicts]
+This seed's preference is: {seed_bias}.
+
+[DOMINANT FAIL MODE (latest inner run)]
+{fail_mode.value}
+
+[CURRENT-RUN HISTORY  —  most recent last]
+{hist_block}
+
+[CROSS-RUN MUTATION LOG]
+{log_block}
+
+[CANDIDATE-AGGREGATE STATS]
+{cand_block}
+{rh_block}{fairness_ref}
+[TASK]
+Pick ONE sub-slot to rewrite (guidance_shared / guidance_reward /
+guidance_observation), 1-2 specific patterns to encourage, patterns to
+avoid based on prior verdicts, and which behavioral-signal tiers to
+forward downstream. Default include_signals to ["scalar"] unless an
+outlier or instability in the evidence justifies "fingerprint" or
+"curve_shape".
+
+DO NOT re-encode the fairness contract into your card.
+
+Output EXACTLY this YAML block, nothing else:
+
+```yaml
+target_domain: reward | observation | shared | both
+target_slot: guidance_reward | guidance_observation | guidance_shared
+focus:
+  - "<one specific pattern or feature, 1 line>"
+  - "<a second one, only if tightly related>"
+avoid:
+  - "<pattern that scored regression/collapse previously, if any>"
+confidence: small | medium | large
+rationale: |
+  <2-4 sentences citing specific evidence; no generic statements.>
+include_signals:
+  - scalar
+  # add "fingerprint" or "curve_shape" only when evidence justifies it
+signal_rationale: "<1 sentence if include_signals deviates from the default>"
+```
+"""
+
+
 def build_strategist_prompt(
     history: Sequence[TemplateRecord],
     mutation_log_entries: Sequence[MutationLogEntry],
@@ -131,8 +206,17 @@ def build_strategist_prompt(
     seed_bias: str,
     fail_mode: FailMode,
     fairness_slot_excerpt: str = "",
+    reasoning_variant: bool = False,
+    round_history_entries: Sequence[MutationLogEntry] = (),
 ) -> str:
-    """Assemble the Level 1 prompt. Pure function, no I/O."""
+    """Assemble the Level 1 prompt. Pure function, no I/O.
+
+    When ``reasoning_variant`` is True, returns the slimmer prompt
+    intended for o-series / gpt-oss / Claude-thinking style models.
+    The trim drops the [SEED BIAS] paragraph (let the model weigh
+    evidence vs. bias internally) and the [METRIC INTERPRETATION
+    GUIDE] hardcoded rules (the model can derive them from the data).
+    """
 
     # Compact history summary (one line per record)
     if history:
@@ -179,6 +263,30 @@ def build_strategist_prompt(
         if fairness_slot_excerpt else ""
     )
 
+    # v3.1: round-history block — the meta-LLM sees the actual best
+    # generated reward + obs code from each prior round, not just the
+    # slot text excerpt.
+    rh_text = summarize_round_history_for_prompt(list(round_history_entries))
+    rh_block = (
+        f"\n[ROUND HISTORY — best inner-LLM code from each prior round]\n{rh_text}\n"
+        if round_history_entries else ""
+    )
+
+    # Reasoning models prefer minimal scaffolding: drop the bias hint
+    # (they decide whether to follow it from evidence), drop the
+    # interpretation guide (they derive rules themselves), keep the
+    # data + fairness + output spec.
+    if reasoning_variant:
+        return _build_strategist_prompt_reasoning(
+            hist_block=hist_block,
+            log_block=log_block,
+            cand_block=cand_block,
+            fail_mode=fail_mode,
+            fairness_ref=fairness_ref,
+            seed_bias=seed_bias,
+            round_history_block=rh_text if round_history_entries else "",
+        )
+
     return f"""[ROLE]
 You are the LERO-MP Strategist. Your job is ONLY to decide WHAT to
 improve next. You do not write prompt text — another LLM will do that.
@@ -198,7 +306,30 @@ You output a structured YAML StrategyCard.
 
 [CANDIDATE-AGGREGATE STATS  —  numeric evidence from the last inner run]
 {cand_block}
-{fairness_ref}
+{rh_block}{fairness_ref}
+[METRIC INTERPRETATION GUIDE — use these to OVERRIDE the seed bias]
+The seed bias is a SOFT preference; concrete evidence from metrics
+ALWAYS takes precedence. Apply these rules:
+
+  - peak_M1 > 0.10 AND (peak_M1 − final_M1) > 0.20  ⇒  reward instability
+    → pick guidance_reward, regardless of bias.
+    Add `fingerprint` or `curve_shape` to include_signals.
+  - M4_avg_collisions > 50 (from Tier-1 scalars)    ⇒  agent crowding
+    → pick guidance_observation or guidance_shared, regardless of bias.
+  - M9_spatial_spread < 0.20                        ⇒  agents clustered
+    → pick guidance_observation, regardless of bias.
+  - M9_spatial_spread > 0.80                        ⇒  agents scattered
+    → pick guidance_observation or guidance_shared.
+  - M8_agent_utilization_cv > 0.40                  ⇒  role imbalance
+    → pick guidance_shared (assignment) or guidance_reward (incentive).
+  - All candidates errored with FAIRNESS_VIOLATION  ⇒  inner LLM keeps
+    accessing oracle keys → pick guidance_shared and remind what IS
+    allowed; do NOT re-encode the fairness rules.
+  - All metrics in normal range AND no fail_mode    ⇒  follow the seed
+    bias as a tiebreaker.
+
+If two or more rules fire, pick ONE focus area; do not scattershot.
+
 [TASK]
 Choose ONE of these three sub-slots to have the Editor rewrite:
   - guidance_shared      → applies to BOTH reward + observation code
@@ -348,9 +479,20 @@ def strategize(
     fail_mode: FailMode,
     meta_llm_call: StrategistLLMCallable,
     fairness_slot_excerpt: str = "",
+    reasoning_variant: bool = False,
+    round_history_entries: Sequence[MutationLogEntry] = (),
 ) -> StrategyCard:
     """Level 1 → StrategyCard. Encapsulates prompt build + LLM call +
     parse so callers just pass evidence and get a typed decision.
+
+    ``reasoning_variant`` selects the slimmer prompt for o-series /
+    gpt-oss / Claude-thinking models. Auto-detect via
+    ``_reasoning.is_reasoning_model(model)`` in the calling layer.
+
+    ``round_history_entries`` (v3.1) — for online-evolution mode where
+    each outer iter is a "round". The Strategist sees the best
+    generated code from each prior round so it can build cumulatively
+    rather than rediscovering the same insights.
     """
     prompt = build_strategist_prompt(
         history=history,
@@ -359,6 +501,8 @@ def strategize(
         seed_bias=seed_bias,
         fail_mode=fail_mode,
         fairness_slot_excerpt=fairness_slot_excerpt,
+        reasoning_variant=reasoning_variant,
+        round_history_entries=round_history_entries,
     )
     messages = [
         {"role": "system", "content":

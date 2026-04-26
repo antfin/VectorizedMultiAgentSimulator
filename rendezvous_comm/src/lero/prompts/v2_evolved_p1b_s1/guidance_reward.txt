@@ -1,0 +1,3 @@
+Use a tiny, clipped potential-shaping bonus only when the agent crosses a clear diagnostic threshold from near-miss to true progress. Pay for discrete state changes in `lidar_targets`, `gap`, `proximity_count`, `hold_signal`, and `intensity` only when they indicate a meaningful completion transition, such as weak/ambiguous evidence becoming distinctly aligned with task progress.
+
+Do not reward gradual drift, repeated micro-improvements, or staying slightly better than before. Keep the signal sparse and one-step local: a single threshold-crossing advance may earn a small bonus, but the same pattern should not keep paying on later steps unless a new diagnostic transition occurs.

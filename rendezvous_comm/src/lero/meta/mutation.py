@@ -67,6 +67,11 @@ class MutationResult:
     new_slot_content: str
     rationale: str
     expected_improvement: str  # "small" | "medium" | "large" (free-form fallback)
+    # v3.1: Critic outcome (when critic_llm_call was provided), so the
+    # outer loop can persist these into mutation_log entries for the
+    # Strategist's round-history block.
+    critique_revisions: Optional[int] = None
+    critique_quality: Optional[str] = None  # "keep" / "revise" / "reject"
 
 
 class MutationParseError(ValueError):
@@ -507,6 +512,8 @@ def build_editor_prompt(
     loader: Optional[PromptLoader] = None,
     prior_slot_versions: Optional[Sequence[Any]] = None,
     behavioral_block: str = "",
+    reasoning_variant: bool = False,
+    round_history_entries: Sequence[Any] = (),
 ) -> str:
     """Level 2 prompt. Receives a StrategyCard and rewrites ONLY the
     slot it names. Does not re-decide domain or strategy — the
@@ -541,6 +548,17 @@ def build_editor_prompt(
     # scored so the Editor DIVERGES rather than rewriting the same
     # text. Without this, independent seeds that land on the same
     # slot keep proposing near-identical content.
+    # v3.1: round-history block — actual best generated code per round
+    round_history_block = ""
+    if round_history_entries:
+        from .mutation_log import summarize_round_history_for_prompt
+        rh = summarize_round_history_for_prompt(list(round_history_entries))
+        round_history_block = (
+            "[ROUND HISTORY — best inner-LLM code from each prior round]\n"
+            + rh + "\n"
+            + "Build on what worked; avoid what regressed.\n"
+        )
+
     prior_block = ""
     if prior_slot_versions:
         lines = ["[PRIOR VERSIONS OF THIS SAME SLOT — diverge, don't duplicate]"]
@@ -564,20 +582,38 @@ def build_editor_prompt(
         )
         prior_block = "\n".join(lines) + "\n"
 
-    return f"""[ROLE]
-You are the LERO-MP Editor. A separate Strategist LLM has already
-decided what to improve. Your job is to rewrite ONE specific sub-slot
-with targeted, evidence-cited text that implements the Strategist's
-focus ideas and avoids the patterns it flagged.
+    if reasoning_variant:
+        # Slimmer preamble for o-series / gpt-oss / thinking models —
+        # they reason internally and don't need the verbose role +
+        # constraints scaffolding.
+        role_block = (
+            f"Rewrite ONE sub-slot of an RL prompt template. The "
+            f"Strategist already chose `{target_slot}`. Your job: "
+            f"produce concise, specific replacement text that "
+            f"implements the Strategist's focus and avoids the "
+            f"patterns it flagged. Do NOT restate the fairness "
+            f"contract — it is shown to the inner-loop LLM separately."
+        )
+    else:
+        role_block = (
+            f"[ROLE]\n"
+            f"You are the LERO-MP Editor. A separate Strategist LLM has "
+            f"already decided what to improve. Your job is to rewrite "
+            f"ONE specific sub-slot with targeted, evidence-cited text "
+            f"that implements the Strategist's focus ideas and avoids "
+            f"the patterns it flagged.\n\n"
+            f"[HARD CONSTRAINTS — NEVER VIOLATE]\n"
+            f"- Edit ONLY the `{target_slot}` slot. Do not propose changes "
+            f"to any other slot; the outer loop applies single-slot edits.\n"
+            f"- The `fairness` slot is FROZEN (hash={fairness_hash[:12]}…, "
+            f"DO NOT EDIT, DO NOT RESTATE). It is ALREADY in every "
+            f"rendered prompt. Restating it wastes tokens without "
+            f"helping the inner-loop LLM.\n"
+            f"- Rewards must stay within |r| ≤ 50 (already enforced at "
+            f"runtime; don't need to repeat this)."
+        )
 
-[HARD CONSTRAINTS — NEVER VIOLATE]
-- Edit ONLY the `{target_slot}` slot. Do not propose changes to any
-  other slot; the outer loop applies single-slot edits.
-- The `fairness` slot is FROZEN (hash={fairness_hash[:12]}…, DO NOT
-  EDIT, DO NOT RESTATE). It is ALREADY in every rendered prompt.
-  Restating it wastes tokens without helping the inner-loop LLM.
-- Rewards must stay within |r| ≤ 50 (already enforced at runtime;
-  don't need to repeat this).
+    return f"""{role_block}
 
 [FAIRNESS SLOT — shown here so you know what NOT to restate]
 ------------------------------------------------------------
@@ -601,7 +637,7 @@ focus ideas and avoids the patterns it flagged.
 {cur_slot_text}
 ------------------------------------------------------------
 
-{prior_block}
+{prior_block}{round_history_block}
 [TOP CANDIDATES — evidence you may cite]
 {_format_top_candidates(top_candidates)}
 
@@ -644,6 +680,8 @@ def propose_new_template(
     prior_slot_versions: Optional[Sequence[Any]] = None,
     behavioral_block: str = "",
     critic_llm_call: Optional[MetaLLMCallable] = None,
+    reasoning_variant: bool = False,
+    round_history_entries: Optional[Sequence[Any]] = None,
 ) -> MutationResult:
     """Compose meta-prompt → call LLM → parse → materialize.
 
@@ -693,6 +731,8 @@ def propose_new_template(
             loader=loader,
             prior_slot_versions=prior_slot_versions,
             behavioral_block=behavioral_block,
+            reasoning_variant=reasoning_variant,
+            round_history_entries=round_history_entries or (),
         )
     else:
         prompt = build_meta_prompt(
@@ -815,4 +855,11 @@ def propose_new_template(
         new_slot_content=new_slot,
         rationale=rationale,
         expected_improvement=expected,
+        critique_revisions=(
+            critique_outcome.revisions if critique_outcome is not None else None
+        ),
+        critique_quality=(
+            critique_outcome.critique.overall_quality
+            if critique_outcome is not None else None
+        ),
     )

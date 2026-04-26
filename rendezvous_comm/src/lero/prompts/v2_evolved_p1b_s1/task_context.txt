@@ -1,0 +1,4 @@
+## Environment
+
+$n_agents agents must cover $n_targets targets. A target is covered when $agents_per_target agent(s) are within $covering_range distance. Arena: [-1,1] x [-1,1].
+

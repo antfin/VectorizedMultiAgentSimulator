@@ -180,6 +180,8 @@ def _trigger_config_from(mp: MetaPromptConfig) -> TriggerConfig:
         cooldown_inner_iters=mp.trigger.cooldown_inner_iters,
         max_outer_iters=mp.budget.max_outer_iters,
         max_total_inner_candidates=mp.budget.max_total_inner_candidates,
+        converged_iters=getattr(mp.trigger, "converged_iters", 3),
+        converged_delta=getattr(mp.trigger, "converged_delta", 0.02),
     )
 
 
@@ -404,14 +406,29 @@ class LeroMpOuterLoop:
             # v2: if the prior outer iter mutated the template, resolve
             # the pending mutation_log entry with the post-mutation
             # metrics we just collected on this record.
+            # v3.1: also capture the best inner-LLM-generated code from
+            # this round so the next mutation's Strategist + Editor see
+            # actual code, not just slot text. The LeroLoop writes
+            # ``best_reward.py`` / ``best_obs.py`` into the inner_dir
+            # whenever it picks a winning candidate.
             if self.meta.two_level_meta and last_mutation_target_slot is not None:
                 try:
+                    best_reward_code = None
+                    best_obs_code = None
+                    rp = inner_dir / "best_reward.py"
+                    op = inner_dir / "best_obs.py"
+                    if rp.exists():
+                        best_reward_code = rp.read_text()
+                    if op.exists():
+                        best_obs_code = op.read_text()
                     update_last_entry_with_post(
                         path=self._mutation_log_path,
                         post_peak_M1=record.best_peak_M1,
                         post_M6=record.best_M6,
                         fail_modes=[record.fail_mode.value],
                         verdict_scale=self._verdict_scale,
+                        best_reward_code=best_reward_code,
+                        best_obs_code=best_obs_code,
                     )
                 except Exception as e:  # pragma: no cover
                     _log.warning(
@@ -475,12 +492,30 @@ class LeroMpOuterLoop:
             # slot + focus + avoid from history + mutation_log. v1 PATH:
             # pick_slot_to_edit heuristic.
             strategy_card = None
+            round_history: List[Any] = []  # v3.1 safe default
             if self.meta.two_level_meta:
                 try:
                     # v3: include cross-run history logs when mounted
                     log_paths = [self._mutation_log_path] + list(
                         self._history_log_paths
                     )
+                    # v3.1: detect whether the meta-LLM is a reasoning
+                    # model (o-series, gpt-oss, etc.) to pick the slim
+                    # prompt variant.
+                    from ._reasoning import is_reasoning_model
+                    reasoning = is_reasoning_model(self.meta.meta_model)
+                    # v3.1: round-history — entries from THIS run
+                    # (current task_id), most recent first, with
+                    # populated post fields + best code excerpts.
+                    in_run = read_recent(
+                        self._mutation_log_path,
+                        n=20, task_id=self.spec.exp_id,
+                    )
+                    round_history = [
+                        e for e in in_run
+                        if e.run_id == self._run_id
+                        and e.post_mutation_peak_M1 is not None
+                    ][-5:]
                     strategy_card = strategize(
                         history=history,
                         mutation_log_entries=read_recent(
@@ -492,6 +527,8 @@ class LeroMpOuterLoop:
                         fail_mode=record.fail_mode,
                         meta_llm_call=self.meta_llm_call,
                         fairness_slot_excerpt=self._fairness_excerpt(current_version),
+                        reasoning_variant=reasoning,
+                        round_history_entries=round_history,
                     )
                     target_slot = strategy_card.target_slot
                     _log.info(
@@ -538,6 +575,11 @@ class LeroMpOuterLoop:
                 top_cands, strategy_card,
             )
             try:
+                from ._reasoning import is_reasoning_model
+                reasoning = is_reasoning_model(self.meta.meta_model)
+                # v3.1: pass the same round_history to the Editor so it
+                # also sees prior-round generated code.
+                editor_round_history = round_history if self.meta.two_level_meta else ()
                 mutation = propose_new_template(
                     parent_version=current_version,
                     target_slot=target_slot,
@@ -554,6 +596,8 @@ class LeroMpOuterLoop:
                         self.meta_llm_call
                         if self.meta.two_level_meta else None
                     ),
+                    reasoning_variant=reasoning,
+                    round_history_entries=editor_round_history,
                 )
             except Exception as e:
                 # Meta-LLM failures (auth, rate limit, malformed output)
@@ -597,6 +641,9 @@ class LeroMpOuterLoop:
                     pre_peak_M1=record.best_peak_M1,
                     pre_M6=record.best_M6,
                 )
+                # v3.1: persist Critic outcome for round-history.
+                entry.critique_revisions = mutation.critique_revisions
+                entry.critique_quality = mutation.critique_quality
                 append_entry(self._mutation_log_path, entry)
 
             current_version = mutation.new_version

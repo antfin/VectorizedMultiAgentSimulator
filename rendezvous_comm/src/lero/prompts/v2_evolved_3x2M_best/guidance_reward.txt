@@ -1,0 +1,3 @@
+Reward M1 progress directly with a small bounded shaping term, not just terminal success. Use a potential-based delta on the M1-relevant progress proxy so that each step can earn a little credit when the agent moves closer to the M1 condition, and give zero when there is no improvement.
+
+Keep the shaping stable: clip the per-step bonus to a small range, and make it depend on change in progress only (`Δprogress`), not on absolute progress or any accumulating counter. This preserves the terminal objective while providing earlier learning signal for partial advances toward M1.

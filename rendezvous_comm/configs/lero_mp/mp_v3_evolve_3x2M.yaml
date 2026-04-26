@@ -1,0 +1,116 @@
+exp_id: lero_mp_v3_evolve_3x2M
+name: "LERO-MP v3 — 3 rounds × (3 cands × 200k + 2M deep), Phase 1"
+description: >
+  Phase 1 of the cumulative-evolution comparison vs ER1 at peak@10M.
+
+  Per round (×3 rounds):
+    1. Inner LeroLoop generates 3 candidate (obs) codes
+    2. Each candidate trained 200k frames → eval
+    3. Best candidate trained 2M frames → record peak_M1 / final_M1
+    4. Meta-LLM (Strategist + Editor + Critic) mutates the prompt template
+       with FULL ROUND HISTORY visible — best generated code + verdicts
+       from every prior round, not just slot text.
+
+  Per-seed cost: 3 × (3×200k + 2M) = 7.8M frames ≈ ~120 min on V100S.
+  3 seeds parallel: ~120 min wall, ~€12.50 OVH + €1 LLM.
+
+  After Phase 1: select best candidate across all 9 rounds (3 seeds × 3
+  rounds), run that prompt at 10M frames as Phase 2 (mp_v3_eval_10m_sN.yaml).
+
+  Provenance:
+    - Per-round: outer_NNN_<version>/best_obs.py + best_reward.py + iter_*/...
+    - Each mutation_log entry holds best code excerpts (300 chars obs +
+      300 chars reward) so the next Strategist + Editor see it as
+      `[ROUND HISTORY]` block.
+    - Critic verdict + revision count persisted per entry.
+
+  No reward evolution (evolve_reward=false) — keeps S3ac-style reward-
+  hacking out of scope. No comm channel (dim_c=0) — direct ER1 comparison.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 2_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 3                # locked per user spec
+  top_k: 3
+  eval_frames: 200_000           # candidate screening
+  eval_episodes: 100
+  full_frames: 2_000_000         # per-round deep-train of the best
+  evolve_reward: false           # locked per user spec
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+  skip_full_training: false      # WE WANT the 2M train per round
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2"
+
+meta_prompt:
+  enabled: true
+  two_level_meta: true
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0
+  meta_api_base: null
+  llm_cache: "off"
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"
+  trigger:
+    plateau_iters: 0             # mutate after EVERY round
+    plateau_delta: 0.99
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+    converged_iters: 99          # disable early-stop (peak_M1 ≈ 0 at 2M)
+    converged_delta: 0.001
+  budget:
+    max_outer_iters: 3           # 3 rounds → 2 mutations chained
+    max_total_inner_candidates: 30
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

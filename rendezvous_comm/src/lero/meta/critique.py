@@ -86,74 +86,124 @@ needs another revision.
 ------------------------------------------------------------
 
 [TASK]
-Review the Editor's output along these axes:
-  1. Does it address AT LEAST ONE of the focus ideas in a concrete way?
-     (Name-check specific features/patterns — not generic advice.)
-  2. Does it RESTATE the fairness slot? Watch for paraphrases of
-     "use local sensors only", "avoid oracle state", "clamp rewards".
-  3. Does it DIVERGE from prior versions of this slot? Near-duplicates
-     waste outer-loop iterations.
-  4. What specific edits would make it better? (Short, actionable.)
-  5. Should we KEEP / REVISE / REJECT?
-     - keep: ready to ship
-     - revise: 1–2 targeted edits would make it much better
-     - reject: so off-base that retrying the Editor with notes
-       would not help (raise MutationParseError instead)
-  6. Should the Strategist's signal-tier selection change next time?
-     - "keep" if current tiers are fine
-     - "add_fingerprint" / "drop_fingerprint" if the problem needed
-       (or didn't need) the coverage-over-time fingerprint
-     - similarly for "add_curve_shape" / "drop_curve_shape"
+DEFAULT VERDICT IS "keep". Only escalate to "revise" or "reject"
+when there is a CONCRETE, ACTIONABLE problem in the Editor's output.
+Phrasing nitpicks, "could be more detailed", or "minor improvements"
+are NOT sufficient grounds — they waste outer-loop iterations.
 
-Return EXACTLY this JSON (no prose around it):
+Decide the verdict in this order:
+
+  1. Does the Editor's text mention AT LEAST ONE specific feature
+     identifier from the strategist's focus or the reference set
+     (e.g. lidar_targets, lidar_agents, hold_signal, gap,
+     proximity_count, intensity, agent_idx, potential, partner)?
+     If YES → addresses_focus=true.
+
+  2. Does the Editor's text RESTATE the fairness contract verbatim
+     or paraphrase its rules ("use local sensors only", "avoid
+     oracle state", "clamp rewards to |r|<=50")? Brief allowed
+     mentions like "without needing oracle positions" are NOT
+     restatements — only flag when the slot's CENTRAL message is
+     a fairness reminder. If no restatement → has_fairness_restatement=false.
+
+  3. Is the Editor's text substantively different from EVERY prior
+     version listed above? (Different feature focus, different
+     reasoning, different concrete advice.) If yes →
+     diverges_from_priors=true.
+
+  4. VERDICT:
+     - "keep": addresses_focus AND NOT has_fairness_restatement AND
+        diverges_from_priors. This is the COMMON case — ship it.
+     - "revise": exactly one of those three is wrong AND it's
+        clearly fixable in one or two edits.
+     - "reject": the output is so off-base that another Editor
+        pass would not help (e.g. completely empty, only restates
+        fairness, or duplicates a prior verbatim).
+
+  5. suggested_edits MUST be empty list `[]` when overall_quality
+     is "keep".
+
+  6. suggested_signal_change defaults to "keep". Only change it
+     when the Strategist's tier selection clearly didn't help
+     (e.g. "fingerprint" was forwarded but added no signal).
+
+Return EXACTLY this JSON (no prose around it). overall_quality
+appears FIRST so you commit to a verdict before listing nitpicks:
 
 {{
+  "overall_quality": "keep" | "revise" | "reject",
   "addresses_focus": true | false,
   "addresses_focus_reason": "<1 sentence>",
-  "cites_specific_features": ["<list feature identifiers named in the edit>"],
+  "cites_specific_features": ["<feature identifiers literally present in the text>"],
   "has_fairness_restatement": true | false,
   "has_fairness_restatement_reason": "<1 sentence>",
   "diverges_from_priors": true | false,
   "suggested_edits": ["<edit 1>", "<edit 2>"],
-  "suggested_signal_change": "keep" | "add_fingerprint" | "drop_fingerprint" | "add_curve_shape" | "drop_curve_shape",
-  "overall_quality": "keep" | "revise" | "reject"
+  "suggested_signal_change": "keep" | "add_fingerprint" | "drop_fingerprint" | "add_curve_shape" | "drop_curve_shape"
 }}
 """
 
 
+# Match the FIRST balanced {...} block. ``re.DOTALL`` lets it span
+# newlines but keep `*?` non-greedy so we don't swallow a trailing }
+# from the assistant's prose (e.g. ```json ... ``` followed by text).
+_JSON_FENCE_RE = re.compile(
+    r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE,
+)
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def parse_critique(text: str) -> EditorCritique:
     """Extract an EditorCritique from the Critic LLM's response.
 
-    The prompt asks for JSON; we search for the first {...} block and
-    parse it with Pydantic. Raises ValueError if the response doesn't
-    contain valid JSON / fails schema validation.
+    Tolerant parser: accepts JSON wrapped in ```json fences (Llama
+    output style), JSON with trailing prose, and missing optional
+    fields. Falls back to safe defaults rather than failing the
+    outer loop on a parsing nit.
     """
-    m = _JSON_RE.search(text)
-    if not m:
+    blob = None
+    # 1. Prefer fenced JSON block (Llama / many open-weights models)
+    m = _JSON_FENCE_RE.search(text)
+    if m:
+        blob = m.group(1)
+    # 2. Otherwise grab the first {...} span, balanced
+    else:
+        m = _JSON_RE.search(text)
+        if m:
+            blob = m.group(0)
+    if not blob:
         raise ValueError(
             f"Critic response did not contain a JSON block. "
             f"Got: {text[:200]!r}"
         )
-    blob = m.group(0)
-    try:
-        data = json.loads(blob)
-    except json.JSONDecodeError as e:
+
+    # JSON parse — try the raw blob, then strip trailing prose / commas
+    data = None
+    for candidate in (blob, blob.rstrip(",}\n ") + "}"):
+        try:
+            data = json.loads(candidate)
+            break
+        except json.JSONDecodeError:
+            continue
+    if data is None:
         raise ValueError(
-            f"Critic response JSON parse failed: {e}. Body: {blob[:200]!r}"
+            f"Critic response JSON parse failed. Body: {blob[:200]!r}"
         )
+
+    # Backfill optional fields the model may drop
+    data.setdefault("suggested_signal_change", "keep")
+    data.setdefault("suggested_edits", [])
+    data.setdefault("cites_specific_features", [])
+    data.setdefault("addresses_focus_reason", "")
+    data.setdefault("has_fairness_restatement_reason", "")
+
     try:
         return EditorCritique.model_validate(data)
     except Exception as e:
-        # Salvage missing optional fields that sometimes get dropped
-        # by chat-completion stringification — fill with safe defaults
-        # and retry once.
-        data.setdefault("suggested_signal_change", "keep")
-        data.setdefault("suggested_edits", [])
-        data.setdefault("cites_specific_features", [])
-        return EditorCritique.model_validate(data)
+        raise ValueError(
+            f"Critic response failed schema validation: {e}. "
+            f"Body: {str(data)[:300]!r}"
+        )
 
 
 @dataclass

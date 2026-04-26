@@ -101,6 +101,15 @@ class LeroConfig:
     # with existing LERO configs; LERO-MP configs set it True.
     whitelist_strict: bool = False
 
+    # When True, skip the per-outer-iter full_training step (step 5 of
+    # LeroLoop.run). The best candidate's short-eval metrics are used as
+    # the outer-loop record instead. Useful for the "online evolution"
+    # mode where each outer iter is just a quick screen + meta-mutation,
+    # and a single deep training is run separately as Phase 2 against
+    # the final evolved prompt. Default False preserves the original
+    # LERO behaviour (deep-train every outer iter).
+    skip_full_training: bool = False
+
 
 @dataclass
 class MetaPromptTrigger:
@@ -115,6 +124,13 @@ class MetaPromptTrigger:
     peak_vs_final_gap_max: float = 0.20
     # Hard cooldown regardless of triggers.
     cooldown_inner_iters: int = 3
+    # Convergence STOP: if best_peak_M1 didn't improve by >= converged_delta
+    # for converged_iters consecutive outer iters, halt the loop. For
+    # online-evolution mode at <500k frames, peak_M1 stays near zero on
+    # this task, so set converged_iters >= max_outer_iters to disable
+    # the early-stop and let the budget run to completion.
+    converged_iters: int = 3
+    converged_delta: float = 0.02
 
 
 @dataclass

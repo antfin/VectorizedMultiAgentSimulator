@@ -1,0 +1,104 @@
+exp_id: lero_mp_v3_eval_5m_s2
+name: "LERO-MP v3 Phase 2 — deep-train final evolved prompt at 5M"
+description: >
+  Phase 2 of the two-phase 5M comparison vs ER1.
+
+  Takes the final evolved prompt produced by Phase 1
+  (configs/lero_mp/mp_v3_evolve_10x500k.yaml) and trains it deeply at
+  5M frames. Meta-prompting is OFF — this is a single inner LeroLoop
+  with one prompt template, evaluated against 2 candidates and trained
+  fully on the best one.
+
+  Per seed: 2 × 200k eval + 5M full ≈ 5.4M frames ≈ 80 min on V100S.
+  3 seeds parallel ≈ 80 min wall, ~€8.50.
+
+  IMPORTANT: update `prompt_version` below to the final evolved prompt
+  name from Phase 1 (e.g. v2_fewshot_modular_v2_mp_010 — depends on how
+  many mutations actually fired before the budget ran out). The Phase 1
+  job summary prints the final_version name.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 5_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 2
+  top_k: 2
+  eval_frames: 200_000
+  eval_episodes: 100
+  full_frames: 5_000_000        # the deep training
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+  skip_full_training: false     # <-- explicit: we WANT the full train
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0
+  max_retries: 3
+  prompt_version: "v2_evolved_p1b_s2"
+
+meta_prompt:
+  enabled: false                # no further meta-evolution; eval only
+  two_level_meta: true
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0
+  meta_api_base: null
+  llm_cache: "off"
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"
+  trigger:
+    plateau_iters: 1
+    plateau_delta: 0.99
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+  budget:
+    max_outer_iters: 1          # one outer iter only
+    max_total_inner_candidates: 30
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

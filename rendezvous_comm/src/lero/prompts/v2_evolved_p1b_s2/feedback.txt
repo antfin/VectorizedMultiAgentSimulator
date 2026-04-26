@@ -1,0 +1,7 @@
+Results from $n_candidates candidates:
+
+$candidates_results
+
+Best candidate was #$best_idx. Generate $n_candidates improved versions.
+
+Carefully analyze the current reward functions and policy feedback. Keep what works, fix what doesn't.

@@ -1,0 +1,119 @@
+exp_id: lero_mp_v3_evolve_10x500k
+name: "LERO-MP v3 — online evolution, 10 rounds × 500k each (Phase 1)"
+description: >
+  Phase 1 of the two-phase 5M comparison vs ER1.
+
+  Online-evolution mode: every outer iter is a tight feedback round
+    1) inner LLM generates candidate code under the current prompt
+    2) train candidate for 500k frames (4 BenchMARL eval points → solid
+       M6 + learning-curve signal, M1 still mostly noise at this scale)
+    3) meta-LLM (Strategist + Editor + Critic) mutates the prompt for
+       the next round, with full memory of all prior rounds' metrics
+       and code (mutation_log + prior_slot_versions)
+    4) repeat 10 times
+
+  Per seed: 10 × (1 candidate × 500k eval + 100k stub-full) ≈ 6M frames
+  ≈ 90 min on V100S. 3 seeds parallel ≈ 90 min wall, ~€10 + €1 LLM.
+
+  After Phase 1 finishes, the FINAL evolved prompt
+  (v2_fewshot_modular_v2_mp_010 or whatever the chain ends at) is the
+  input to Phase 2 (mp_v3_eval_5m.yaml), which does ONE deep 5M training
+  to give the comparison row vs ER1/ER2/ER3.
+
+  skip_full_training: true SKIPS the per-outer-iter deep retrain — the
+  LeroLoop returns the candidate's eval metrics directly so the outer
+  loop can mutate immediately. This saves ~30 min per outer iter
+  vs the default behaviour.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 500_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1                # one inner candidate per outer iter
+  n_candidates: 1                # online evolution: one code at a time
+  top_k: 1
+  eval_frames: 500_000           # 500k = 4 BenchMARL eval points
+  eval_episodes: 100
+  full_frames: 100_000           # placeholder; never runs (skip flag)
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+  skip_full_training: true       # <-- key: no per-iter deep retrain
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2"
+
+meta_prompt:
+  enabled: true
+  two_level_meta: true
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0
+  meta_api_base: null
+  llm_cache: "off"
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"
+  trigger:
+    plateau_iters: 0             # mutate after EVERY round
+    plateau_delta: 0.99          # plateau check effectively always fires
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+    # Disable convergence early-stop. At 500k frames peak_M1 ≈ 0 for
+    # everything in this task, so the default converged check would
+    # halt after 3 outer iters (improvement < 0.02). Setting
+    # converged_iters above max_outer_iters keeps the loop running
+    # the full budget regardless of M1.
+    converged_iters: 99
+    converged_delta: 0.001
+  budget:
+    max_outer_iters: 10          # 10 evolution rounds → 9 mutations
+    max_total_inner_candidates: 50
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

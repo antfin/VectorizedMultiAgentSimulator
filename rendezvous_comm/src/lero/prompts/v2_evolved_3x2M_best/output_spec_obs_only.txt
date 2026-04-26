@@ -1,0 +1,12 @@
+## Generate Function
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    """Compute extra features to help agents coordinate.
+    Returns: [batch_dim, N] tensor where N is 4-9.
+    """
+```
+
+Wrap the function in a single ```python block. Do NOT output a
+compute_reward function — the reward is frozen at the scenario's
+default for this run.

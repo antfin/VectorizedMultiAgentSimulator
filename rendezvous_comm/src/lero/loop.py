@@ -598,8 +598,8 @@ class LeroLoop:
                 continue
 
             _log.info(
-                "Extracted %d valid candidates from %d responses",
-                len(candidates), len(responses),
+                "Generated %d valid candidates from %d attempts",
+                len(candidates), self.lero.n_candidates,
             )
 
             # Save candidate source code + retry metadata (v3)
@@ -799,6 +799,35 @@ class LeroLoop:
         if best_candidate is None:
             _log.error("No valid candidates found across all iterations")
             return {"_error": "no valid candidates"}
+
+        # 4b. Online-evolution shortcut: when skip_full_training is set,
+        # return the best candidate's eval metrics directly. The outer
+        # LERO-MP loop then performs cheap meta-mutations on every
+        # outer iter (configurable to 200k–500k each), and a single
+        # deep training is done as a separate Phase 2 run after the
+        # last evolution. Saves the wasteful per-iter retrain.
+        if self.lero.skip_full_training:
+            _log.info(
+                "skip_full_training=True — using eval metrics as the "
+                "final result; no per-outer-iter deep training.",
+            )
+            shortcut_metrics = dict(best_metrics or {})
+            if best_candidate.reward_source:
+                (self.output_dir / "best_reward.py").write_text(
+                    best_candidate.reward_source
+                )
+            if best_candidate.obs_source:
+                (self.output_dir / "best_obs.py").write_text(
+                    best_candidate.obs_source
+                )
+            shortcut_metrics["lero_iterations"] = self.lero.n_iterations
+            shortcut_metrics["lero_candidates_per_iter"] = self.lero.n_candidates
+            shortcut_metrics["llm_model"] = self.llm_config.model
+            shortcut_metrics["prompt_version"] = self.llm_config.prompt_version
+            shortcut_metrics["skip_full_training"] = True
+            self._save_json("final_metrics.json", shortcut_metrics)
+            _log.info("=== LERO COMPLETE (eval-only) ===")
+            return shortcut_metrics
 
         # 5. Full training with best candidate, with fallback chain.
         # If the chosen reward causes training to crash (e.g. NaN actions

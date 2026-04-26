@@ -1,0 +1,3 @@
+Refine each agent’s local observation with one compact motion-direction cue for the nearest relevant target in `lidar_targets`: keep the usual relative distance / bearing features, and add a single `approach_heading` signal that indicates whether the agent’s current velocity is aligned with moving toward that target, moving away from it, or roughly orthogonal.
+
+Keep the signal strictly agent-local and minimal so it helps distinguish “closing with intent” from “just nearby” without adding broader local summaries, extra neighbor context, or any global state.

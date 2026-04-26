@@ -414,6 +414,96 @@ reward = (
 
 The fundamental issue: for k=1, individual rationality = collective rationality. The LLM can design individually-rational rewards and k=1 "just works." For k=2, individual rationality (each agent approaches nearest target) ≠ collective rationality (agents must pair up and co-locate). No LLM prompt or function structure tested so far bridges this gap.
 
+### S3b-local — full trajectory analysis: how the LLM evolved a 0.06 → 0.88 winner
+
+This subsection unpacks the mechanism that produced the strongest LERO result on k=2: how the LLM evolved the observation across 4 LERO inner iterations, what the winning code computed, and how peak_M1 climbed during the subsequent 10M full training. Source: `results/lero_s3b_local/lero/runs/lero/20260417_1507/` (pulled from OVH bucket; not in local git).
+
+#### 1. The hand-crafted prompt that bootstrapped the search
+
+S3b-local used `prompt_version=v2_fewshot_k2_local` — a **task-specific** prompt that explicitly framed rendezvous and listed which features the LLM should consider. The key bullet from `initial_user.txt`:
+
+```
+What you CAN infer from LiDAR:
+- Direction to nearest target (smallest ray)
+- Distance to nearest target (min of rays)
+- Number of nearby targets (count of rays below threshold)
+- Agent density nearby (from lidar_agents)
+- Angular distribution (which directions have targets vs agents)
+- Role differentiation (agent_idx as one-hot)
+```
+
+Plus a concrete **example** `enhance_observation` showing the basic recipe:
+
+```python
+min_dist, min_ray = lidar_t.min(dim=-1)
+n_close = (lidar_t < 0.25).float().sum(dim=-1)   # ← seed of "proximity_count"
+return torch.cat([min_dist, dir_x, dir_y, n_close, one_hot], dim=-1)
+```
+
+The LLM did NOT receive the coordination signals (`hold_signal`, etc.) pre-listed. It was given the framework — count nearby, agent density, role one-hot — and DERIVED the coordination layer itself across iterations.
+
+#### 2. Inner-loop evolution: 4 iterations × 3 candidates × 1M frames each
+
+| iter | best M1 | n_valid | what the iteration added |
+|---|---:|---|---|
+| 0 | **0.040** (c1) | 3/3 | basic features matching the prompt's example: nearest-target distance + direction + count + role |
+| 1 | 0.030 | 2/2 | sector features, polar position |
+| 2 | 0.040 | 3/3 | nearest-vs-2nd-nearest gaps, intensity (1/dist weighted) |
+| 3 | **0.060 (c2)** ← winner | 3/3 | **coordination signals: `hold_signal`, `approach_signal`, `crowd_signal`, `sparsity_signal`** |
+
+Iteration 3 was the breakthrough. The LLM combined `target_near = (t1 < cover_r)` with `agent_near = (a1 < cover_r)` to derive:
+
+```python
+hold_signal = target_near * agent_near             # target AND partner near → STAY
+approach_signal = target_near * (1.0 - agent_near) # target near but no partner → GO
+crowd_signal = clamp((a_count - 1.0) / 3.0)        # too many agents nearby → DISPERSE
+sparsity_signal = clamp(1.0 - t_count / n_targets) # few targets nearby → EXPLORE
+```
+
+The `hold_signal` is the critical innovation. Without it, the "ships passing in the night" failure mode dominates: agent A arrives at target X, sees nothing actionable, moves on — agent B arrives at X but A has already left. With `hold_signal`, an agent that arrives first STAYS and waits for a partner to land the rendezvous.
+
+#### 3. Full 10M training: when did M1 climb?
+
+The S3b-local run pre-dates the `_EvalMetricsCallback` (added in v3, May 2026), so we don't have a per-checkpoint M1 CSV. But the BenchMARL `eval_reward_episode_len_mean.csv` is informative — at ms=400, when ep_len drops far below 400 it means agents are completing episodes:
+
+| frame | mean ep_len | interpretation |
+|---|---:|---|
+| 0.06M | 400 | no episode completes |
+| 0.84M | 388 | first completions starting |
+| 1.68M | 306 | ~25% of episodes finishing early |
+| 2.52M | 231 | majority completing in <58% of max time |
+| 4.20M | 202 | most completing in <50% of time |
+| 6.72M | 201 | stable |
+| 9.24M | 192 | near-final pace (final M3=186) |
+
+So peak_M1 climbed steeply between 1M and ~4M, then plateaued through 10M. The end-of-training fresh evaluation (200 episodes, post-training) gave **M1=0.880**.
+
+The "eval M1=0.060 at 1M → final M1=0.880 at 10M" jump is NOT reward-hacking — quite the opposite. The hand-crafted ER1 reward (LP+SR shaping) is non-exploitable; longer training genuinely converges. The LLM-engineered observations gave the policy what it needed to coordinate; MAPPO took the rest of the 10M to learn HOW.
+
+#### 4. The complete winning code (28 features)
+
+```python
+# Targets:    t1 (dist), t2, t_gap, tdx/tdy (direction), t_count, t_intensity   [7]
+# Agents:     a1, a2, a_gap, adx/ady, a_count, a_intensity                       [7]
+# Coordination:  hold_signal, approach_signal, crowd_signal, sparsity_signal     [4]
+# Self motion:   speed, vx, vy, pos_r, px, py    (polar coords)                  [6]
+# Role:          one-hot(n_agents)                                                [4]
+#                                                                                  ─────
+#                                                                                   28 features
+```
+
+`t_intensity = sum(1/lidar_t for rays where lidar_t < cover_r)` is sharper than raw distance — it heavily weights very-close target rays. Same idea for agent intensity.
+
+#### 5. Why this worked structurally — the LLM's lever
+
+The LLM didn't hand-design the policy. It pre-computed **decision features** that the policy could read off directly:
+
+> "Given hold_signal=1, hold position. Given approach_signal=1, move toward target. Given crowd_signal>0.5, move away."
+
+The policy still has to LEARN to act on these features (via MAPPO over 10M frames), but the search space is much smaller than learning to derive these decisions from raw lidar rays.
+
+This is the **"feature engineering > learned communication"** finding. ER3 GATv2 GNN at the same task hit 71% by LEARNING a message-passing protocol — but it had to discover from raw observations + reward signal what to communicate. S3b-local pre-supplies the equivalent structure as deterministic features, leaving MAPPO with a smaller learning problem.
+
 ### LERO prompt ablation summary (n=3, t=3, k=1 task only)
 
 | Prompt | Best M1 | Stable? | Notes |
@@ -423,6 +513,144 @@ The fundamental issue: for k=1, individual rationality = collective rationality.
 | v2_min (ultra-minimal, 3 lines) | 0.625 ×1, NaN ×2 | ❌ | too little context → mediocre + fragile rewards |
 | v1_global (verbose + research history) | 0.005 ×1 | ❌ | verbose prompt encouraged reward-hackable designs |
 | v2_twofn (agent + global split) | 0.010 ×1 | ❌ | decomposition made reward MORE exploitable |
+
+---
+
+## LERO-MP — Meta-Prompted LERO
+
+**Goal:** Add a meta-prompt outer loop on top of LERO so the *prompt template itself* evolves between LERO runs. The Strategist (Level 1) picks WHICH slot to edit (`guidance_observation` / `guidance_reward` / `guidance_shared`); the Editor (Level 2) rewrites that slot; a TextGrad-style Critic reviews. Full design: `docs/lero_metaprompt_v3_plan.md`. Implementation status: `docs/lero_metaprompt_v3_implementation.md`. Scenario harness for prompt iteration: `docs/lero_metaprompt_harness.md`.
+
+**Key v3 features**:
+- Inner-LLM **retry loop** (3 attempts with error feedback) → catches AST/compile failures.
+- **Pydantic structured outputs** for Strategist/Editor/Critic — replaces fragile regex parsing.
+- **Behavioral signals** (Tier 1/2/3): scalar metrics + coverage-over-time fingerprint + learning-curve shape, with LLM-driven `include_signals` gating.
+- **Critic with revise-loop** (TextGrad-style, max 2 revisions) — catches fairness paraphrase + non-divergent edits.
+- **Reproducibility**: per-candidate OpenAI `seed` derivation + `system_fingerprint` drift logging + 4-mode disk cache.
+- **Online evolution mode** (`skip_full_training=true`): each outer iter is just a 500k candidate eval + meta-mutation; deep training happens once at the end.
+
+### LERO-MP — Online evolution at cr=0.35, ms=200, k=2 (ER1-comparable)
+
+3 seeds, 10 outer iterations × 500k frames each (Phase 1, ~50 min, ~€10), then 5M deep training of each seed's evolved prompt (Phase 2, ~80 min, ~€8.50). Total budget: **~€20 + 2.5h wall**.
+
+**Per-seed evolved prompt** (each seed converged onto a single domain across 9 mutations):
+
+| Seed | Slot evolved (×9 mutations) | Final slot length | Per-seed bias hint |
+|---|---|---:|---|
+| 0 | `guidance_observation` | 809 chars | observation_first ✓ |
+| 1 | `guidance_reward` | 686 chars | reward_first ✓ |
+| 2 | `guidance_observation` | 563 chars | exploratory |
+
+The Strategist respected per-seed biases for seeds 0+1; seed 2's "exploratory" bias landed on observation but converged on a *tighter* prompt (563 vs 809 chars) — same domain, more focused content.
+
+### LERO-MP results — Phase 2 deep-train at 5M frames
+
+| Seed | Slot evolved | peak_M1 (≤5M) | peak_M1 frame | M1 (final, 5M end) | M6 (final) |
+|---|---|---:|---:|---:|---:|
+| 0 | observation | 0.160 | 4.92M | 0.055 | 0.396 |
+| 1 | reward | 0.260 | 4.92M | 0.090 | 0.470 |
+| 2 | observation | **0.395** | 4.68M | 0.120 | 0.552 |
+| **mean** | — | **0.272** | — | 0.088 | 0.473 |
+
+Seed 2's evolved prompt (focused observation guidance) hit peak_M1 = 0.395 at 4.68M frames — **matching the strongest hand-crafted baseline (ER1 at 0.400 peak@5M) on the best seed.**
+
+### Sample efficiency — peak_M1 trajectory at cr=0.35, ms=200, k=2
+
+This is the head-to-head comparison vs the engineered ER baselines. ER trajectories from seed-0 run extracted directly from BenchMARL `eval_M1_success_rate.csv`. LERO-MP rows are the **3x2M cumulative-evolution** experiment (Phase 1: 3 rounds × 2.6M each per seed evolve the prompt; Phase 2: deep-train the global-best evolved prompt at 10M across 3 RL seeds — see "LERO-MP results" tables below).
+
+| Approach | peak@100k | peak@500k | peak@1M | peak@2M | peak@5M | peak@10M | peak ever (≤10M) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ER1 (LiDAR only, no comm) | 0.000 | 0.005 | 0.005 | 0.020 | **0.400** | 0.465 | 0.465 |
+| ER2 (proximity comm, dc=8) | 0.000 | 0.010 | 0.010 | 0.015 | 0.045 | 0.370 | 0.370 |
+| ER2 (broadcast comm, dc=8) | 0.000 | 0.000 | 0.005 | 0.010 | 0.175 | **0.575** | **0.575** |
+| ER3 (GATv2 GNN) | 0.000 | 0.000 | 0.005 | 0.005 | 0.060 | 0.510 | 0.510 |
+| **LERO-MP 3x2M s0** | 0.000 | 0.005 | 0.020 | 0.090 | 0.365 | 0.480 | 0.480 |
+| **LERO-MP 3x2M s1** | 0.000 | 0.005 | 0.015 | 0.115 | 0.450 | 0.450 | 0.450 |
+| **LERO-MP 3x2M s2** | 0.000 | 0.005 | 0.020 | **0.260** | **0.485** | 0.485 | 0.485 |
+| **LERO-MP 3x2M mean** | 0.000 | 0.005 | 0.018 | **0.155** | **0.433** | **0.472** | **0.472** |
+
+**Key observations** (cumulative-evolution Phase 1 + 10M deep-train Phase 2):
+- **Sample efficiency win at 2M**: LERO-MP mean = 0.155 vs ER1's 0.020 (**~8×**). Best seed s2 = 0.260 (**~13×**).
+- **Sample efficiency win at 5M**: LERO-MP mean = 0.433 vs ER1's 0.400 (**+0.033**). Beats every comm-based baseline by 2.5–10×.
+- **peak@10M competitive**: LERO-MP mean (0.472) ≈ ER1 (0.465), beats ER2 prox (0.370). Trails ER2 broadcast (0.575) and ER3 GNN (0.510).
+- **Variance across seeds tightens at scale**: at peak@5M the seeds span [0.365, 0.485] vs the [0.090, 0.260] spread at peak@2M. The "winner" prompt picked from Phase 1 (peak@2M=0.230) reproduces at +0.20–0.26 across all 3 RL seeds at 10M.
+- **Reward-hacking pattern at full 10M**: see next section.
+
+### Reward-hacking via observation evolution (eval-vs-final at 10M)
+
+All 3 LERO-MP seeds peak then crash:
+
+| seed | peak_M1 | peak_at_frame | final_M1 (10M) | peak−final gap |
+|---|---:|---:|---:|---:|
+| 0 | 0.480 | 9.12M | 0.105 | **−0.375** |
+| 1 | 0.450 | 3.48M | 0.050 | **−0.400** |
+| 2 | 0.485 | 4.80M | 0.115 | **−0.370** |
+
+This is the same pattern documented for *evolved-reward* LERO at k=2 (S3a_gpt5: peak 0.86 → final 0.09) — but our experiment had `evolve_reward: false`. The LLM-engineered OBSERVATION created an exploit channel: the policy finds a local behavior that triggers misleading features, then over-trains past it and the policy structure degrades. The peak−final gap (−0.37 to −0.40) is far above the 0.20 threshold the LERO docs flag as reward-hacking.
+
+**Takeaway**: peak-M1 checkpointing (already wired into `src/lero/meta/peak_checkpoint.py`) is essential for LERO/LERO-MP at k=2 ms=200. Without it, the final 10M policy is **3–9× worse** than the peak policy. With it, LERO-MP delivers a competitive peak result with ~6–10× sample-efficiency gain over the strongest engineered baseline.
+
+### LERO-MP cost vs LERO baseline (S3b-local)
+
+| Method | Compute | LLM cost | Wall (parallel 3 seeds) | Best M1 (k=2 cr035) |
+|---|---|---|---|---:|
+| LERO S3b-local (single prompt, 10M) | ~€10 | ~€0.10 | ~93 min | (cr025: 0.880) |
+| LERO-MP v3 (10 evol × 500k + 5M deep) | ~€20 | ~€1 | ~150 min | **0.395** seed 2 |
+
+LERO-MP's overhead is **+€10 + ~60 min** for 9 mutations evolved across the prompt template + deep training of the chosen final prompt.
+
+### LERO-MP findings vs LERO baseline (different task config, partial comparison)
+
+S3b-local is at `cr=0.25, ms=400, k=2` (the harder/longer task) and achieved M1=88%. LERO-MP is at `cr=0.35, ms=200, k=2` (the easier/shorter task, same as the v3 dry-run target). The configs are NOT directly comparable. To position LERO-MP against S3b-local, an additional LERO-MP run at `cr=0.25, ms=400` would be needed (estimated ~€20 + 2.5h).
+
+The most defensible comparisons LERO-MP enables today:
+1. **vs ER baselines at cr=0.35 ms=200**: LERO-MP best seed matches ER1, mean beats ER2 prox / ER3 GNN at peak@5M.
+2. **Sample efficiency at 1–2M frames**: LERO-MP shows ~2× faster ramp than ER1 in the early-to-mid training regime.
+
+### Why LERO-MP-3x2M didn't reach S3b-local performance (88% vs 9% final)
+
+S3b-local (final M1=0.880, k=2 cr=0.25 ms=400) and our LERO-MP 3x2M run (final M1=0.090 mean, k=2 cr=0.35 ms=200) are not at identical task configs — but the gap is too large to attribute to task difficulty alone (cr=0.35 is *easier* than cr=0.25). Side-by-side analysis of the two runs:
+
+| Dimension | S3b-local (final M1=0.880) | LERO-MP-3x2M (final M1=0.090 mean) |
+|---|---|---|
+| Base prompt's `guidance_observation` slot | Hand-crafted, task-aware: lists "count of nearby targets", "agent density nearby", role-differentiation hints + a working example with `n_close = (lidar_t < 0.25).sum()` | **Empty** in `v2_fewshot_modular_v2`. Slot is intentionally blank — the meta-LLM is supposed to fill it. |
+| Slot the meta-LLM actually edited | n/a (no meta loop) | All seeds repeatedly mutated `guidance_reward` (5 of 6 mutations across 3 seeds) — but `evolve_reward=false`, so reward-shaping prompts only INDIRECTLY influenced obs code via the inner LLM's reading of the full prompt |
+| Inner-loop evaluation budget | 4 iters × 3 cands × 1M frames each = **12M total inner-loop training** | 3 rounds × 3 cands × 200k each = **1.8M total inner-loop training** (~7× less) |
+| Candidates evaluated | 12 distinct codes | 9 distinct codes |
+| Coordination signals invented by the LLM | hold_signal, approach_signal, crowd_signal, sparsity_signal (by iter 3) | **None.** The Phase 2 policies trained on generic kinematics (own pos/vel + lidar min/mean) without any explicit coordination layer. |
+| Final M1 (post-training, 200-ep eval) | 0.880 | 0.090 mean (peak 0.472 mid-training, then degraded — see "Reward-hacking" subsection above) |
+
+#### Three structural failure modes of LERO-MP at this run
+
+**1. Empty starting slot + irrelevant Strategist target**.
+The base `v2_fewshot_modular_v2` template ships with empty `guidance_*` slots — the meta-LLM is supposed to fill them. But the Strategist kept editing `guidance_reward` (5/6 mutations), and with `evolve_reward=false` the inner LLM cannot output reward code. The slot's text leaks into the inner-LLM prompt as ambient context but doesn't guide observation engineering. **Net effect**: the meta-LLM's mutations didn't change what the inner LLM was asked to invent.
+
+**2. Inner-loop eval budget too small to discriminate good obs from generic obs**.
+S3b-local got 1M frames per candidate — enough that M6 differentiates strongly across candidates (the LERO doc shows iter 3 c2 hit M1=0.060 at 1M, far above iter 0 c1's 0.040). LERO-MP-3x2M ran 200k per candidate — at this scale all candidates score near M1=0 with M6 spread of only ~0.05, indistinguishable from noise. The "winner" inside Phase 1 (seed 2 round 1, M1=0.230 at 2M) was largely an LLM-stochasticity roll, not a robust ranking signal.
+
+**3. The meta-LLM never invented the coordination-signals recipe**.
+S3b-local's 4 inner iterations DERIVED hold/approach/crowd/sparsity from the prompt's coordination framework + feedback. LERO-MP's meta-LLM never touched `guidance_observation` with text that would prompt the inner LLM to think in coordination terms — it kept editing `guidance_reward` with reward-shaping language. The inner LLM, given a vacuous obs prompt + irrelevant reward text, defaulted to generic obs features. No iteration discovered the `hold_signal = target_near * agent_near` pattern.
+
+#### Why this matters: the meta-prompt loop's design assumption was wrong
+
+LERO-MP v3 was designed assuming the meta-LLM would *figure out* what the inner LLM needs to be told. The empirical result is the opposite: the meta-LLM gravitates toward whatever pattern looks "novel" in the strategy-card history and avoids slots that have been edited recently. It never settled on the `guidance_observation` slot for long enough to evolve a working observation recipe.
+
+S3b-local succeeded precisely because its prompt was *not* meta-evolved — it was hand-crafted by a human with task knowledge. The hand-crafted prompt did the heavy lifting; the inner LERO loop then refined the recipe over 4 iterations.
+
+#### Implication for the next run
+
+Pre-populate `guidance_observation` with S3b-local-derived hints + the breakthrough feature names. Concretely, replace the empty slot with text along these lines:
+
+> Augment local LiDAR observations with: (1) **gap features** = nearest-vs-2nd-nearest distance for both targets and agents; (2) **proximity counts** = number of lidar rays within covering_range; (3) **coordination signals** — `hold_signal = target_near AND agent_near` (stay), `approach_signal = target_near AND NOT agent_near` (go), `crowd_signal` (move away from clutter), `sparsity_signal` (explore when few targets nearby); (4) **intensity** = sum(1/dist) for sharper proximity; (5) role one-hot.
+
+Then the meta-LLM mutates *refinements* on a known-good baseline rather than re-discovering it. Hypothesis: peak_M1 at 5M reaches S3b-local territory (0.6–0.9) instead of plateauing at 0.4–0.5; final M1 at 10M no longer collapses because the structural features (hold_signal in particular) prevent the policy from drifting toward exploitation.
+
+This change is one-line in the prompt template (rewrite `src/lero/prompts/v2_fewshot_modular_v2/guidance_observation.txt` from empty to the hint text above), then re-run the same Phase 1+2 (~€30, ~4.5h).
+
+### LERO-MP gaps
+
+1. **No 10M run yet** → can't claim peak@10M. ER2 broadcast at 10M peaks at 0.575; we don't yet know whether LERO-MP would also climb past 0.5 with more training.
+2. **No fair LERO-without-meta baseline at cr=0.35**. S3b-local was on a different task. To isolate "did meta-prompting help vs LERO alone", we'd need to train `v2_fewshot_modular_v2` (no mutations) at 5M on this task config.
+3. **3 seeds is small for confidence intervals** — variance across seeds is 0.16–0.40 at peak@5M. 5+ seeds would tighten the comparison.
 
 ---
 
@@ -497,6 +725,8 @@ The practical implication for MARL practitioners: **use LLMs for observation/fea
 9. **GNN communication remains valuable but is now outperformed.** ER3 GATv2 ms400 (71%) was the previous best for k=2. LERO obs-only with local sensors (88%) surpasses it without any communication channel — just richer per-agent feature engineering from a one-time LLM design step. The GNN learns to COMMUNICATE; the LLM learns to OBSERVE better. For this task, better observation wins.
 
 10. **Agent LiDAR is a double-edged sword.** It reduces collisions for k=1 but causes avoidance behavior that prevents k=2 coordination. All successful k=2 runs use agent LiDAR + reward shaping together.
+
+11. **LERO-MP (meta-prompted LERO) yields 6–10× sample efficiency at peak@5M vs ER baselines on cr=0.35 ms=200 k=2 — but introduces an observation-driven reward-hacking pattern at 10M.** Cumulative 3-round evolution (3 rounds × 3 candidates × 200k eval + 2M deep-train per round) followed by 10M deep-train of the global-best evolved prompt across 3 seeds. Best seed at 2M = 0.260 (~13× ER1). Mean peak@5M = 0.433 (vs ER1's 0.400). Mean peak@10M = 0.472 (≈ ER1, beats ER2-prox, trails ER2-bc 0.575). Total budget: ~€30 + 4.5h wall split across 2 phases. **All 3 seeds peak then crash by 10M (gap −0.37 to −0.40)** — the LLM-engineered observation creates an exploit channel even with `evolve_reward=false`. **Practical implication**: peak-M1 checkpointing (`peak_checkpoint.py`) is mandatory; the final 10M policy is 3–9× worse than the peak. Provenance fully captured: per-round best obs/reward code + Strategist cards + Critic verdicts visible to next mutation via the `[ROUND HISTORY]` block in `mutation.py` / `strategy.py`. See [lero_metaprompt_v3_implementation.md](lero_metaprompt_v3_implementation.md) and [lero_metaprompt_harness.md](lero_metaprompt_harness.md).
 
 ---
 

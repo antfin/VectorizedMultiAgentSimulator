@@ -1,0 +1,113 @@
+exp_id: lero_mp_v3_eval_10M_best
+name: "LERO-MP v3 Phase 2 — deep-train best 3x2M-evolved prompt at 10M"
+description: >
+  Phase 2 of the cumulative-evolution experiment.
+
+  Phase 1 produced 3 seeds × 3 rounds = 9 evolution data points. The
+  global best was seed 2 round 1 (mp_001), which hit peak_M1=0.230 at
+  2M frames — 11× ER1's peak@2M (0.020) and exceeds every ER baseline
+  at the 2M checkpoint. The Strategist mutated guidance_reward; the
+  inner LLM (with evolve_reward=false) generated rich observation
+  features (own pos/vel + lidar summaries + agent_idx role
+  differentiation + task constants for normalization).
+
+  This Phase 2 trains that exact prompt at 10M frames across 3 seeds
+  to:
+    1. Verify peak_M1=0.230 wasn't seed-specific noise
+    2. Get peak@5M and peak@10M data for the comparison table vs ER1
+    3. Probe whether the policy continues climbing past 0.230 with more
+       training (or reward-hacks downward)
+
+  Per seed: 2 × 200k eval + 10M full = 10.4M frames ≈ ~165 min on V100S.
+  3 seeds parallel: ~165 min wall, ~€17 OVH + €0.05 LLM.
+
+  prompt_version is the staged copy of seed 2's mp_001:
+    src/lero/prompts/v2_evolved_3x2M_best/
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 2
+  top_k: 2
+  eval_frames: 200_000
+  eval_episodes: 100
+  full_frames: 10_000_000
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+  skip_full_training: false
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0
+  max_retries: 3
+  prompt_version: "v2_evolved_3x2M_best"
+
+meta_prompt:
+  enabled: false
+  two_level_meta: true
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0
+  meta_api_base: null
+  llm_cache: "off"
+  seeds: [0, 1, 2]
+  slot_policy: "failmode_taxonomy"
+  trigger:
+    plateau_iters: 1
+    plateau_delta: 0.99
+    variance_threshold: 0.15
+    peak_vs_final_gap_max: 0.20
+    cooldown_inner_iters: 0
+    converged_iters: 99
+    converged_delta: 0.001
+  budget:
+    max_outer_iters: 1
+    max_total_inner_candidates: 30
+    tier2_promotion_gap: 0.05
+  fairness:
+    whitelist_strict: true
+    waiver: null
+
+sweep:
+  seeds: [0, 1, 2]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]
