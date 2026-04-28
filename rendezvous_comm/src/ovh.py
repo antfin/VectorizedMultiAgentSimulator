@@ -452,7 +452,7 @@ def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[s
 
     # Upload only code-relevant subdirectories and top-level files
     _CODE_DIRS = ["src", "configs", "notebooks", "tests"]
-    _CODE_FILES = ["train.py", "run_lero_mp.py",
+    _CODE_FILES = ["train.py", "run_lero_mp_v4.py",
                    "setup.py", "setup.cfg",
                    "pyproject.toml", "requirements.txt"]
 

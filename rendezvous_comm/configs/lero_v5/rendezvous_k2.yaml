@@ -1,0 +1,95 @@
+exp_id: lero_v5_rendezvous_k2
+name: "LERO v5 — focused-depth two-level textual gradient"
+description: >
+  v5 architecture: a single metaprompt evolved across N_OUTER outer
+  iterations, where each outer iteration runs an S3b-local-style inner
+  search (4 × 3 × 1M) with iterative-refinement feedback. Both levels
+  use the same textual-gradient pattern: best+worst examples, cumulative
+  tried-and-failed registry, stagnation detection that triggers a forced
+  pivot prompt.
+
+  Inner LLM operates on Python obs/reward CODE (low-level).
+  Outer (meta) LLM operates on the metaprompt SLOT FILES (high-level).
+
+  Per-seed budget: 3 outer × (4 inner × 3 cand × 1M) + 10M deep = 46M.
+  Wall: ~13h on M2 Pro (sequential single-seed) or ~7h on V100S.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 400
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 10_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 200
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 1
+  top_k: 1
+  eval_frames: 1_000_000
+  eval_episodes: 100
+  full_frames: 10_000_000
+  evolve_reward: true
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2"
+
+v5:
+  n_outer: 3
+  n_inner_iter: 4
+  n_inner_candidates_per_iter: 3
+  eval_frames: 1_000_000
+  full_frames: 10_000_000
+  pivot_eps: 0.05
+  base_prompt_version: "v2_fewshot_modular_v2"
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0
+  task_summary: |
+    Multi-agent rendezvous in VMAS Discovery scenario. 4 agents must
+    collectively cover 4 targets, with each target requiring exactly 2
+    agents simultaneously within covering_range to count as covered.
+    Local observations only (lidar + own pos/vel). The challenge is
+    implicit coordination: agents need to spread out, identify partners,
+    and converge on shared targets without communication.
+
+sweep:
+  seeds: [0]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

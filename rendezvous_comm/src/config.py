@@ -119,6 +119,10 @@ class ExperimentSpec:
     llm: Optional[Any] = None    # LLMConfig
     # LERO-MP meta-prompt outer loop (None = disabled / not configured)
     meta_prompt: Optional[Any] = None  # MetaPromptConfig
+    # LERO-MP v4 (description-driven, multi-strategy). Set when YAML
+    # has a top-level "v4:" block. Mutually exclusive with meta_prompt
+    # (use one or the other in a given config).
+    v4: Optional[Any] = None  # LeroMPv4Config
 
     @property
     def family(self) -> str:
@@ -248,6 +252,12 @@ def load_experiment(yaml_path) -> ExperimentSpec:
             **mp_raw,
         )
 
+    # Optional LERO-MP v4 config (top-level "v4:" block).
+    v4_config = None
+    if "v4" in raw:
+        from .lero.config import LeroMPv4Config
+        v4_config = LeroMPv4Config(**dict(raw["v4"]))
+
     return ExperimentSpec(
         exp_id=raw["exp_id"],
         name=raw["name"],
@@ -259,6 +269,7 @@ def load_experiment(yaml_path) -> ExperimentSpec:
         lero=lero_config,
         llm=llm_config,
         meta_prompt=meta_prompt_config,
+        v4=v4_config,
     )
 
 

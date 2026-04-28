@@ -157,6 +157,70 @@ class MetaPromptFairness:
 
 
 @dataclass
+class LeroMPv4Config:
+    """LERO-MP v4 — description-driven, multi-strategy, stability-oriented.
+
+    Replaces v3's MetaPromptConfig. Each round emits N strategies, each
+    producing one candidate; best by stability score advances to a 2M
+    mid-train; global best across N rounds gets a final 10M deep-train.
+    """
+
+    # Path to the human-written task description (.md)
+    description_path: Optional[str] = None
+
+    # Inner-loop / round structure
+    n_rounds: int = 3
+    n_strategies_per_round: int = 3
+    eval_frames: int = 200_000          # per-strategy candidate eval (per inner candidate)
+    mid_frames: int = 2_000_000         # winner of each round trains here
+    final_full_frames: int = 10_000_000  # global winner deep-train
+
+    # v4.1 Change C — multi-iteration inner loop per strategy. Each
+    # strategy now runs `inner_n_iterations` LERO iterations × inner_
+    # n_candidates_per_iter candidates. Inter-iter feedback lets the
+    # inner LLM converge on good code (mimics S3b-local's 4-iteration
+    # discovery process). Default (2, 3) = 6 inner LLM calls / strategy.
+    inner_n_iterations: int = 2
+    inner_n_candidates_per_iter: int = 3
+
+    # v4.1 Change B — gate evolve_reward by round index. From this round
+    # onward the strategist is allowed to propose reward edits.
+    # Round 0 is observation-only by default — focuses initial search
+    # on the historically successful direction.
+    evolve_reward_from_round: int = 1
+
+    # Stability scoring weights
+    fitness_peak: float = 0.3
+    fitness_final: float = 0.7
+    fitness_stability_penalty: float = 0.2
+    fitness_m6_bonus: float = 0.05
+
+    # Bootstrap caching
+    bootstrap_cache: bool = True
+    # When None, defaults to <output_dir>/bootstrap_cache/
+    bootstrap_cache_dir: Optional[str] = None
+
+    # Inner-LLM behaviour
+    evolve_reward: bool = True   # v4 default: allow LLM to evolve reward
+    evolve_observation: bool = True
+    obs_state_mode: str = "local"
+    whitelist_strict: bool = True
+    bonus_scale: float = 0.5
+    reward_clip: Optional[float] = 50.0
+    reward_mode: str = "replace"
+
+    # Meta-LLM (Strategist + Bootstrap)
+    meta_model: str = "gpt-5.4-mini"
+    meta_temperature: float = 1.0
+    meta_api_base: Optional[str] = None
+    llm_cache: str = "off"
+    llm_cache_dir: Optional[str] = None
+
+    # Seeds
+    seeds: List[int] = field(default_factory=lambda: [0, 1, 2])
+
+
+@dataclass
 class MetaPromptConfig:
     """Outer loop that evolves prompt templates across inner runs.
 

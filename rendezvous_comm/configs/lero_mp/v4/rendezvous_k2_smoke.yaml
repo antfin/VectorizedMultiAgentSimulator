@@ -1,0 +1,88 @@
+exp_id: lero_mp_v4_smoke
+name: "LERO-MP v4 SMOKE — tiny budget, catches plumbing bugs"
+description: >
+  Cheap dryrun to verify the full Phase0→Phase1×rounds→Phase2 pipeline
+  runs end-to-end without crashing. Per-seed total <0.4M frames so 3
+  seeds finish in ~10 min on V100S, costing ~€0.70.
+
+  After this passes (final_M1 dump exists, no exceptions), run the
+  full mp_v4_rendezvous_k2.yaml.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.35
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 200
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 100_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 60_000
+  evaluation_episodes: 100
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 1
+  top_k: 1
+  eval_frames: 60_000
+  eval_episodes: 100
+  full_frames: 60_000
+  evolve_reward: true
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+  skip_full_training: false
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 1.0
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2"
+
+v4:
+  description_path: "configs/lero_mp/v4/rendezvous_k2.md"
+  n_rounds: 2
+  n_strategies_per_round: 2
+  eval_frames: 60_000          # tiny screen
+  mid_frames: 60_000           # tiny mid-train
+  final_full_frames: 100_000   # tiny final
+  inner_n_iterations: 2
+  inner_n_candidates_per_iter: 2
+  evolve_reward_from_round: 1
+  fitness_peak: 0.3
+  fitness_final: 0.7
+  fitness_stability_penalty: 0.2
+  fitness_m6_bonus: 0.05
+  bootstrap_cache: true
+  evolve_reward: true
+  evolve_observation: true
+  obs_state_mode: "local"
+  whitelist_strict: true
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 1.0
+  llm_cache: "off"
+  seeds: [0]
