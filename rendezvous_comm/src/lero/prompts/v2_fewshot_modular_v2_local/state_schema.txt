@@ -1,0 +1,26 @@
+## Available State (LOCAL sensors only)
+
+Each agent receives only its own proprioception plus LiDAR-style sensor
+arrays. There is no oracle access to other agents' positions, target
+positions, or coverage status. Build features from the keys listed
+below. Referencing any other key WILL raise KeyError at runtime.
+
+```python
+scenario_state = {
+    "agent_pos":        # [batch, 2] — this agent's own position
+    "agent_vel":        # [batch, 2] — this agent's own velocity
+    "agent_idx":        # int (0..$n_agents-1) — this agent's index
+    "n_agents":         # $n_agents
+    "n_targets":        # $n_targets
+    "covering_range":   # $covering_range
+    "agents_per_target_required": # $agents_per_target
+    "lidar_targets":    # [batch, $n_lidar_rays_entities] — distance to nearest TARGET in each ray direction (0=touching, larger=farther, max=nothing detected)
+    "lidar_agents":     # [batch, $n_lidar_rays_agents] — distance to nearest OTHER AGENT per ray (only present when use_agent_lidar=true)
+    "collision_rew":    # [batch] — current-step collision reward (already includes collision_penalty)
+    "time_penalty":     # $time_penalty
+}
+```
+
+You do NOT have access to: `agents_pos`, `targets_pos`,
+`agents_targets_dists`, `covered_targets`, `agents_per_target`,
+`all_time_covered`, or any global state.

@@ -1,6 +1,6 @@
 # Complete Experiment Analysis — Learning Communication Protocols for Multi-Robot Rendezvous
 
-**Date:** 2026-03-24 (ER1–ER3), 2026-04-16 (LERO)
+**Date:** 2026-03-24 (ER1–ER3), 2026-04-16 (LERO), 2026-04-29 (LERO-MP v4/B'/v5 + S3b-local 3-seed replicate)
 **Framework:** VMAS Discovery + BenchMARL (MAPPO)
 **Task:** covering_range=0.25 (unless noted), targets_respawn=False
 
@@ -654,6 +654,89 @@ This change is one-line in the prompt template (rewrite `src/lero/prompts/v2_few
 
 ---
 
+## LERO-MP v4 / B' / v5 — Architectural Complexity Made It Worse (2026-04-29)
+
+After the v3 LERO-MP run plateaued at peak ~0.47 with 10M-collapse on cr=0.35 ms=200, three architecture iterations were attempted to close the gap to S3b-local — each strictly more sophisticated than the last. **All three significantly underperformed the simple S3b-local baseline.**
+
+### Architecture progression
+
+| version | what changed vs v3 | task | per seed budget |
+|---|---|---|---|
+| **v4 / v4.1** | Bootstrap meta-LLM call + 3 outer rounds × 3 strategies × 200k inner eval; `evolve_reward=true` | cr=0.35 ms=200 (easier) | ~17M frames |
+| **B' (v4 with 1M inner)** | Same as v4.1 but inner eval bumped 200k → 1M; cr=0.25 ms=400 to match S3b-local | cr=0.25 ms=400 | ~34M frames |
+| **v5** | Single metaprompt evolved across 3 outer iters; outer textual gradient (best+worst+registry+stagnation+pivot) symmetric to inner; weighted multi-metric fitness; checkpoint-resume | cr=0.25 ms=400 | ~46M frames |
+
+### S3b-local 3-seed replication (cr=0.25 ms=400, the hard task)
+
+The original 0.88 was a single seed. To rule out single-seed luck before judging v4/v5:
+
+| seed | post-eval M1 | peak in-train | peak→final gap |
+|---|---:|---:|---:|
+| s0 | 0.885 | 0.930 | 0.045 |
+| s1 | 0.820 | 0.925 | 0.105 |
+| s2 | 0.830 | 0.945 | 0.115 |
+| **mean** | **0.845** | **0.933** | **0.088** |
+
+Tight cluster, small in-train→post-eval gaps. **S3b-local's performance is robust, not an outlier.**
+
+### Head-to-head on the hard task (cr=0.25 ms=400)
+
+| approach | post-eval M1 | seeds | inner-eval signal at 1M |
+|---|---:|---:|---|
+| **S3b-local** | **0.845 mean** | 3 | M1=0.03–0.07 (escapes flat_zero) |
+| **B' (v4 with 1M inner)** | 0.238 mean (0.020 / 0.420 / 0.275) | 3 | **M1=0.000 every candidate (flat_zero)** |
+| **v5 (textual gradient)** | 0.010 | 1 | **M1=0.000 every candidate (flat_zero)** |
+
+**S3b-local beats v5 by 80× and B' by 3.5×** — and it's strictly the simpler architecture.
+
+### Diagnosis: `evolve_reward=true` is the killer
+
+The single biggest config difference between the simple winner and the complex losers:
+
+| factor | S3b-local | v4 / B' / v5 |
+|---|---|---|
+| **`evolve_reward`** | **`false`** (uses ER1 baseline reward) | **`true`** (LLM rewrites reward each iteration) |
+| `evolve_observation` | true | true |
+| inner candidates per iter | 4 × 3 = 12 | varies |
+| outer meta-layer | none | yes |
+| prompt version | `v2_fewshot_k2_local` | `v2_fewshot_modular_v2` |
+| LLM temperature | 0.8 | 1.0 |
+
+Mechanism: when LLM evolves reward, it can introduce reward-hacking shortcuts (anti-crowding penalties, surplus bonuses, magnitude inflation) — the same ones documented in the S3 / S3a / S3ac failures earlier in this doc. The 1M inner-eval is too short for the policy to discover and exploit these shortcuts, so the inner LERO loop can't filter them out. At 10M deep-train, the policy collapses into the exploit. This produces the characteristic `peak_collapse` / `oscillating` shape and the huge in-train→post-eval gap (B' mean gap 0.16, v5 gap 0.12).
+
+**Critical signal**: at 1M frames S3b-local's inner consistently reaches M1=0.03–0.07 (well above the 0.02 flat_zero threshold), giving the iterative inner loop real signal to refine on. v4/B'/v5 inner candidates **all** stay at M1=0.000 at 1M frames — the textual-gradient feedback has no signal to operate on, so meta-refinement is essentially picking randomly.
+
+### Implications
+
+1. **Reward-evolution is the dominant failure mode for k=2 coordination tasks, not eval-budget or prompt-architecture sophistication.** The earlier S3/S3a/S3ac failures (M1=8–10%) were *not* anomalies fixable with more search budget — they were the rule for `evolve_reward=true`.
+
+2. **The "Feature Engineering vs Incentive Design" thesis is reinforced** — and the corollary is now sharper: **complex meta-search on top of `evolve_reward=true` doesn't recover from reward hacking, it amplifies the noise.** The meta-LLM's textual gradient has no signal to grade because every reward variant the inner LLM emits scores 0 at 1M frames.
+
+3. **v5's textual-gradient architecture (good+bad+registry+stagnation+pivot at both inner and outer) is technically sound and produces high-quality strategic guidance** (verified in smoke logs and visible in `_refiner_diagnosis.md`). **It just can't help when the underlying signal is zero.** The architecture is not the bottleneck.
+
+4. **The next obvious test is "B'/v5 with `evolve_reward=false`"** — does turning off reward evolution close the gap to S3b-local? If yes, the meta-layer (v5) on top of obs-only LERO may finally beat the S3b-local baseline by adding cross-iter learning. If no, the meta-layer doesn't add value over S3b-local's hand-crafted prompt + 4×3 iterative inner.
+
+### Cost paid for the negative result
+
+| run | seeds | cost | wall |
+|---|---:|---:|---:|
+| v4.1 (cr=0.35) | 3 (s2 crashed at strategist JSON parse — fixed in B') | ~€44 | 4–5h parallel |
+| B' (cr=0.25, 1M inner) | 3 | ~€60 | 6–7h parallel |
+| v5 (Mac single seed) | 1 | €0 | 6.7h |
+| S3b-local replicate | 3 | ~€40 | 2h parallel |
+
+**Total: ~€150 + €0 Mac time** to ground-truth the architecture comparison. The clearest finding from the project so far in terms of cost-per-bit of insight.
+
+### Files / artifacts
+
+- v4.1 jobs: `results/v4_1_full_run_jobs.txt`
+- B' jobs + final_metrics: `results/lero_mp_v4/lero_mp_v4_rendezvous_k2_b1/`
+- v5 Mac run: `results/lero_v5/lero_v5_rendezvous_k2/full_mac_seed0_20260428_2159/`
+- S3b-local replicate: `results/s3b_local_replicate/lero_s3b_local_s{0,1,2}/`
+- v5 source: `src/lero/v5/` (inner_fitness, registry, feedback, inner_loop, meta_refiner, outer_loop, all with checkpoint-resume support)
+
+---
+
 ## Updated Cross-ER Comparison (including LERO)
 
 ### Best results per condition (k=2, ms400, cr025) — UPDATED
@@ -661,7 +744,8 @@ This change is one-line in the prompt template (rewrite `src/lero/prompts/v2_few
 | Rank | Method | M1 (SR%) | M2 | M3 | M6 (Cov%) | Reward | Obs/Comm | Fair? |
 |---|---|---:|---:|---:|---:|---|---|---|
 | (1) | LERO obs-only S3b-global | 100% | 19.3 | 68 | 100% | Hand-crafted | LLM obs (oracle) | ❌ oracle |
-| **1** | **LERO obs-only S3b-local** | **88.0%** | **5.0** | **186** | **97.0%** | Hand-crafted | **LLM obs (local only)** | **✅ fair** |
+| **1** | **LERO obs-only S3b-local** (mean of 3 seeds) | **84.5%** | **−2.8** | **210** | **94.9%** | Hand-crafted | **LLM obs (local only)** | **✅ fair** |
+|  | └ S3b-local single-seed range | 82.0–88.5% | −2.5 to −3.0 | 205–215 | 93.9–96.6% |  |  |  |
 | 2 | ER3 GNN (GATv2) | 71.0% | 2.50 | 250 | 91.8% | Hand-crafted + LP+SR | GNN msg-passing | ✅ fair |
 | 3 | ER2 proximity comm | 53.0% | 0.88 | 295 | 82.5% | Hand-crafted + LP+SR | Proximity comm | ✅ fair |
 | 4 | ER2 broadcast comm | 46.0% | 0.55 | 308 | 80.4% | Hand-crafted + LP+SR | Broadcast comm | ✅ fair |
@@ -669,7 +753,7 @@ This change is one-line in the prompt template (rewrite `src/lero/prompts/v2_few
 | 6 | LERO reward (S3) | 10.5% | 486.5 | 382 | 26.1% | LLM-designed | LLM obs | ✅ fair |
 | 7 | LERO reward (S3a_gpt5) | 9.0% | 1323.6 | 391 | 39.3% | LLM-designed (gpt-5.4) | LLM obs | ✅ fair |
 
-**S3b-global** (100%) uses oracle global state in observations — unfair comparison. **S3b-local** (88%) uses only local sensors — same information as ER1/ER2/ER3 — and is the legitimate new state-of-the-art.
+**S3b-global** (100%) uses oracle global state in observations — unfair comparison. **S3b-local** (84.5% mean of 3 seeds, originally 88% on a single seed) uses only local sensors — same information as ER1/ER2/ER3 — and is the legitimate new state-of-the-art. The 2026-04-29 3-seed replication (0.885/0.820/0.830) confirmed the result is robust, not single-seed luck.
 
 ### Best results for k=1 tasks
 
@@ -726,7 +810,11 @@ The practical implication for MARL practitioners: **use LLMs for observation/fea
 
 10. **Agent LiDAR is a double-edged sword.** It reduces collisions for k=1 but causes avoidance behavior that prevents k=2 coordination. All successful k=2 runs use agent LiDAR + reward shaping together.
 
-11. **LERO-MP (meta-prompted LERO) yields 6–10× sample efficiency at peak@5M vs ER baselines on cr=0.35 ms=200 k=2 — but introduces an observation-driven reward-hacking pattern at 10M.** Cumulative 3-round evolution (3 rounds × 3 candidates × 200k eval + 2M deep-train per round) followed by 10M deep-train of the global-best evolved prompt across 3 seeds. Best seed at 2M = 0.260 (~13× ER1). Mean peak@5M = 0.433 (vs ER1's 0.400). Mean peak@10M = 0.472 (≈ ER1, beats ER2-prox, trails ER2-bc 0.575). Total budget: ~€30 + 4.5h wall split across 2 phases. **All 3 seeds peak then crash by 10M (gap −0.37 to −0.40)** — the LLM-engineered observation creates an exploit channel even with `evolve_reward=false`. **Practical implication**: peak-M1 checkpointing (`peak_checkpoint.py`) is mandatory; the final 10M policy is 3–9× worse than the peak. Provenance fully captured: per-round best obs/reward code + Strategist cards + Critic verdicts visible to next mutation via the `[ROUND HISTORY]` block in `mutation.py` / `strategy.py`. See [lero_metaprompt_v3_implementation.md](lero_metaprompt_v3_implementation.md) and [lero_metaprompt_harness.md](lero_metaprompt_harness.md).
+11. **S3b-local 3-seed replication (2026-04-29): mean post-eval M1 = 0.845** (0.885 / 0.820 / 0.830), peak in-train mean 0.933, peak→final gap mean 0.088. The 0.88 single-seed result was robust, not lucky. This grounds the comparisons used by all subsequent LERO-MP architecture iterations.
+
+12. **Architectural complexity on top of `evolve_reward=true` does not close the reward-hacking gap — it amplifies the noise.** Three increasingly sophisticated meta-search architectures (v4 multi-strategy fanout, B' = v4 with 1M inner, v5 textual-gradient meta-loop with best+worst+registry+stagnation+pivot) all underperformed S3b-local on the same task: B' mean 0.238, v5 single-seed 0.010, vs S3b-local 0.845. Mechanism: with `evolve_reward=true` every reward variant looks identical (M1=0) at 1M-frame inner-eval, so meta-LLM textual-gradient feedback has no signal to grade and the 10M deep-train of whichever-was-randomly-picked then exploits the reward shortcut. The architecture is technically sound (v5's meta-refiner produced semantically rich strategic guidance, verified in `_refiner_diagnosis.md`); the bottleneck is that meta-search cannot manufacture signal that doesn't exist in the inner objective. **Practical implication**: future LERO-MP-style work on coordination tasks should keep `evolve_reward=false` and use the meta-layer to evolve the *observation prompt* only — the only direction the LLM is empirically reliable in for k≥2.
+
+13. **LERO-MP (meta-prompted LERO) yields 6–10× sample efficiency at peak@5M vs ER baselines on cr=0.35 ms=200 k=2 — but introduces an observation-driven reward-hacking pattern at 10M.** Cumulative 3-round evolution (3 rounds × 3 candidates × 200k eval + 2M deep-train per round) followed by 10M deep-train of the global-best evolved prompt across 3 seeds. Best seed at 2M = 0.260 (~13× ER1). Mean peak@5M = 0.433 (vs ER1's 0.400). Mean peak@10M = 0.472 (≈ ER1, beats ER2-prox, trails ER2-bc 0.575). Total budget: ~€30 + 4.5h wall split across 2 phases. **All 3 seeds peak then crash by 10M (gap −0.37 to −0.40)** — the LLM-engineered observation creates an exploit channel even with `evolve_reward=false`. **Practical implication**: peak-M1 checkpointing (`peak_checkpoint.py`) is mandatory; the final 10M policy is 3–9× worse than the peak. Provenance fully captured: per-round best obs/reward code + Strategist cards + Critic verdicts visible to next mutation via the `[ROUND HISTORY]` block in `mutation.py` / `strategy.py`. See [lero_metaprompt_v3_implementation.md](lero_metaprompt_v3_implementation.md) and [lero_metaprompt_harness.md](lero_metaprompt_harness.md).
 
 ---
 

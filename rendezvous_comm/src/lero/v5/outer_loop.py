@@ -14,9 +14,11 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
+import pickle
 import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -36,6 +38,66 @@ class OuterIterRecord:
     prompt_dir: Path
     inner: InnerResult
     diagnosis: str = ""
+
+
+@dataclass
+class V5Checkpoint:
+    """Persisted state of an in-progress v5 run.
+
+    Saved after each phase boundary so a killed run can resume cleanly:
+      - after inner of outer_idx finishes  → outer_idx_completed=k
+      - after meta-refine for outer_idx=k → refine_completed_for=k
+                                            (next outer's prompt dir ready)
+      - after deep-train                   → deep_train_done=True
+    """
+    schema_version: int = 1
+    seed: int = 0
+    outer_idx_completed: int = -1     # last outer whose inner finished
+    refine_completed_for: int = -1    # last outer whose meta-refine ran
+    outer_registry: Registry = field(default_factory=Registry)
+    iter_records: List["OuterIterRecord"] = field(default_factory=list)
+    current_prompt_name: str = ""     # metaprompt to use NEXT
+    current_prompt_dir_str: str = ""  # absolute path string
+    deep_train_done: bool = False
+    final_metrics: Optional[Dict[str, Any]] = None
+    elapsed_s_so_far: float = 0.0
+
+
+_CHECKPOINT_BASENAME = "_v5_checkpoint.pkl"
+
+
+def _checkpoint_path(output_dir: Path) -> Path:
+    return Path(output_dir) / _CHECKPOINT_BASENAME
+
+
+def _save_checkpoint(output_dir: Path, ckpt: V5Checkpoint) -> None:
+    """Atomic save: write to .tmp, then rename."""
+    path = _checkpoint_path(output_dir)
+    tmp = path.with_suffix(".pkl.tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump(ckpt, f)
+    os.replace(tmp, path)
+    _log.info(
+        "v5 checkpoint saved: outer_done=%d refine_done=%d deep=%s",
+        ckpt.outer_idx_completed,
+        ckpt.refine_completed_for,
+        ckpt.deep_train_done,
+    )
+
+
+def _load_checkpoint(output_dir: Path) -> Optional[V5Checkpoint]:
+    path = _checkpoint_path(output_dir)
+    if not path.exists():
+        return None
+    with open(path, "rb") as f:
+        ckpt = pickle.load(f)
+    _log.info(
+        "v5 checkpoint loaded: outer_done=%d refine_done=%d deep=%s",
+        ckpt.outer_idx_completed,
+        ckpt.refine_completed_for,
+        ckpt.deep_train_done,
+    )
+    return ckpt
 
 
 @dataclass
@@ -109,8 +171,16 @@ def run_v5_outer_loop(
     seed: int = 0,
     task_overrides: Optional[Dict[str, Any]] = None,
     algorithm: str = "mappo",
+    resume: bool = False,
 ) -> Dict[str, Any]:
-    """Top-level v5 entry. Returns dict with final metrics + provenance."""
+    """Top-level v5 entry. Returns dict with final metrics + provenance.
+
+    With ``resume=True``, picks up from ``_v5_checkpoint.pkl`` in
+    output_dir if present. Phase boundaries that get checkpointed:
+      - after each inner loop completes
+      - after each meta-refine completes
+      - after deep-train completes
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,29 +189,48 @@ def run_v5_outer_loop(
     prompts_root = output_dir / "prompts"
     _redirect_prompt_loader(prompts_root)
 
-    # Copy base prompt version into the writable root so PromptLoader
-    # can find it via version=<dirname>.
-    from ..prompts import loader as _l_mod  # local mutated module
+    from ..prompts import loader as _l_mod
     _orig_prompts_dir = Path(_l_mod.__file__).parent
     base_src = _orig_prompts_dir / cfg.base_prompt_version
     if not base_src.exists():
         raise FileNotFoundError(
             f"base prompt version not found: {base_src}"
         )
-    seed_prompt_name = f"v5_outer_0_seed{seed}"
-    seed_prompt_dir = prompts_root / seed_prompt_name
-    if seed_prompt_dir.exists():
-        shutil.rmtree(seed_prompt_dir)
-    shutil.copytree(base_src, seed_prompt_dir)
 
-    outer_registry = Registry()
-    iter_records: List[OuterIterRecord] = []
-    current_prompt_name = seed_prompt_name
-    current_prompt_dir = seed_prompt_dir
+    # Resume-or-init checkpoint state
+    ckpt: Optional[V5Checkpoint] = None
+    if resume:
+        ckpt = _load_checkpoint(output_dir)
+    if ckpt is None:
+        seed_prompt_name = f"v5_outer_0_seed{seed}"
+        seed_prompt_dir = prompts_root / seed_prompt_name
+        if seed_prompt_dir.exists():
+            shutil.rmtree(seed_prompt_dir)
+        shutil.copytree(base_src, seed_prompt_dir)
+        ckpt = V5Checkpoint(
+            seed=seed,
+            current_prompt_name=seed_prompt_name,
+            current_prompt_dir_str=str(seed_prompt_dir.resolve()),
+        )
+        _save_checkpoint(output_dir, ckpt)
+    else:
+        _log.info(
+            "v5 RESUME — skipping outers ≤ %d", ckpt.outer_idx_completed
+        )
+
+    outer_registry = ckpt.outer_registry
+    iter_records = ckpt.iter_records
+    current_prompt_name = ckpt.current_prompt_name
+    current_prompt_dir = Path(ckpt.current_prompt_dir_str)
 
     t_start = time.monotonic()
 
     for outer_idx in range(cfg.n_outer):
+        if outer_idx <= ckpt.outer_idx_completed:
+            _log.info("=== v5 OUTER ITER %d/%d (skipped — already done) ===",
+                       outer_idx + 1, cfg.n_outer)
+            continue
+
         _log.info("=== v5 OUTER ITER %d/%d ===", outer_idx + 1, cfg.n_outer)
         inner_out_dir = output_dir / f"outer_{outer_idx:02d}_inner"
         inner_result = run_inner_loop(
@@ -170,6 +259,13 @@ def run_v5_outer_loop(
             outer_idx, entry.M1, entry.fitness, entry.shape,
         )
 
+        # CHECKPOINT — after inner finishes (the long phase). Resume
+        # from here means: meta-refine + next outer iter remain to do.
+        ckpt.outer_idx_completed = outer_idx
+        ckpt.elapsed_s_so_far += time.monotonic() - t_start
+        t_start = time.monotonic()
+        _save_checkpoint(output_dir, ckpt)
+
         # Refine metaprompt for next iter (skip on the last)
         if outer_idx == cfg.n_outer - 1:
             break
@@ -188,6 +284,18 @@ def run_v5_outer_loop(
         )
         current_prompt_name = next_prompt_name
         current_prompt_dir = next_prompt_dir
+        # CHECKPOINT — after meta-refine. Resume from here means: next
+        # outer iter's inner loop is what restarts.
+        ckpt.refine_completed_for = outer_idx
+        ckpt.current_prompt_name = current_prompt_name
+        ckpt.current_prompt_dir_str = str(current_prompt_dir.resolve())
+        _save_checkpoint(output_dir, ckpt)
+
+    # If a previous run already finished deep-train, return cached.
+    if ckpt.deep_train_done and ckpt.final_metrics is not None:
+        _log.info("v5 RESUME — deep-train already complete, returning cached "
+                  "final metrics.")
+        return ckpt.final_metrics
 
     # Pick global best across all outer iters
     candidates_all = []
@@ -230,6 +338,12 @@ def run_v5_outer_loop(
     (output_dir / "v5_summary.json").write_text(
         json.dumps(final_metrics, indent=2, default=str)
     )
+
+    # CHECKPOINT — deep-train done, run is complete.
+    ckpt.deep_train_done = True
+    ckpt.final_metrics = final_metrics
+    ckpt.elapsed_s_so_far += time.monotonic() - t_start
+    _save_checkpoint(output_dir, ckpt)
 
     _log.info(
         "=== v5 DONE === elapsed=%.0fs final_M1=%.3f outer_traj=%s",

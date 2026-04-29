@@ -1,0 +1,50 @@
+version: v2_fewshot_modular_v2_local
+author: rendezvous_comm
+date: 2026-04-29
+parent: v2_fewshot_modular_v2
+description: >
+  v6 local-mode base template. Forks v2_fewshot_modular_v2 with two
+  prerequisite repairs documented in docs/prompt_evolution_analysis.md
+  §4 (the inner-prompt audit):
+
+    1. state_schema.txt now lists ONLY the keys actually present in
+       the patched scenario when obs_state_mode=local. Removes the
+       oracle keys (agents_pos, targets_pos, agents_targets_dists,
+       covered_targets, agents_per_target, all_time_covered) which
+       were misleading the inner LLM into writing code that fails
+       at runtime with KeyError.
+
+    2. examples.txt now includes a MINIMAL observation example
+       (returns nearest-target distance only) plus a minimal reward
+       example. This anchors the function signature + PyTorch-batch
+       idiom WITHOUT giving the LLM the answer features. Density of
+       guidance is intentionally far below S3b-local's hand-curated
+       v2_fewshot_k2_local prompt; the meta-LLM is supposed to
+       rediscover stronger guidance through reflection.
+
+  These repairs remove a footgun, they do not encode the answer.
+  See docs/v6_plan.md §4.1 for rationale.
+
+initial_user_slots:
+  - name: task_context
+    file: task_context.txt
+  - name: current_code
+    file: current_code.txt
+  - name: state_schema
+    file: state_schema.txt
+  - name: fairness
+    file: fairness.txt
+    frozen: true
+  - name: guidance_shared
+    file: guidance_shared.txt
+  - name: guidance_reward
+    file: guidance_reward.txt
+  - name: guidance_observation
+    file: guidance_observation.txt
+  - name: examples
+    file: examples.txt
+  - name: output_spec
+    file: output_spec.txt
+
+frozen_hashes:
+  fairness: "95d5ca8be490f622afd72e630f12124e71e8e5e236b927e2d7671e8a7715c831"

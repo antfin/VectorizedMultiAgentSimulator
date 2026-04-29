@@ -1,0 +1,12 @@
+## Generate Function
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    """Design a reward that maximizes coverage rate.
+    Returns: [batch_dim] tensor.
+    """
+```
+
+Wrap the function in a single ```python block. Do NOT output an
+enhance_observation function — observations are frozen at the
+scenario's default for this run.

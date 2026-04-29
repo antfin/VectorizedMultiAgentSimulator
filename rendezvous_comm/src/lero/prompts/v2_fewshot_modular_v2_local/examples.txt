@@ -1,0 +1,24 @@
+## Examples
+
+Below are minimal examples showing the output format and PyTorch
+vectorization idiom. They are intentionally trivial — observation
+returns just nearest-target distance, reward returns just the
+pass-through collision/time terms — to anchor the function signature
+without prescribing an answer. Design more useful functions for THIS
+task; do not just copy them.
+
+### Minimal local-obs example
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    lidar_t = scenario_state["lidar_targets"]    # [B, n_rays]
+    nearest_target_dist, _ = lidar_t.min(dim=-1) # [B]
+    return nearest_target_dist.unsqueeze(-1)     # [B, 1]
+```
+
+### Minimal local-reward example
+
+```python
+def compute_reward(scenario_state: dict) -> torch.Tensor:
+    return scenario_state["collision_rew"] + scenario_state["time_penalty"]
+```

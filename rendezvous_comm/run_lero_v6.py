@@ -1,26 +1,23 @@
 #!/usr/bin/env python3
-"""Entry point for LERO v5 (focused-depth, two-level textual gradient).
+"""Entry point for LERO v6 — simplicity-first meta-strategy, inner-only.
 
 Usage:
-    python run_lero_v5.py configs/lero_v5/rendezvous_k2_smoke.yaml --seed 0
+    python run_lero_v6.py configs/lero_v6/rendezvous_k2_smoke.yaml --seed 0
 
-The config YAML must contain a top-level ``v5:`` block (see
-configs/lero_v5/*.yaml for the schema).
+The config YAML must contain a top-level ``v6:`` block. See
+``docs/v6_plan.md`` for design rationale.
 
-Outputs land under ``results/lero_v5/<exp_id>/<timestamp>_s<seed>/``:
+Outputs land under ``results/lero_v6/<exp_id>/<timestamp>_s<seed>/``:
     prompts/                       # writable PromptLoader root
-        v5_outer_0_seed<S>/        # initial metaprompt copy
-        v5_outer_1_seed<S>/        # refined after outer iter 0
-        v5_outer_2_seed<S>/        # refined after outer iter 1
+        v6_outer_0_seed<S>/        # initial metaprompt copy
+        v6_outer_1_seed<S>/        # one-strategy refinement after outer 0
         ...
-    outer_00_inner/                # inner-loop artifacts per outer iter
-        iter_0/, iter_1/, ...      # per-inner-iter candidate code+feedback
-    outer_01_inner/, ...
-    deep_train/                    # final 10M training of global best
-        benchmarl_final/
-        best_policy.pt
-        final_metrics.json
-    v5_summary.json                # top-level snapshot
+    outer_NN_inner/                # per-outer-iter inner-loop artifacts
+        iter_{0..3}/feedback.txt   # inner feedback
+        _decision.json             # enforced V6MetaDecision
+        _meta_response.txt         # raw meta-LLM response
+    _v6_checkpoint.pkl
+    v6_summary.json
 """
 
 from __future__ import annotations
@@ -59,13 +56,12 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--resume", action="store_true",
-        help="Resume from _v5_checkpoint.pkl in output_dir if present. "
-             "Requires --output-dir to point at the prior run's directory.",
+        help="Resume from _v6_checkpoint.pkl in output_dir if present.",
     )
     args = parser.parse_args(argv)
 
     _configure_logging(args.log_level)
-    log = logging.getLogger("rendezvous.lero.v5.cli")
+    log = logging.getLogger("rendezvous.lero.v6.cli")
 
     if os.environ.get("LERO_ENCRYPTED"):
         from src.secrets_util import decrypt_and_load_env
@@ -88,8 +84,8 @@ def main(argv=None) -> int:
         return 2
 
     raw = yaml.safe_load(cfg_path.read_text())
-    if "v5" not in raw:
-        log.error("Config has no top-level 'v5:' block")
+    if "v6" not in raw:
+        log.error("Config has no top-level 'v6:' block")
         return 2
 
     from src.config import load_experiment
@@ -98,23 +94,23 @@ def main(argv=None) -> int:
         log.error("Config missing 'lero:' or 'llm:' block")
         return 2
 
-    v5_raw = raw["v5"]
-    from src.lero.v5.outer_loop import V5OuterConfig
-    v5_cfg = V5OuterConfig(
-        n_outer=int(v5_raw["n_outer"]),
-        n_inner_iter=int(v5_raw["n_inner_iter"]),
-        n_inner_candidates_per_iter=int(v5_raw["n_inner_candidates_per_iter"]),
-        eval_frames=int(v5_raw["eval_frames"]),
-        full_frames=int(v5_raw["full_frames"]),
-        pivot_eps=float(v5_raw.get("pivot_eps", 0.05)),
-        base_prompt_version=str(v5_raw.get(
-            "base_prompt_version", "v2_fewshot_modular_v2"
-        )),
-        meta_model=str(v5_raw.get("meta_model", spec.llm.model)),
-        meta_temperature=float(v5_raw.get(
-            "meta_temperature", spec.llm.temperature,
-        )),
-        task_summary=str(v5_raw.get("task_summary", spec.description or "")),
+    v6_raw = raw["v6"]
+    from src.lero.v6.outer_loop import V6OuterConfig
+    v6_cfg = V6OuterConfig(
+        max_outer=int(v6_raw.get("max_outer", 5)),
+        n_inner_iter=int(v6_raw.get("n_inner_iter", 4)),
+        n_inner_candidates_per_iter=int(
+            v6_raw.get("n_inner_candidates_per_iter", 3)
+        ),
+        eval_frames=int(v6_raw.get("eval_frames", 1_000_000)),
+        base_prompt_version=str(
+            v6_raw.get("base_prompt_version", "v2_fewshot_modular_v2_local")
+        ),
+        meta_model=str(v6_raw.get("meta_model", spec.llm.model)),
+        meta_temperature=float(
+            v6_raw.get("meta_temperature", spec.llm.temperature)
+        ),
+        task_summary=str(v6_raw.get("task_summary", spec.description or "")),
     )
 
     if args.output_dir:
@@ -122,7 +118,7 @@ def main(argv=None) -> int:
     else:
         base = Path(os.environ.get("RESULTS_DIR", str(_ROOT / "results")))
         run_id = f"{time.strftime('%Y%m%d_%H%M')}_s{args.seed}"
-        output_root = base / "lero_v5" / spec.exp_id.lower() / run_id
+        output_root = base / "lero_v6" / spec.exp_id.lower() / run_id
     output_root.mkdir(parents=True, exist_ok=True)
 
     (output_root / "run_manifest.json").write_text(json.dumps({
@@ -131,20 +127,18 @@ def main(argv=None) -> int:
         "config_source": str(cfg_path),
         "seed": args.seed,
         "algorithm": args.algorithm,
-        "v5_config": v5_raw,
+        "v6_config": v6_raw,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }, indent=2))
 
-    log.info("v5 ready: exp=%s out=%s", spec.exp_id, output_root)
+    log.info("v6 ready: exp=%s out=%s", spec.exp_id, output_root)
 
     if args.dry_run:
         log.info("Dry run — exiting before any LLM calls.")
         return 0
 
-    # Override eval_frames + full_frames in spec.lero so LeroLoop's
-    # _evaluate_candidate / _full_training pick them up.
-    spec.lero.eval_frames = v5_cfg.eval_frames
-    spec.lero.full_frames = v5_cfg.full_frames
+    # Set inner LERO eval budget from v6 config
+    spec.lero.eval_frames = v6_cfg.eval_frames
 
     from src.lero.loop import LeroLoop
     base_loop = LeroLoop(
@@ -154,25 +148,25 @@ def main(argv=None) -> int:
         output_dir=output_root / "_inner_legacy_outdir",
     )
 
-    # Build meta-LLM client
     from src.lero.config import LLMConfig
     from src.lero.llm_client import LLMClient
     meta_cfg = LLMConfig(
-        model=v5_cfg.meta_model,
-        temperature=v5_cfg.meta_temperature,
+        model=v6_cfg.meta_model,
+        temperature=v6_cfg.meta_temperature,
         max_retries=spec.llm.max_retries,
         prompt_version=spec.llm.prompt_version,
     )
     meta_llm = LLMClient(meta_cfg)
 
-    from src.lero.v5.outer_loop import run_v5_outer_loop
     if args.resume and not args.output_dir:
         log.error("--resume requires --output-dir pointing at the prior run.")
         return 2
-    result = run_v5_outer_loop(
+
+    from src.lero.v6.outer_loop import run_v6_outer_loop
+    summary = run_v6_outer_loop(
         spec=spec,
         base_loop=base_loop,
-        cfg=v5_cfg,
+        cfg=v6_cfg,
         meta_llm=meta_llm,
         output_dir=output_root,
         seed=args.seed,
@@ -181,10 +175,11 @@ def main(argv=None) -> int:
     )
 
     log.info(
-        "=== DONE === final_M1=%.3f outer_traj=%s elapsed=%.0fs",
-        result.get("M1_success_rate", 0.0),
-        result.get("_v5_outer_fitness_trajectory", []),
-        result.get("_v5_elapsed_s", 0.0),
+        "=== DONE === early_stopped=%s outers=%d best_M1=%.3f shape=%s",
+        summary.get("early_stopped", False),
+        summary.get("outer_iters_completed", 0),
+        summary.get("global_best_M1", 0.0),
+        summary.get("global_best_shape", "n/a"),
     )
     return 0
 
