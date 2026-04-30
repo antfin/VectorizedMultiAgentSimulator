@@ -1,4 +1,10 @@
 ## Environment
 
-$n_agents agents must cover $n_targets targets. A target is covered when $agents_per_target agent(s) are within $covering_range distance. Arena: [-1,1] x [-1,1].
+This is a **multi-agent rendezvous** task. $n_agents agents must cover $n_targets targets in a 2x2 arena (`[-1, 1] × [-1, 1]`). A target is covered when **exactly $agents_per_target agents are simultaneously within $covering_range distance** of it. Once covered, the target is removed (no respawn).
 
+Each agent observes only its own position and velocity plus LiDAR-style range sensors:
+
+- `lidar_targets`: distance to the nearest **target** in $n_lidar_rays_entities ray directions (max range $lidar_range).
+- `lidar_agents`: distance to the nearest **other agent** in $n_lidar_rays_agents ray directions.
+
+Agents do **not** know absolute positions of other agents or targets, and do **not** know which targets have been covered. Episode terminates after $max_steps steps or when all targets are covered. The challenge is implicit coordination from local sensors alone.

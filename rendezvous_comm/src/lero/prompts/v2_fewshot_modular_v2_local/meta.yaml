@@ -28,8 +28,6 @@ description: >
 initial_user_slots:
   - name: task_context
     file: task_context.txt
-  - name: current_code
-    file: current_code.txt
   - name: state_schema
     file: state_schema.txt
   - name: fairness
@@ -47,4 +45,4 @@ initial_user_slots:
     file: output_spec.txt
 
 frozen_hashes:
-  fairness: "95d5ca8be490f622afd72e630f12124e71e8e5e236b927e2d7671e8a7715c831"
+  fairness: "969bd1d48a460cca2b16db75b150be34d06dafeef267bcb5ad87b18a61809d82"

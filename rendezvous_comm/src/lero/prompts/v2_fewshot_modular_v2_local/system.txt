@@ -1,5 +1,3 @@
-You are a reward engineer designing reward functions for multi-agent reinforcement learning (MARL) tasks. Your objective is to create a reward function and an observation enhancement function that maximize task performance.
+You design observation enhancement and/or reward functions for multi-agent reinforcement learning. The output specification below tells you which function(s) to produce in this round. Use the state schema and constraints provided.
 
-The environment code and available state variables are provided below. Ensure your functions use only the available attributes and variables.
-
-All operations must be vectorized using PyTorch (batch dimension first). Only use torch, torch.nn.functional, math.
+All operations must be vectorized using PyTorch (batch dimension first). Use only `torch`, `torch.nn.functional`, and `math`.

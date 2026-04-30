@@ -737,6 +737,60 @@ Mechanism: when LLM evolves reward, it can introduce reward-hacking shortcuts (a
 
 ---
 
+## v6 Trilogy — Three Runs Confirm the Operational-Scaffolding Gap (2026-04-30)
+
+Three sequential v6 runs (reduced 2 outer × 3 inner × 3 cands × 1M, no deep-train, on the cr=0.25 / ms=400 task):
+
+| run | model | temperature | base prompt | global_best_M1 | best M6 | classifications |
+|---|---|---:|---|---:|---:|---|
+| 1 (run 1, 4-29) | gpt-5.4-mini | 1.0 | original modular_v2_local | 0.000 | 0.124 | no_signal_simple ×2 |
+| 2 (run 2, 4-29) | gpt-5.4-mini | 0.8 | clean (5 fixes applied) | 0.000 | 0.153 | no_signal_simple ×2 |
+| 3 (run 3, 4-30) | **gpt-5.4** (full) | 0.8 | clean | 0.000 | 0.151 | no_signal_simple ×2 |
+
+**All three runs produce M1 = 0.000 throughout 18 candidates each.** Model upgrade (mini → full) and base-prompt cleanup (identity contradictions, rendezvous framing, fairness trim, removed empty current_code blocks, obs-only examples) made small but immaterial differences in M6 ceiling (0.124 → 0.151) and zero difference in M1.
+
+### What v6's inner LLM actually generated — features compared to S3b-local
+
+Reading the best candidate's `enhance_observation` from each run:
+
+| run / outer | output dim | feature families produced | coordination AND-products |
+|---|---:|---|---:|
+| run 2 outer 0 | ~12 | target proximity stats (min, top2, mean, std, close_frac, soft_close), agent proximity stats, speed, pos_norm | **0** |
+| run 2 outer 1 | 9 | sorted-nearest target distances (t1, t2, t3), sorted-nearest agent distances (a1, a2), velocity components | **0** |
+| run 3 outer 0 | 9 | softmax-attention entropy / concentration over LiDAR rays (target + agent), velocity | **0** |
+| run 3 outer 1 | 8 | strongest target/agent detections, target-detection gap, left/right balance, angular consistency | **0** |
+| **S3b-local s0 iter 1 (M1=0.05 winner)** | **19** | nearest-target dist + dir, target close-count + close-mean + dispersion, nearest-agent dist + dir + close-count + close-mean, speed, boundary distance, role one-hot, **AND `rendezvous_pressure = (a_nclose/A) − (t_nclose/T)` AND `settle_signal = (min_t_dist < cover_r) * (a_nclose ≥ 1)`** | **2** |
+
+The structural difference is **not feature count** (v6 candidates produce 8–15 features; S3b-local's iter 1 winner has 19 — comparable order). The structural difference is **what kind of features**:
+
+- **v6 candidates**: sophisticated unimodal summaries — target-side stats OR agent-side stats, but never combined into a coordination signal. Includes advanced patterns like soft-attention entropy and angular consistency, but always within a single information channel.
+- **S3b-local iter-1 winner**: includes two explicit AND-products that combine target-side and agent-side LiDAR into a coordination cue. `settle_signal` is literally `(target near) AND (teammate near) → 1.0` — the prototype of "stay vs. move" coordination logic. `rendezvous_pressure` is a signed asymmetry between agent-density and target-density. These two features encode "should I be here or should I move?" as a precomputed signal the policy can read directly.
+
+### Why this matters
+
+The v6 meta-LLM's strategy text was strategically adjacent across all three runs: "expose nearby-agent / target structure and asymmetry", "compact relational summaries", "soft occupancy/binning cues". The inner LLM correctly understood this as "compute geometric summaries from LiDAR" but **never translated 'asymmetry' into the specific operational pattern of multiplying / subtracting target-derived and agent-derived booleans**. That operational pattern is exactly what S3b-local's hand-curated prompt names indirectly (the "What you CAN infer from LiDAR" section explicitly lists "Agent density nearby" + "Number of nearby targets" — the LLM connects the dots from there).
+
+v6 deliberately strips this operational scaffolding (per anti-cheat plan §2). The result is a measurable, repeatable gap: across 4 best-candidate observations spanning two LLM models and two temperatures, **zero AND-products were generated**.
+
+### Practical implication
+
+The gap is not in the meta-strategy quality, the model size, or the prompt cleanliness. It is in the **operational vocabulary the inner LLM has access to when producing code**. Without an explicit hint that `(target_near) * (agent_near)` is a valid pattern, the inner LLM treats target and agent LiDAR as independent feature families and never combines them.
+
+This is the cleanest empirical answer yet to "what does a human prompt-engineer contribute to LERO?" — the answer is: **the operational vocabulary that bridges strategy → code**. Strategic guidance (which v6's meta-LLM produces well) is necessary but not sufficient; without the operational vocabulary list, the inner LLM lacks the hooks to translate strategy into the right Python expressions.
+
+### Cost paid for this finding
+
+| run | wall (Mac) | LLM model |
+|---|---:|---|
+| 1 | ~2.7h | mini |
+| 2 | ~2.5h | mini |
+| 3 | ~2.7h | full |
+| **total** | **~8h Mac time** | mixed |
+
+€0 in compute spend (all on Mac); ~€2 in LLM API spend across the three runs.
+
+---
+
 ## Updated Cross-ER Comparison (including LERO)
 
 ### Best results per condition (k=2, ms400, cr025) — UPDATED

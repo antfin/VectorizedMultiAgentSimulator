@@ -65,7 +65,7 @@ lero:
 
 llm:
   model: "gpt-5.4-mini"
-  temperature: 1.0
+  temperature: 0.8
   max_retries: 3
   prompt_version: "v2_fewshot_modular_v2_local"
 
@@ -76,7 +76,7 @@ v6:
   eval_frames: 1_000_000
   base_prompt_version: "v2_fewshot_modular_v2_local"
   meta_model: "gpt-5.4-mini"
-  meta_temperature: 1.0
+  meta_temperature: 0.8
   task_summary: |
     Multi-agent rendezvous in VMAS Discovery scenario. 4 agents must
     collectively cover 4 targets, with each target requiring exactly 2
