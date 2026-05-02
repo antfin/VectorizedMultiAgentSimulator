@@ -737,17 +737,18 @@ Mechanism: when LLM evolves reward, it can introduce reward-hacking shortcuts (a
 
 ---
 
-## v6 Trilogy — Three Runs Confirm the Operational-Scaffolding Gap (2026-04-30)
+## v6 — Four Runs Confirm the Operational-Scaffolding Gap (2026-04-30)
 
-Three sequential v6 runs (reduced 2 outer × 3 inner × 3 cands × 1M, no deep-train, on the cr=0.25 / ms=400 task):
+Four sequential v6 runs (reduced 2 outer × 3 inner × 3 cands × 1M, no deep-train, on the cr=0.25 / ms=400 task):
 
 | run | model | temperature | base prompt | global_best_M1 | best M6 | classifications |
 |---|---|---:|---|---:|---:|---|
-| 1 (run 1, 4-29) | gpt-5.4-mini | 1.0 | original modular_v2_local | 0.000 | 0.124 | no_signal_simple ×2 |
-| 2 (run 2, 4-29) | gpt-5.4-mini | 0.8 | clean (5 fixes applied) | 0.000 | 0.153 | no_signal_simple ×2 |
-| 3 (run 3, 4-30) | **gpt-5.4** (full) | 0.8 | clean | 0.000 | 0.151 | no_signal_simple ×2 |
+| 1 (4-29) | gpt-5.4-mini | 1.0 | original modular_v2_local | 0.000 | 0.124 | no_signal_simple ×2 |
+| 2 (4-29) | gpt-5.4-mini | 0.8 | clean (5 fixes applied) | 0.000 | 0.153 | no_signal_simple ×2 |
+| 3 (4-30) | **gpt-5.4** (full) | 0.8 | clean | 0.000 | 0.151 | no_signal_simple ×2 |
+| 4 (4-30) | gpt-5.4-mini | 0.8 | clean | 0.000 | 0.151 | no_signal_simple ×2 |
 
-**All three runs produce M1 = 0.000 throughout 18 candidates each.** Model upgrade (mini → full) and base-prompt cleanup (identity contradictions, rendezvous framing, fairness trim, removed empty current_code blocks, obs-only examples) made small but immaterial differences in M6 ceiling (0.124 → 0.151) and zero difference in M1.
+**All four runs produce M1 = 0.000 across 72 inner candidates total** (4 runs × 18 candidates). Model upgrade (mini → full) and base-prompt cleanup (identity contradictions, rendezvous framing, fairness trim, removed empty current_code blocks, obs-only examples) made small but immaterial differences in M6 ceiling (0.124 → 0.153) and zero difference in M1. Run 4 (mini, replication of run 2) reproduced run 2's outcome — confirming the result is reproducible, not a single-seed accident.
 
 ### What v6's inner LLM actually generated — features compared to S3b-local
 
@@ -785,9 +786,10 @@ This is the cleanest empirical answer yet to "what does a human prompt-engineer 
 | 1 | ~2.7h | mini |
 | 2 | ~2.5h | mini |
 | 3 | ~2.7h | full |
-| **total** | **~8h Mac time** | mixed |
+| 4 | ~2.5h | mini |
+| **total** | **~10.5h Mac time** | mixed |
 
-€0 in compute spend (all on Mac); ~€2 in LLM API spend across the three runs.
+€0 in compute spend (all on Mac); ~€2 in LLM API spend across the four runs. Anti-cheat audit was clean across all 4 runs (zero forbidden-token redactions; meta-LLM stayed within the boundary at every decision).
 
 ---
 

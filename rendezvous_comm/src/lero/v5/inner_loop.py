@@ -156,7 +156,19 @@ def run_inner_loop(
             _log.warning("v5 inner iter %d: no valid candidates", iter_idx)
             continue
 
-        # 2. Evaluate each candidate
+        # 2a. Save full candidate source code per file. Restored from
+        # v3 loop.py (which saved candidate_{j}_obs.py / _reward.py)
+        # because v5 inner_loop dropped this and we lost the ability
+        # to audit candidates after the run.
+        for j, cand in enumerate(candidates):
+            if cand.obs_source:
+                (iter_dir / f"candidate_{j}_obs.py").write_text(cand.obs_source)
+            if cand.reward_source:
+                (iter_dir / f"candidate_{j}_reward.py").write_text(
+                    cand.reward_source
+                )
+
+        # 2b. Evaluate each candidate
         evaluated: List[Tuple[CandidateCode, Dict[str, float]]] = []
         for j, cand in enumerate(candidates):
             try:

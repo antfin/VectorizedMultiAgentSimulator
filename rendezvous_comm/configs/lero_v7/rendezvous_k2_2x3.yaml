@@ -1,0 +1,96 @@
+exp_id: lero_v7_rendezvous_k2_2x3
+name: "LERO v7 — bundle + grounded reflection (2x3 reduced)"
+description: >
+  v7: cold-start meta-LLM enumerates a STRATEGY BUNDLE of 3-5 policy-
+  level hypotheses ranked by (lero_codability + rl_trainability),
+  picks the best, translates to slot text emphasizing the FULL feature
+  stack (cross-source ops + directional encoding + role one-hot +
+  motion + covering_range thresholds — informed by the v6 deep
+  analysis 2026-04-30 which showed v6 over-corrected to cross-source
+  alone). Per-outer reflection grounds the next decision in
+  pattern_present (AST) + metrics_signature_match, distinguishing
+  translation_failure (refine inner prompt) from rl_too_hard (switch
+  to next-best strategy from bundle).
+
+  Same task as S3b-local (cr=0.25, ms=400, k=2). 2 outer × 3 inner ×
+  3 cands × 1M = ~2.5h on Mac M2 Pro. Comprehensive logging: every
+  meta-LLM prompt/response, every inner candidate code, every
+  diagnosis, every bundle state change is saved.
+
+task:
+  n_agents: 4
+  n_targets: 4
+  agents_per_target: 2
+  lidar_range: 0.35
+  covering_range: 0.25
+  use_agent_lidar: true
+  n_lidar_rays_entities: 15
+  n_lidar_rays_agents: 12
+  targets_respawn: false
+  shared_reward: true
+  agent_collision_penalty: -0.01
+  covering_rew_coeff: 1.0
+  time_penalty: -0.01
+  max_steps: 400
+  dim_c: 0
+
+train:
+  algorithm: mappo
+  max_n_frames: 1_000_000
+  gamma: 0.99
+  on_policy_collected_frames_per_batch: 60000
+  on_policy_n_envs_per_worker: 600
+  on_policy_n_minibatch_iters: 45
+  on_policy_minibatch_size: 4096
+  lr: 0.00005
+  share_policy_params: true
+  evaluation_interval: 120_000
+  evaluation_episodes: 100
+  train_device: cpu
+  sampling_device: cpu
+  lmbda: 0.95
+
+lero:
+  n_iterations: 1
+  n_candidates: 1
+  top_k: 1
+  eval_frames: 1_000_000
+  eval_episodes: 100
+  full_frames: 1_000_000
+  evolve_reward: false
+  evolve_observation: true
+  reward_mode: "replace"
+  obs_state_mode: "local"
+  bonus_scale: 0.5
+  reward_clip: 50.0
+  whitelist_strict: true
+
+llm:
+  model: "gpt-5.4-mini"
+  temperature: 0.8
+  max_retries: 3
+  prompt_version: "v2_fewshot_modular_v2_local"
+
+v7:
+  max_outer: 2
+  n_inner_iter: 3
+  n_inner_candidates_per_iter: 3
+  eval_frames: 1_000_000
+  base_prompt_version: "v2_fewshot_modular_v2_local"
+  meta_model: "gpt-5.4-mini"
+  meta_temperature: 0.8
+  task_summary: |
+    Multi-agent rendezvous in VMAS Discovery scenario. 4 agents must
+    collectively cover 4 targets, with each target requiring exactly 2
+    agents simultaneously within covering_range=0.25 (NOT lidar_range).
+    Local observations only (lidar_targets, lidar_agents, agent_pos,
+    agent_vel, agent_idx; n_agents=4, n_targets=4). The challenge is
+    implicit coordination from local sensors alone.
+
+sweep:
+  seeds: [0]
+  n_agents: [4]
+  n_targets: [4]
+  agents_per_target: [2]
+  lidar_range: [0.35]
+  algorithms: [mappo]

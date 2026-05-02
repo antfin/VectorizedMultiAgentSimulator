@@ -173,6 +173,12 @@ class V6OuterConfig:
     meta_model: str = "gpt-5.4-mini"
     meta_temperature: float = 1.0
     task_summary: str = ""
+    # Cold-start bootstrap (added 2026-04-30 after V4 prompt-lab finding):
+    # call meta-LLM ONCE before outer iter 0 with no prior inner result,
+    # so V4-style operational guidance is active from outer 0's first
+    # inner candidate. Without this, outer 0's inner runs with empty
+    # guidance regardless of meta system prompt content.
+    cold_start_bootstrap: bool = True
 
 
 def run_v6_outer_loop(
@@ -215,6 +221,48 @@ def run_v6_outer_loop(
         if seed_prompt_dir.exists():
             shutil.rmtree(seed_prompt_dir)
         shutil.copytree(base_src, seed_prompt_dir)
+
+        # Cold-start bootstrap: call meta-LLM with no prior inner
+        # result so V4-style operational guidance is active from
+        # outer 0's first inner candidate. See docs/v6_plan.md §4.x.
+        if cfg.cold_start_bootstrap:
+            _log.info("v6 COLD-START bootstrap: meta-LLM call with no "
+                      "prior inner (outer 0 will start with seeded "
+                      "guidance instead of empty slots)")
+            bootstrap_decision, bootstrap_raw = decide_and_enforce(
+                meta_llm=meta_llm,
+                task_summary=cfg.task_summary or spec.description or "",
+                current_slots=_read_slot_files(seed_prompt_dir),
+                last_inner=None,
+                outer_registry=Registry(),
+                outer_idx=0,
+                prior_complexity=1,
+                prior_classification=None,
+            )
+            for slot, text in bootstrap_decision.slot_edits.items():
+                (seed_prompt_dir / f"{slot}.txt").write_text(
+                    (text or "").rstrip() + "\n"
+                )
+            (seed_prompt_dir / "_bootstrap_response.txt").write_text(
+                bootstrap_raw
+            )
+            (seed_prompt_dir / "_bootstrap_decision.json").write_text(
+                json.dumps({
+                    "classification": bootstrap_decision.classification,
+                    "next_mode": bootstrap_decision.next_mode,
+                    "rationale": bootstrap_decision.rationale,
+                    "complexity_level": bootstrap_decision.complexity_level,
+                    "slot_edits_keys": list(bootstrap_decision.slot_edits.keys()),
+                    "enforcement_notes": bootstrap_decision.enforcement_notes,
+                }, indent=2, default=str)
+            )
+            _log.info(
+                "v6 cold-start: emitted %d slot edits, complexity=%d, "
+                "rationale: %s",
+                len(bootstrap_decision.slot_edits),
+                bootstrap_decision.complexity_level,
+                bootstrap_decision.rationale[:120],
+            )
         ckpt = V6Checkpoint(
             seed=seed,
             current_prompt_name=seed_prompt_name,

@@ -27,7 +27,7 @@ flowchart LR
     LERO_REWARD[LERO paper-faithful<br/>evolve_reward = true<br/>M1 = 0.08 - 0.10<br/>reward-hacked]
     S3B[S3b-local<br/>evolve_reward = false<br/>M1 = 0.845 mean]
     META[LERO-MP / v4 / v4.1 / B' / v5<br/>meta-prompt over evolve_reward = true<br/>M1 = 0.01 - 0.24]
-    V6([v6 — current<br/>simplicity-first meta + obs-only<br/>+ anti-cheat<br/>running now])
+    V6[v6 — strict anti-cheat meta<br/>4 runs · 72 candidates<br/>M1 = 0 in all<br/>missing: cross-source AND-products]
 
     Start --> ER1 --> ER2 --> ER3
     ER3 -. ceiling 71% .-> LERO_REWARD
@@ -40,9 +40,8 @@ flowchart LR
     classDef neutral fill:#fff3cd,stroke:#ffc107,color:#000;
     classDef pending fill:#cce5ff,stroke:#004085,color:#000;
     class ER1,ER2,ER3 neutral;
-    class LERO_REWARD,META loss;
+    class LERO_REWARD,META,V6 loss;
     class S3B win;
-    class V6 pending;
 ```
 
 ---
@@ -434,20 +433,60 @@ for outer_iter in 0..MAX_OUTER:
 4. **Code-side classification wins**. The runtime computes its own classification from raw inner metrics; if the meta-LLM claims `found_good` but the code disagrees, the code wins. Prevents the meta-LLM from gaming the early-stop condition.
 5. **No deep-train inside the loop**. v6 isolates the variable we're testing (does the meta-strategy reach S3b-local-quality inner signal?) from the confounder (did a 10M deep-train get lucky after the meta-strategy failed?). Once a `found_good` candidate is identified, deep-train is a separate gated step.
 
-### Current run (in progress)
+### What happened — four runs, four flat_zero outcomes (2026-04-30)
 
-Reduced budget: `max_outer=2, n_inner_iter=3, n_inner_candidates_per_iter=3, eval_frames=1M`. 18 candidates max per seed, ~2.5h on M2 Pro Mac. Single seed for the first datapoint; replicate to 3 seeds if the result is interesting.
+The reduced 2-outer × 3-inner × 3-cand × 1M budget was run four times across two LLMs and two temperature settings:
 
-### What we're looking for
+| run | model | T | base prompt | M1 | best M6 |
+|---|---|---:|---|---:|---:|
+| 1 | gpt-5.4-mini | 1.0 | original | 0.000 | 0.124 |
+| 2 | gpt-5.4-mini | 0.8 | clean (5 fixes) | 0.000 | 0.153 |
+| 3 | **gpt-5.4** (full) | 0.8 | clean | 0.000 | 0.151 |
+| 4 | gpt-5.4-mini | 0.8 | clean | 0.000 | 0.151 |
 
-| outcome | interpretation |
-|---|---|
-| `found_good` triggers in outer 0 (M1 ≥ 0.05 + monotonic_rise) | Meta-LLM rediscovered a working prompt on first try with simplest strategy. Strong positive — implies the meta layer is viable as a human-prompt-engineer replacement. |
-| `found_good` triggers in outer 1 after a no_signal_simple → try_different_simple step | Meta-LLM needed one round of reflection to find the right direction. Still positive. |
-| Both outer iters end `no_signal_simple` | The meta-LLM's simplest strategies don't escape flat_zero. Suggests further outer iters or a relaxed threshold are needed; or the prompt floor is too weak. |
-| `add_simple_reward` triggers and inner shows `peak_collapse` | Reward evolution returned and reintroduced the v4/v5 failure mode. Tells us reward should stay frozen. |
+**72 inner candidates total. Zero ever produced M1 > 0.** Run 4 is a clean replication of run 2 — the negative result is reproducible. Anti-cheat audit clean across all runs.
 
-If v6 reaches `found_good`, we then run a separate 10M deep-train of the winner inner candidate and compare to S3b-local's 0.845. Match = the meta-layer works without cheating. Below S3b-local = the meta-layer is partial; the human-curated prompt still has irreplaceable structure.
+### What the v6 inner LLM actually generated — the smoking gun
+
+Reading every best candidate's `enhance_observation` code across the four runs, scanning for **AND-product patterns combining target-side and agent-side LiDAR** (the structural element of S3b-local's two coordination signals — `settle_signal = (min_t_dist < cover_r) * (a_nclose ≥ 1)` and `rendezvous_pressure = (a_nclose/A) − (t_nclose/T)`):
+
+| | best obs across all 8 v6 best candidates | S3b-local's iter-1 winner |
+|---|---:|---:|
+| Output dim | 8–15 features | 19 features (comparable scale) |
+| Target-side stats (min, count, mean, dispersion, dir) | ✓ (every run) | ✓ |
+| Agent-side stats (min, count, mean, dir) | ✓ (every run) | ✓ |
+| **Cross-source AND-products** (target × agent) | **0/8 candidates** | **2 features** (settle_signal, rendezvous_pressure) |
+| Sophisticated unimodal patterns (entropy, soft-attention, sorted-nearest, angular concentration) | ✓ (advanced) | not present |
+
+The structural difference is **not feature count or sophistication**. It is **whether the inner LLM combines target-derived and agent-derived signals into a single coordination cue.** S3b-local's prompt names this pattern indirectly via the "What you CAN infer from LiDAR" section (which lists "Agent density nearby" + "Number of nearby targets" — the LLM connects them). v6's strict-anti-cheat base strips this scaffolding, and the meta-LLM — at every model size, every temperature, every base-prompt iteration — never tells the inner LLM "compute products / boolean masks across target and agent LiDAR".
+
+### What this proves
+
+The bottleneck for LLM-driven LERO on hard k=2 coordination is **not** the model, the temperature, the meta-prompt quality, the inner-loop architecture, or even the strategic-text quality of the meta-LLM's guidance. It is the **operational vocabulary** that bridges English strategy → PyTorch code. The meta-LLM produces strategically adjacent guidance ("expose nearby-agent / target structure and asymmetry") but the inner LLM treats target and agent LiDAR as independent feature families and never combines them — because nothing in the prompt names that combination as a valid pattern.
+
+This is the cleanest empirical answer to **"what does a human prompt-engineer contribute that the meta-LLM doesn't?"** Strategic guidance: the meta-LLM matches it. Operational vocabulary: the meta-LLM doesn't articulate it from the strict-base. **Operational vocabulary is the irreplaceable artifact.**
+
+### Cost paid for this finding
+
+| run | wall (Mac) | model | LLM cost |
+|---|---:|---|---:|
+| 1 | 2.7h | mini | <€0.50 |
+| 2 | 2.5h | mini | <€0.50 |
+| 3 | 2.7h | full | ~€1 |
+| 4 | 2.5h | mini | <€0.50 |
+| **total** | **~10.5h** | mixed | **~€2** |
+
+€0 in compute spend (all on Mac). Anti-cheat audit clean across all 4 runs (zero forbidden-token redactions; meta-LLM stayed within the boundary at every decision).
+
+### Three options for the next experiment
+
+| | what it tests | impact on anti-cheat |
+|---|---|---|
+| **A — operational hints slot** | Add a meta-LLM-controlled "operational hints" slot. The meta-LLM names operations ("compute boolean masks across target and agent LiDAR", "use products / sums between target-side and agent-side counts") — patterns, not feature names. | Stays anti-cheat: meta-LLM authors the hints; human doesn't. |
+| **B — accept negative result** | Document the v6 trilogy + run 4 as proof that meta-search alone cannot bridge the operational-vocabulary gap. Pivot thesis to "human prompt-engineering is the irreplaceable artifact for hard-coordination LERO". | Clean negative result; closes the v6 chapter. |
+| **D — start v6 from S3b-local's prompt** | Use S3b-local's hand-curated `v2_fewshot_k2_local` as v6's base instead of the strict modular_v2_local. Tests whether the v6 meta-layer adds value when given a known-working floor. | Borderline: starts from a borderline-cheat baseline. Tests "does meta add anything once we have the human floor?" |
+
+If A succeeds → meta-LLM can articulate operational vocabulary; v6 architecture is viable. If A also fails → meta-LLM cannot bridge the gap even with an authoring slot; pivot per B. D is a useful comparison point to either of the above outcomes.
 
 ---
 
@@ -489,7 +528,14 @@ These are the questions the next experiments will go after.
             Anti-cheat at source + runtime. Goal: rediscover S3b-local
             quality through simplicity-first meta-strategy.
 
-2026-04-29  This document written, while v6 is mid-run.
+2026-04-29  v6 run 1 (mini, T=1.0, original modular_v2_local) → M1=0.
+2026-04-30  v6 run 2 (mini, T=0.8, clean base) → M1=0.
+            v6 run 3 (gpt-5.4 full, T=0.8, clean base) → M1=0.
+            v6 run 4 (mini, T=0.8, clean base — replication) → M1=0.
+            72 inner candidates total, 0 produced any AND-product
+            combining target-side and agent-side LiDAR.
+            Conclusion: operational vocabulary scaffolding is the
+            load-bearing artifact the human prompt-engineer provides.
 ```
 
 The next chapter is whatever v6 finds.

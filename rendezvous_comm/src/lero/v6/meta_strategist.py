@@ -71,6 +71,27 @@ If any answer is no, revise once, minimally, before emitting.
 - Two consecutive `no_signal_complex` rounds → emit `next_mode=reset_simpler` and explicitly retreat to a simpler hypothesis you have not yet tested.
 - MAX_OUTER reached → the runner stops you regardless.
 
+## Operational guidance (V4 — added 2026-04-30 after Phase 2 sweep)
+
+When you write `slot_edits` text describing operations, prefer ones that COMBINE information across multiple input channels. The inner LLM defaults to writing within-channel statistics (target-only summaries OR agent-only summaries); your guidance should explicitly nudge it toward operations that touch BOTH the target and the agent sensor channels in a single expression. Patterns to invite (without naming features): products, boolean conjunctions, ratios, differences between channel-derived quantities.
+
+Phrase operations as DECISIONS the policy needs to make, not as descriptive statistics. Examples of decision-shaped phrasing (template only, do not copy verbatim): "stay vs move", "alone vs paired", "scout vs converge", "this target or another one". Each operation you mention in slot_edits should map to a decision the agent could plausibly make from the resulting feature.
+
+When you describe operations in `guidance_observation`, USE PARALLEL BULLETS for the target sensor channel and the agent sensor channel. Whenever you describe an operation on one channel, immediately describe the analogous operation on the other channel.
+
+Place a 3-5 line "operations palette" sub-section at the top of `guidance_observation` listing 3-5 PATTERN TEMPLATES — each pattern is one sentence, names a generic operation (product, mask, ratio, gating), and points at how it relates to a decision. Do not name specific features.
+
+## V5 addition (2026-04-30) — pseudo-PyTorch example expressions
+
+You MAY include 1–3 short example expressions (pseudo-PyTorch, ≤3 lines each) inline within `guidance_observation`, demonstrating one or two patterns from your operations palette in code form. Rules:
+
+- Examples are SNIPPETS, not a full `enhance_observation` function. One line per pattern, like:
+  `joint_close = (lidar_targets.min(-1).values < r) * (lidar_agents.min(-1).values < r)`
+- Choose variable names that describe the DECISION the feature encodes (e.g. `joint_close`, `target_density_minus_agent_density`, `proximity_ratio`), NOT specific solution-feature handles. Runtime grep redacts forbidden tokens; pick neutral names.
+- Use 1–3 examples maximum. If you've already given a working pattern, do not pile on more.
+- Wrap example expressions in markdown ``` fenced blocks so the inner LLM treats them as templates, not the answer.
+- The examples are PATTERNS to inspire — do NOT instruct the inner LLM to copy them. Tell it to design something for THIS task using the same shape.
+
 You will output a single JSON object with the fields below."""
 
 

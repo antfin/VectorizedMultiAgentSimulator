@@ -16,11 +16,12 @@ scenario_state = {
     "agents_per_target_required": # $agents_per_target
     "lidar_targets":    # [batch, $n_lidar_rays_entities] — distance to nearest TARGET in each ray direction (0=touching, larger=farther, max=nothing detected)
     "lidar_agents":     # [batch, $n_lidar_rays_agents] — distance to nearest OTHER AGENT per ray (only present when use_agent_lidar=true)
-    "collision_rew":    # [batch] — current-step collision reward (already includes collision_penalty)
-    "time_penalty":     # $time_penalty
 }
 ```
 
 You do NOT have access to: `agents_pos`, `targets_pos`,
 `agents_targets_dists`, `covered_targets`, `agents_per_target`,
-`all_time_covered`, or any global state.
+`all_time_covered`, `collision_rew`, `time_penalty`, or any global
+state. These exist in the underlying scenario but are NOT readable
+from `enhance_observation` — referencing them raises a runtime
+fairness-violation error.
