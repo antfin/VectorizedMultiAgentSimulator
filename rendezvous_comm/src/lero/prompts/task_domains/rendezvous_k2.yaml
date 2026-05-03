@@ -1,0 +1,134 @@
+# Task domain definition for v9 — multi-agent rendezvous, k=2.
+#
+# Read by:
+#   - prompts.loader.PromptLoader (substitutes ${task_framing} into system
+#     and task_context slots when rendering v3_modular_taskdomain)
+#   - lero.v9.meta_strategist (uses inferable_concepts, mandatory_features,
+#     forbidden_tokens to author inferable_hints + examples slots and to
+#     score CoT against task constraints)
+#
+# To swap to a different task: drop a sibling YAML in this directory and
+# point your run config's `task_domain` field at the new file's stem.
+
+name: rendezvous_k2
+short_label: "Multi-agent rendezvous (k=2 per target)"
+
+# ---- Task framing ----------------------------------------------------------
+# Plain prose substituted into the inner-LLM system message and task_context
+# slot. Talk about what the task IS, not what features to use.
+
+task_framing: |
+  This is a RENDEZVOUS task. ${n_agents} agents must collectively cover
+  ${n_targets} targets in a 2x2 arena ([-1, 1] × [-1, 1]). A target is
+  covered when EXACTLY ${agents_per_target} agents are simultaneously
+  within ${covering_range} distance of it. Once covered, a target is
+  removed (no respawn). Episodes terminate after ${max_steps} steps or
+  when all targets are covered.
+
+  Agents observe ONLY their own position and velocity plus LiDAR-style
+  range sensors (lidar_targets, lidar_agents). They do NOT know other
+  agents' positions, target positions, or which targets have been
+  covered. The challenge is implicit coordination from local sensors
+  alone — agents must distinguish "I should approach this target" from
+  "another agent is already heading here, I should go elsewhere" without
+  any explicit communication channel.
+
+# ---- Coordination challenges (used in CoT prompts) -------------------------
+# Conceptual handles the meta-LLM should reason about when designing a
+# strategy. NOT a feature list — these are the things that make the task
+# hard.
+
+coordination_challenges:
+  - "Distinguishing 'I should approach this target' vs 'another agent is already heading here'"
+  - "Avoiding all ${n_agents} agents collapsing onto the same nearest target"
+  - "Knowing when to commit (stay at a target) vs keep searching, with only LiDAR"
+  - "Differentiating roles when the policy network has shared parameters across all agents"
+  - "Handling the no-respawn dynamic: if you waste effort on a covered target, the team loses one fewer reachable target"
+
+# ---- Inferable concepts ---------------------------------------------------
+# What the LLM CAN infer from the local sensor stream. Each entry pairs a
+# conceptual handle with a generic PyTorch idiom.
+#
+# The meta-LLM uses this list to author the inferable_hints slot of the
+# inner prompt (the "What you CAN infer" block, modeled on S3b-local's
+# v2_fewshot_k2_local prompt). All entries should appear in the
+# inferable_hints text the meta-LLM authors.
+
+inferable_concepts:
+  - concept: "Direction to nearest target"
+    idiom: "argmin over lidar_targets → ray index → cos/sin of 2π·idx/n_rays"
+  - concept: "Distance to nearest target"
+    idiom: "lidar_targets.min(dim=-1).values"
+  - concept: "Number of nearby targets"
+    idiom: "(lidar_targets < threshold).float().sum(dim=-1)"
+  - concept: "Local agent crowdedness"
+    idiom: "(lidar_agents < threshold).float().sum(dim=-1)"
+  - concept: "Agent role under shared-policy MAPPO"
+    idiom: "torch.zeros(B, n_agents, device=lidar_t.device); one_hot[:, agent_idx] = 1.0  # NOTE: agent_idx is a Python int, NOT a tensor — do NOT call .long() on it"
+  - concept: "Self-motion state"
+    idiom: "agent_vel.norm(dim=-1)"
+  - concept: "Boundary distance from arena edge"
+    idiom: "1 - agent_pos.abs().max(dim=-1).values"
+
+# ---- Mandatory features ---------------------------------------------------
+# Features the meta-LLM MUST surface in the inferable_hints AND include in
+# at least one of the worked examples in the examples slot.
+#
+# v9.0 enforcement: SOFT HINT. The meta-prompt warns "the inner LLM
+# typically fails when these are missing" but does NOT runtime-reject
+# candidates that lack them. Re-evaluate after Phase 6 if role one-hot
+# rate < 80% — if soft fails, escalate to a hard whitelist that AST-checks
+# the inner candidate and rejects it before RL training.
+
+mandatory_features:
+  - name: role_one_hot
+    reason: |
+      Shared-policy MAPPO needs role differentiation. Without one-hot agent
+      identity, all 4 agents present identical features to the network and
+      cannot break symmetry to assign different roles (e.g., "two of us
+      head to target A, two head to target B"). S3b-local produced
+      role_one_hot in 35/36 candidates (97%); the one candidate that
+      omitted it had M1=0 vs M1=0.07 for siblings.
+    idiom: |
+      # CORRECT pattern (agent_idx is a Python int, NOT a tensor):
+      one_hot = torch.zeros(B, n_agents, device=lidar_t.device)
+      one_hot[:, agent_idx] = 1.0
+      # WRONG: F.one_hot(agent_idx.long(), n_agents) — crashes because
+      # int has no .long() method.
+    feature_dims: ${n_agents}
+
+  - name: cross_source_signal
+    reason: |
+      Coordination requires a feature that combines target and agent
+      sensor streams. Without it, the policy can react to targets and
+      to other agents but not to their joint state (e.g., "this target
+      is near AND no other agent is here yet"). All S3b-local
+      high-performing candidates included at least one such combination.
+    idiom_examples:
+      - "(lidar_targets < r).sum() − (lidar_agents < r).sum()  # signed crowd asymmetry"
+      - "(lidar_targets.min() < r) * (lidar_agents.min() > r)  # 'I'm at a free target'"
+    feature_dims: 1
+
+# ---- Anti-cheat ----------------------------------------------------------
+# Tokens the meta-LLM is forbidden from emitting (these are S3b-local's
+# winning feature names already in the literature; reusing them verbatim
+# would be cheating). Runtime grep redacts these from any LLM output.
+
+forbidden_tokens:
+  - hold_signal
+  - approach_signal
+  - settle_signal
+  - rendezvous_pressure
+  - t_close_mean
+  - t_dispersion
+
+# ---- Feature budget ------------------------------------------------------
+# Soft target / hard cap for the number of returned features. Generous
+# in v9 to fit role one-hot (4 dims) plus the dense LiDAR/geometry
+# signals.
+
+feature_budget:
+  target_min: 12
+  target_max: 17
+  hard_cap: 20
+  gated_max: 3   # cap on cover-zone-multiplied features

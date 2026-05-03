@@ -1,0 +1,3 @@
+## Fairness constraint
+
+`enhance_observation` may read only the keys present in the state schema above (own pos/vel, agent_idx, lidar_targets, lidar_agents, and the meta integers). Other keys (`agents_pos`, `targets_pos`, `agents_targets_dists`, `covered_targets`, `agents_per_target`, `all_time_covered`, `collision_rew`, `time_penalty`) are not provided at runtime and will raise KeyError if referenced.

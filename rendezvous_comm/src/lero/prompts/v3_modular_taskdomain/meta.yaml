@@ -1,0 +1,46 @@
+version: v3_modular_taskdomain
+author: rendezvous_comm
+date: 2026-05-02
+parent: v2_fewshot_modular_v2_local
+description: >
+  v9 base prompt. Reads task framing + inferable concepts + mandatory
+  features from a sibling task_domains/<name>.yaml file (default
+  rendezvous_k2). The system + task_context slots are auto-filled at
+  render time from the task_domain. Two slots (inferable_hints, examples)
+  are LEFT EMPTY in this directory and authored at run-time by the v9
+  meta-LLM each outer iter — these replace v8's `guidance_observation`
+  slot (which was redundant: same content lives more naturally in
+  inferable_hints + examples).
+
+  Slot list reduced from 8 (v2_fewshot_modular_v2_local) to 6. Dropped:
+    - guidance_observation (merged into examples + inferable_hints)
+    - guidance_shared       (always empty in obs-only)
+    - guidance_reward       (always empty in obs-only)
+    - task_context          (v9.1 §2.4: was duplicate of system.txt
+                              task_framing — same paragraph appeared
+                              twice in rendered prompts; cuts ~50%
+                              verbosity per inner LLM call)
+  Added:
+    - inferable_hints       (meta-authored "What you CAN infer" block)
+
+# Task domain: read by loader.py and substituted into the slots that
+# include ${task_framing}. system.txt now holds task_framing AND a
+# 1-line coordination challenges summary; task_context.txt is no
+# longer in the slot list (v9.1 §2.4).
+task_domain: rendezvous_k2
+
+initial_user_slots:
+  - name: state_schema
+    file: state_schema.txt
+  - name: fairness
+    file: fairness.txt
+    frozen: true
+  - name: inferable_hints
+    file: inferable_hints.txt
+  - name: examples
+    file: examples.txt
+  - name: output_spec
+    file: output_spec.txt
+
+frozen_hashes:
+  fairness: "a3edbfd283e70208a0f90a0238f903feb558659eeaca79f7c3cbb62d3d5af0fa"

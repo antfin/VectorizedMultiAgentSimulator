@@ -9,6 +9,7 @@ v5-specific.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -102,6 +103,9 @@ def run_inner_loop(
     task_overrides: Optional[Dict[str, Any]] = None,
     algorithm: str = "mappo",
     prior_registry: Optional[Registry] = None,
+    pre_eval_validator: Optional[
+        "Callable[[CandidateCode], Optional[List[str]]]"
+    ] = None,
 ) -> InnerResult:
     """Run a v5 inner loop.
 
@@ -168,9 +172,39 @@ def run_inner_loop(
                     cand.reward_source
                 )
 
-        # 2b. Evaluate each candidate
+        # 2b. Evaluate each candidate. v9.1 §2.1: optional pre-eval
+        # validator AST-checks mandatory_features (e.g. role_one_hot)
+        # BEFORE training. Fast-fails bad candidates with synthetic
+        # failure metrics, saving ~9 min training per rejected one.
         evaluated: List[Tuple[CandidateCode, Dict[str, float]]] = []
         for j, cand in enumerate(candidates):
+            if pre_eval_validator is not None:
+                issues = pre_eval_validator(cand) or []
+                if issues:
+                    _log.warning(
+                        "v5 inner cand=%d REJECTED pre-eval "
+                        "(skipping training): %s",
+                        j, issues,
+                    )
+                    (iter_dir / f"candidate_{j}_rejected.json").write_text(
+                        json.dumps({
+                            "issues": issues,
+                            "reason": "pre_eval_validator",
+                        }, indent=2)
+                    )
+                    # Synthetic failure metrics (M1=0, M6=0). The scoring
+                    # step assigns fitness=-99 via _build_metrics_history.
+                    m_fail = {
+                        "M1_success_rate": 0.0,
+                        "M6_coverage_progress": 0.0,
+                        "M2_avg_return": -99.0,
+                        "M3_avg_steps": 0.0,
+                        "M4_avg_collisions": 0.0,
+                        "_pre_eval_rejected": True,
+                        "_pre_eval_issues": "; ".join(issues),
+                    }
+                    evaluated.append((cand, m_fail))
+                    continue
             try:
                 m = base_loop._evaluate_candidate(
                     cand, task_overrides, algorithm, seed,

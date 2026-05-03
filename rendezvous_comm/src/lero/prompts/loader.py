@@ -77,19 +77,33 @@ class PromptLoader:
         unused function's signature from the inner-LLM prompt when
         evolve_reward or evolve_observation is False (~40% token
         savings on obs-only runs).
+
+        v9 (2026-05-02): if meta.yaml declares ``task_domain: <name>``,
+        the loader reads ``task_domains/<name>.yaml`` and merges its
+        fields (``task_framing``, ``coordination_challenges_bullets``)
+        into the substitution context. Caller-supplied ``**kwargs``
+        win over task_domain values (so per-run ``$n_agents`` etc.
+        substitute into ``task_framing`` correctly).
         """
+        td_kwargs = self._task_domain_kwargs(kwargs)
+        full_kwargs = {**td_kwargs, **kwargs}
         if template_name == "initial_user.txt":
             assembled = self._assemble_initial_user(
                 output_spec_variant=output_spec_variant,
             )
             if assembled is not None:
-                return string.Template(assembled).safe_substitute(**kwargs)
+                # Two-pass substitute: the task_framing pulled from the
+                # task_domain YAML may itself contain $n_agents etc.,
+                # which only resolve once we know the per-run kwargs.
+                tpl = string.Template(assembled).safe_substitute(**full_kwargs)
+                return string.Template(tpl).safe_substitute(**full_kwargs)
         if template_name not in self._cache:
             path = self.template_dir / template_name
             if not path.exists():
                 raise FileNotFoundError(f"Template not found: {path}")
             self._cache[template_name] = string.Template(path.read_text())
-        return self._cache[template_name].safe_substitute(**kwargs)
+        out = self._cache[template_name].safe_substitute(**full_kwargs)
+        return string.Template(out).safe_substitute(**full_kwargs)
 
     def load_raw(self, template_name: str) -> str:
         """Load a template without substitution."""
@@ -126,6 +140,58 @@ class PromptLoader:
         ]
 
     # ── internals ─────────────────────────────────────────────────
+
+    def task_domain(self) -> Optional[Dict]:
+        """Return the parsed task_domain YAML (or None if not declared).
+
+        v9: meta.yaml may declare ``task_domain: <name>`` pointing at
+        ``task_domains/<name>.yaml``. The dict is returned verbatim;
+        callers (loader / meta-strategist) decide which fields to use.
+
+        Resolves the YAML relative to ``self.template_dir.parent`` so the
+        lookup works whether or not the module-level ``_PROMPTS_DIR`` has
+        been redirected (the v9 outer loop redirects it to the run's
+        per-outer prompt copies).
+        """
+        meta = self._load_meta()
+        td_name = (meta or {}).get("task_domain")
+        if not td_name:
+            return None
+        td_path = (
+            self.template_dir.parent / "task_domains" / f"{td_name}.yaml"
+        )
+        if not td_path.exists() and yaml is not None:
+            # Fallback: try the original module-level prompts dir
+            # (in case template_dir was redirected to a copy that
+            # doesn't include task_domains/).
+            module_root = Path(__file__).parent
+            td_path = module_root / "task_domains" / f"{td_name}.yaml"
+        if not td_path.exists() or yaml is None:
+            return None
+        return yaml.safe_load(td_path.read_text()) or {}
+
+    def _task_domain_kwargs(self, caller_kwargs: Dict) -> Dict[str, str]:
+        """Derive substitution kwargs from the task_domain YAML.
+
+        Currently produces:
+          - task_framing: verbatim from YAML
+          - coordination_challenges_bullets: bulleted markdown list
+
+        Returns {} when no task_domain is declared.
+        """
+        td = self.task_domain()
+        if not td:
+            return {}
+        out: Dict[str, str] = {}
+        framing = td.get("task_framing", "")
+        if framing:
+            out["task_framing"] = framing.rstrip()
+        ch_list = td.get("coordination_challenges") or []
+        if ch_list:
+            out["coordination_challenges_bullets"] = "\n".join(
+                f"- {c}" for c in ch_list
+            )
+        return out
 
     def _load_meta(self) -> Optional[Dict]:
         if self._meta is not None:

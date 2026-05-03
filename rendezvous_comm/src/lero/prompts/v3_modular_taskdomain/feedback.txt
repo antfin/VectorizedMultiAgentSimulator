@@ -1,0 +1,11 @@
+Results from $n_candidates candidates this iter:
+
+$candidates_results
+
+Best candidate was #$best_idx. Generate $n_candidates improved versions.
+
+Strategy reminder: $strategy_feedback_reminder
+
+REMINDER: You can ONLY use local sensor data (lidar_targets, lidar_agents, agent_pos, agent_vel, agent_idx). Do NOT use agents_pos, targets_pos, covered_targets, or agents_per_target — those are NOT available.
+
+If M1 stayed near zero, the agent likely cannot distinguish "approach this target" from "another agent is already heading here". Re-check the inferable_hints + examples above and ensure your features cover BOTH the spatial primitives AND the role differentiation.

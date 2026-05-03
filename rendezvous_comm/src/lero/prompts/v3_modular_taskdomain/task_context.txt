@@ -1,0 +1,9 @@
+## Task
+
+${task_framing}
+
+## Coordination challenges
+
+The hard parts of this task — the meta-strategist has reasoned about each:
+
+${coordination_challenges_bullets}
