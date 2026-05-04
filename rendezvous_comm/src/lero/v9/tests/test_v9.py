@@ -497,7 +497,14 @@ class TestPromptLoaderTaskDomain(unittest.TestCase):
         td = loader.task_domain()
         self.assertIsNotNone(td)
         self.assertEqual(td["name"], "rendezvous_k2")
-        self.assertEqual(len(td["inferable_concepts"]), 7)
+        # 8 concepts after v9.1 §2.11 added soft_proximity
+        self.assertEqual(len(td["inferable_concepts"]), 8)
+        # Verify soft_proximity is in the list
+        self.assertTrue(
+            any("Soft proximity" in c["concept"]
+                for c in td["inferable_concepts"]),
+            "soft_proximity should be in inferable_concepts after §2.11",
+        )
         self.assertEqual(len(td["mandatory_features"]), 2)
 
     def test_task_framing_substituted_into_system(self):
@@ -973,6 +980,50 @@ class TestProductionReplayFalsificationGate(unittest.TestCase):
         )
 
 
+class TestLazyArtifactAuthoring(unittest.TestCase):
+    """v9.1 §2.10 — lazy artifact authoring for non-chosen strategies.
+
+    Pure-function test of the system message builder. Integration of
+    the actual LLM call is exercised by the smoke run (no LLM mocks
+    here to keep tests cheap and offline)."""
+
+    def test_author_artifacts_system_includes_concepts_and_mandatory(self):
+        from src.lero.v9.meta_strategist import _author_artifacts_system
+        td = {
+            "inferable_concepts": [
+                {"concept": "Direction to nearest target",
+                 "idiom": "argmin"},
+                {"concept": "Soft proximity",
+                 "idiom": "torch.exp(-α * d)"},
+            ],
+            "mandatory_features": [
+                {"name": "role_one_hot",
+                 "idiom": "torch.zeros + agent_idx",
+                 "reason": "shared policy needs role"},
+            ],
+            "forbidden_tokens": ["hold_signal", "settle_signal"],
+            "feature_budget": {
+                "target_min": 12, "target_max": 17, "hard_cap": 20,
+            },
+        }
+        sys_msg = _author_artifacts_system(td)
+        # Must include each concept
+        self.assertIn("Direction to nearest target", sys_msg)
+        self.assertIn("Soft proximity", sys_msg)
+        # Must include mandatory feature
+        self.assertIn("role_one_hot", sys_msg)
+        # Must include forbidden tokens
+        self.assertIn("hold_signal", sys_msg)
+        self.assertIn("settle_signal", sys_msg)
+        # Must include feature budget numbers
+        self.assertIn("12-17", sys_msg)
+        self.assertIn("20", sys_msg)
+        # Must specify the JSON output format
+        self.assertIn("inferable_hints_text", sys_msg)
+        self.assertIn("examples_text", sys_msg)
+        self.assertIn("feedback_template", sys_msg)
+
+
 class TestProductionReplaySlotValidator(unittest.TestCase):
     """Replay actual production v9 Phase 6 slot_edits through the
     §2.3 validator. Confirms that outer_0's edits PASS and
@@ -1056,6 +1107,7 @@ def main() -> int:
         TestComputeFacts,
         TestPromptLoaderTaskDomain,
         TestSlotValidator,
+        TestLazyArtifactAuthoring,
         TestProductionReplaySlotValidator,
         TestPreEvalValidator,
         TestProductionReplayPreEvalValidator,

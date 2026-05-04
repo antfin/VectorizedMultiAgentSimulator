@@ -69,6 +69,8 @@ inferable_concepts:
     idiom: "agent_vel.norm(dim=-1)"
   - concept: "Boundary distance from arena edge"
     idiom: "1 - agent_pos.abs().max(dim=-1).values"
+  - concept: "Soft proximity score (smooth distance signal)"
+    idiom: "torch.exp(-3.0 * lidar_targets.min(dim=-1).values)  # exp(-α·d), smoother than raw distance — gives PPO usable gradient even when nothing is in the cover zone yet. S3b-local's high-M1 candidates consistently use this form."
 
 # ---- Mandatory features ---------------------------------------------------
 # Features the meta-LLM MUST surface in the inferable_hints AND include in

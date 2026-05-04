@@ -707,13 +707,48 @@ def run_v9_outer_loop(
                 _save_ckpt(output_dir, ckpt)
                 break
             bundle.chosen_idx = nb
+            new_active = bundle.current()
+
+            # v9.1 §2.10: bundle enum only authors artifacts for the
+            # original chosen strategy. Strategies activated via
+            # switch_to_next have empty V9Artifacts(). Lazily author
+            # them now via one extra LLM call.
+            arts = new_active.artifacts
+            if not (arts.inferable_hints_text and arts.examples_text):
+                _log.info(
+                    "v9 outer %d: §2.10 lazy-authoring artifacts for '%s'",
+                    outer_idx, new_active.name,
+                )
+                from .meta_strategist import author_artifacts_for_strategy
+                try:
+                    new_arts = author_artifacts_for_strategy(
+                        meta_llm, loader, new_active,
+                    )
+                    new_active.artifacts = new_arts
+                except Exception as e:  # noqa: BLE001
+                    _log.error(
+                        "v9 outer %d: §2.10 artifact authoring failed "
+                        "for '%s': %s — falling back to prior outer's "
+                        "slot text",
+                        outer_idx, new_active.name, e,
+                    )
+                    # Fallback: copy the prior outer's slot files into
+                    # the new strategy's artifacts so something works.
+                    prev_slots = _read_slot_files(prompt_dir)
+                    new_active.artifacts = V9Artifacts(
+                        inferable_hints_text=prev_slots.get(
+                            "inferable_hints", ""),
+                        examples_text=prev_slots.get("examples", ""),
+                        feedback_template=prev_slots.get("feedback", ""),
+                    )
+
             _write_slots(
                 next_prompt_dir,
-                _strategy_to_slots(bundle.current()),
+                _strategy_to_slots(new_active),
             )
             _log.info(
                 "v9 outer %d: SWITCHED to '%s'",
-                outer_idx, bundle.current().name,
+                outer_idx, new_active.name,
             )
         elif decision.next_action == "refine_current":
             # v9.1 §2.3: validate slot_edits structurally before

@@ -458,6 +458,177 @@ def enumerate_bundle_v9(
     raise ValueError(f"v9 bundle enum failed: {last_err}")
 
 
+def _author_artifacts_system(td: Dict[str, Any]) -> str:
+    """System message for the lazy artifact-authoring LLM call (§2.10).
+
+    Mirrors the bundle-system message but scoped to a SINGLE strategy:
+    the LLM must produce ONLY the three artifact texts for one strategy,
+    not a full bundle.
+    """
+    inferable = td.get("inferable_concepts") or []
+    mandatory = td.get("mandatory_features") or []
+    forbidden = td.get("forbidden_tokens") or []
+    budget = td.get("feature_budget") or {}
+    target_min = budget.get("target_min", 12)
+    target_max = budget.get("target_max", 17)
+    hard_cap = budget.get("hard_cap", 20)
+
+    inferable_lines = "\n".join(
+        f"  - {c['concept']} → {c['idiom']}" for c in inferable
+    )
+    mandatory_lines = "\n".join(
+        f"  - **{m['name']}** ({m.get('idiom','')}): "
+        f"{(m['reason'] or '').strip()}"
+        for m in mandatory
+    )
+    forbidden_line = ", ".join(f"`{t}`" for t in forbidden)
+
+    return f"""## Role
+
+You are authoring inner-prompt slot text for ONE strategy that has just been activated by a switch_to_next decision. Output the THREE artifacts (inferable_hints_text, examples_text, feedback_template) for the strategy described in the user message.
+
+## Hard requirements (will be runtime-validated and rejected if violated)
+
+### `inferable_hints_text` — bulleted "What you CAN infer" block
+
+EVERY entry from this list MUST appear:
+
+{inferable_lines}
+
+In addition, mention the mandatory_features:
+
+{mandatory_lines}
+
+### `examples_text` — 2-3 worked PyTorch examples
+
+Each example is a complete `def enhance_observation(scenario_state: dict) -> torch.Tensor:` in a fenced ```python``` block.
+
+Function signature is FIXED:
+
+```python
+def enhance_observation(scenario_state: dict) -> torch.Tensor:
+    lidar_t = scenario_state["lidar_targets"]
+    lidar_a = scenario_state["lidar_agents"]
+    agent_pos = scenario_state["agent_pos"]
+    agent_vel = scenario_state["agent_vel"]
+    agent_idx = scenario_state["agent_idx"]
+    n_agents = int(scenario_state["n_agents"])
+    cover_r = float(scenario_state["covering_range"])
+    ...
+```
+
+SHAPE: `lidar_targets` has shape `[B, 15]`, `lidar_agents` has `[B, 12]`. Reduce each to scalars first before combining.
+
+Together the examples MUST:
+  - Include ≥1 example with role one-hot (`F.one_hot(agent_idx, n_agents)` or `torch.zeros(B, n_agents); one_hot[:, agent_idx] = 1.0`)
+  - Include ≥1 cross-source feature (e.g., `t_count - a_count`)
+  - Stay within {target_min}-{target_max} features per example, hard cap {hard_cap}
+
+### `feedback_template` — strategy-specific reminder
+
+A 2-3 sentence reminder tied to this strategy's `what_is_needed`.
+
+## Anti-cheat
+
+Do NOT use these tokens: {forbidden_line}.
+
+## Output format — STRICT
+
+A SINGLE JSON object with exactly these keys (no others):
+
+```json
+{{
+  "inferable_hints_text": "...",
+  "examples_text": "...",
+  "feedback_template": "..."
+}}
+```
+
+NO trailing commas. NO comments. NO prose outside the JSON object.
+"""
+
+
+def author_artifacts_for_strategy(
+    meta_llm: LLMClient,
+    loader: "PromptLoader",
+    strategy: V9Strategy,
+) -> V9Artifacts:
+    """v9.1 §2.10 — lazy artifact authoring.
+
+    Called when a strategy that was previously NOT chosen at bundle-enum
+    time becomes the active strategy via `switch_to_next`. The original
+    bundle-enum LLM only authored artifacts for the chosen strategy
+    (#chosen_idx); the others have empty `V9Artifacts()` and would
+    produce empty slot files → empty inner prompt → garbage candidates.
+
+    This function fires ONE additional LLM call to author all three
+    artifact texts for the new chosen strategy.
+
+    Returns a populated V9Artifacts. The caller assigns it to
+    `strategy.artifacts` and writes the slot files.
+    """
+    td = loader.task_domain() or {}
+    forbidden = td.get("forbidden_tokens") or []
+    system = _author_artifacts_system(td)
+    user = (
+        "[STRATEGY TO AUTHOR ARTIFACTS FOR]\n"
+        f"name: {strategy.name}\n"
+        f"full_solution: {strategy.full_solution}\n"
+        f"chain_of_thought.why_it_works: "
+        f"{strategy.chain_of_thought.why_it_works}\n"
+        f"chain_of_thought.what_is_needed: "
+        f"{strategy.chain_of_thought.what_is_needed}\n"
+        f"chain_of_thought.failure_modes: "
+        f"{strategy.chain_of_thought.failure_modes}\n"
+        f"success_signature.ast_pattern_description: "
+        f"{strategy.success_signature.ast_pattern_description}\n"
+        f"\n"
+        f"Output the three artifact texts as a JSON object."
+    )
+
+    last_err: Optional[Exception] = None
+    raw = ""
+    for attempt in range(1, 4):
+        raw = meta_llm.generate(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            n=1,
+        )[0]
+        try:
+            data = _extract_json(raw)
+            arts = V9Artifacts(
+                inferable_hints_text=_redact_forbidden(
+                    data.get("inferable_hints_text", ""), forbidden,
+                ),
+                examples_text=_redact_forbidden(
+                    data.get("examples_text", ""), forbidden,
+                ),
+                feedback_template=_redact_forbidden(
+                    data.get("feedback_template", ""), forbidden,
+                ),
+            )
+            _log.info(
+                "v9.1 §2.10 artifacts authored for '%s' "
+                "(hints=%dB, examples=%dB, feedback=%dB)",
+                strategy.name,
+                len(arts.inferable_hints_text),
+                len(arts.examples_text),
+                len(arts.feedback_template),
+            )
+            return arts
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            _log.warning(
+                "v9.1 §2.10 artifact parse fail attempt %d: %s",
+                attempt, e,
+            )
+    raise ValueError(
+        f"v9.1 §2.10 artifact authoring failed: {last_err}"
+    )
+
+
 def reflect_decide_v9(
     meta_llm: LLMClient,
     loader: PromptLoader,
