@@ -517,7 +517,7 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - **F3.1 — IPPO adapter** (S) ✅ — `IppoAdapter` mirrors `MappoAdapter` (BenchMARL `IppoConfig`); `experiments/discovery/baseline/configs/ippo_smoke.yaml`; tests in `tests/integration/algorithms/test_ippo.py` (Protocol + 2-iter smoke). End-to-end via CLI confirmed.
 - **F3.2 — MADDPG adapter** (S) ✅ — first **off-policy** adapter; extended `BenchmarlBaseAdapter._experiment_config` to wire the off_policy_* mirrors (`off_policy_collected_frames_per_batch`, `off_policy_train_batch_size`, `off_policy_n_optimizer_steps`) so PPO and DDPG/SAC families share the same `cfg.training` knobs. `MaddpgAdapter` + `experiments/discovery/baseline/configs/maddpg_smoke.yaml` + tests in `tests/integration/algorithms/test_maddpg.py`. End-to-end via CLI confirmed.
 - **F3.3 — IDDPG adapter** (S) ✅ — `IddpgAdapter` (off-policy, same fields as MADDPG); smoke yaml + tests; no base changes (off_policy_* knobs already wired in F3.2).
-- **F3.4 — ISAC adapter** (S)
+- **F3.4 — ISAC adapter** (S) ✅ — `IsacAdapter` (off-policy SAC with alpha temperature / num_qvalue_nets / etc); smoke yaml + tests; same template as IDDPG.
 - **F3.5 — MASAC adapter** (S)
 - **F3.6 — Algorithm registry refactor** (XS) — extract common BenchMARL boilerplate into `benchmarl_base.py`. Refactor only after the 6th adapter, not before (rule of three).
 

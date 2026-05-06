@@ -1,0 +1,40 @@
+experiment:
+  id: isac_smoke
+  name: "Discovery / ISAC smoke"
+  description: "1-iter, 1-env smoke run used to validate the F3.4 ISAC adapter slice."
+  seed: 0
+
+scenario:
+  type: discovery
+  params:
+    n_agents: 2
+    n_targets: 2
+    agents_per_target: 2
+    targets_respawn: false
+    shared_reward: true
+    max_steps: 10
+
+algorithm:
+  type: isac
+  params: {}
+
+training:
+  max_iters: 1
+  num_envs: 1
+  device: cpu
+  frames_per_batch: 50
+  minibatch_size: 25
+  n_minibatch_iters: 1
+
+evaluation:
+  interval_iters: 1
+  episodes: 1
+
+runtime:
+  runner:
+    type: local
+    params: {}
+  storage:
+    type: fs
+    path: experiments/discovery/baseline
+    params: {}
