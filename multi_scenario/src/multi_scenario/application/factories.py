@@ -16,6 +16,7 @@ from multi_scenario.adapters.algorithms.ippo import IppoAdapter
 from multi_scenario.adapters.algorithms.isac import IsacAdapter
 from multi_scenario.adapters.algorithms.maddpg import MaddpgAdapter
 from multi_scenario.adapters.algorithms.mappo import MappoAdapter
+from multi_scenario.adapters.algorithms.masac import MasacAdapter
 from multi_scenario.adapters.scenarios.discovery import VmasDiscoveryAdapter
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
 from multi_scenario.domain.ports import Algorithm, Scenario, Storage
@@ -30,6 +31,7 @@ _ALGORITHMS: dict[str, Callable[[], Algorithm]] = {
     "isac": IsacAdapter,
     "maddpg": MaddpgAdapter,
     "mappo": MappoAdapter,
+    "masac": MasacAdapter,
 }
 
 _STORAGES: dict[str, Callable[[], Storage]] = {
