@@ -25,6 +25,7 @@ from benchmarl.experiment import ExperimentConfig as BenchmarlExperimentConfig
 from benchmarl.models.mlp import MlpConfig
 from torchrl.envs.utils import ExplorationType, set_exploration_type
 
+from multi_scenario.adapters.video.recorder import VideoRecorder
 from multi_scenario.domain.models import ExperimentConfig
 
 _TASK_BY_TYPE: dict[str, VmasTask] = {
@@ -90,12 +91,12 @@ class BenchmarlBaseAdapter:
             bm.save_folder = save_folder
         return bm
 
-    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Experiment:
-        """Build the BenchMARL Experiment, run training, return the Experiment.
+    def build_experiment(self, cfg: ExperimentConfig, run_dir: Path | None) -> Experiment:
+        """Construct the BenchMARL ``Experiment`` without running it.
 
-        BenchMARL's native scalars / checkpoints land at ``run_dir/output/benchmarl/``
-        when run_dir is supplied (per the §3.5.2 layout). Falls back to the
-        BenchMARL default (cwd) when run_dir is None.
+        Exposed so callers (and the F2.11 video recorder) can access the
+        random-init ``policy`` and the ``test_env`` *before* training starts.
+        ``train`` calls this then ``experiment.run()`` in sequence.
         """
         save_folder: str | None
         if run_dir is not None:
@@ -105,14 +106,48 @@ class BenchmarlBaseAdapter:
         else:
             save_folder = None
         bm_cfg = self._experiment_config(cfg, save_folder=save_folder)
-        experiment = Experiment(
+        return Experiment(
             task=self._task(cfg),
             algorithm_config=self._algorithm_config(cfg),
             model_config=self._model_config(cfg),
             seed=cfg.experiment.seed,
             config=bm_cfg,
         )
+
+    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Experiment:
+        """Build the BenchMARL Experiment, run training, return the Experiment.
+
+        BenchMARL's native scalars / checkpoints land at ``run_dir/output/benchmarl/``
+        when run_dir is supplied (per the §3.5.2 layout). Falls back to the
+        BenchMARL default (cwd) when run_dir is None.
+
+        F2.11: when ``runtime.runner.params.record_video`` is true (default off
+        for ``*_smoke`` runs, on otherwise) and ``run_dir`` is set, records
+        ``before_training.mp4`` (random-init policy) and ``after_training.mp4``
+        (trained policy) under ``run_dir/output/videos/``.
+        """
+        experiment = self.build_experiment(cfg, run_dir)
+
+        record = _should_record_video(cfg, run_dir)
+        videos_dir = run_dir / "output" / "videos" if run_dir is not None else None
+        if record and videos_dir is not None:
+            VideoRecorder().record(
+                test_env=experiment.test_env,
+                policy=experiment.policy,
+                max_steps=experiment.max_steps,
+                output_path=videos_dir / "before_training.mp4",
+            )
+
         experiment.run()
+
+        if record and videos_dir is not None:
+            VideoRecorder().record(
+                test_env=experiment.test_env,
+                policy=experiment.policy,
+                max_steps=experiment.max_steps,
+                output_path=videos_dir / "after_training.mp4",
+            )
+
         return experiment
 
     def evaluate(
@@ -219,3 +254,16 @@ class BenchmarlBaseAdapter:
     def _default_n_targets_from_task(self) -> int:
         # Discovery scenario default; overridden by cfg in practice.
         return 7
+
+
+def _should_record_video(cfg: ExperimentConfig, run_dir: Path | None) -> bool:
+    """F2.11 gating: explicit ``record_video`` flag, defaulting to off-for-smoke.
+
+    No ``run_dir`` → no place to write → False. Otherwise read
+    ``cfg.runtime.runner.params.record_video``; missing flag falls back to
+    the smoke-suffix heuristic (``*_smoke`` exp_ids default off).
+    """
+    if run_dir is None or cfg.runtime is None:
+        return False
+    default = not cfg.experiment.id.endswith("_smoke")
+    return bool(cfg.runtime.runner.params.get("record_video", default))

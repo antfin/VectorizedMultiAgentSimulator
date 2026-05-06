@@ -95,6 +95,9 @@ def test_discovery_mappo_smoke_completes(tmp_path: Path) -> None:
     assert log_path.is_file()
     assert log_path.stat().st_size > 0
 
+    # F2.11: smoke runs default-off for video → no videos dir.
+    assert not (run_dir / "output" / "videos").exists()
+
     # F2.10.1: eval_episodes.json with the universal rollout fields, sized to
     # cfg.evaluation.episodes; discovery rollouts also carry targets_covered + n_targets.
     eval_path = run_dir / "output" / "eval_episodes.json"

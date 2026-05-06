@@ -496,11 +496,17 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 **Out of scope:** mid-training intermediate eval samples (only the final eval is captured here; the per-iter eval rows in F5.2 will need a different hook).
 
-#### F2.11 — Before/after training videos — S
+#### F2.11 — Before/after training videos — S ✅
 
-- Generate `output/videos/before_training.mp4` (random-init policy, 1 eval episode, rendered) and `output/videos/after_training.mp4` (final policy, 1 eval episode, rendered) when `runtime.runner.params.record_video: true`. Default ON for non-smoke runs (any `experiment.id` that doesn't end in `_smoke`); default OFF for smoke (rendering is slow).
-- Reuses the scenario adapter's render hook (`scenario.make_env(..., render=True)` + VMAS `Environment.render(mode="rgb_array")` per step).
-- TDD: smoke test with `record_video: true` produces both files, both > 0 bytes; smoke test with the flag default-off produces neither.
+- `VideoRecorder` (`adapters/video/recorder.py`) — rolls out one episode through `experiment.test_env` + `experiment.policy`, calls the underlying VMAS env's `render(mode="rgb_array", env_index=0)` per step, encodes via `imageio[ffmpeg]` (`mimsave(..., fps=15, codec="libx264")`). No state-dict reconstruction — reuses the BenchMARL TensorDictModule directly (cleaner than the rendezvous_comm port).
+- `BenchmarlBaseAdapter.train()` split into `build_experiment(cfg, run_dir) -> Experiment` (no run) + `train()` (build + run). Exposing the random-init policy is what makes the "before" video possible without policy reconstruction.
+- Recording gated by `_should_record_video(cfg, run_dir)`: requires `run_dir`; reads `cfg.runtime.runner.params.record_video`; default = `not cfg.experiment.id.endswith("_smoke")`.
+- `RunReport.links.videos.{before,after}_training` populated automatically via `ReportBuilder._videos`.
+- Tests: `tests/integration/video/test_recorder.py` (recorder MP4 round-trip), `tests/integration/smoke/test_discovery_mappo_videos.py` (videos enabled, both MP4s + report links resolve), `test_discovery_mappo.py` extended to assert default-off → no `videos/` dir.
+
+**Out of scope:** multi-episode videos, FPS/codec configurability, headless/OVH-specific render testing.
+
+**OVH/headless deferred to F6.6:** VMAS rendering needs Pyglet + OpenGL/X11, which OVH AI Training containers don't ship. Today, a non-smoke run on OVH would crash inside `VideoRecorder.record()` with `Error occurred while running 'from pyglet.gl import *'` (confirmed pattern from `rendezvous_comm/results/.../run.log`). F6.6 (Phase 6) bundles the three changes needed: fail-soft try/except around the recorder calls, a `multi-scenario regenerate-videos <run_dir>` CLI for post-import local regeneration, and flipping `bm.checkpoint_at_end = True` for non-smoke runs so the "after" video can be reproduced from the saved checkpoint.
 
 ---
 
@@ -599,6 +605,30 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 - Submit `discovery_mappo_smoke.yaml`; verify results land at the right prefix; pull back via `S3StorageAdapter`.
 - **Manual demo** — gated on user confirmation that they want to spend an OVH credit.
+
+#### F6.6 — Headless video handling + `regenerate-videos` CLI — S
+
+**Background:** F2.11 records before/after MP4s inline during training using VMAS Pyglet rendering. OVH AI Training containers are headless (no OpenGL/X11) → any non-smoke run on OVH would crash inside `VideoRecorder.record()` (confirmed `pyglet.gl` import error in `rendezvous_comm/results/.../run.log`). This feature makes OVH runs complete cleanly and reproduces the videos locally after pulling results back.
+
+**Three bundled changes (each XS, single feature for tight coupling):**
+
+1. **Fail-soft `VideoRecorder` invocation** — wrap each `VideoRecorder().record(...)` call in `BenchmarlBaseAdapter.train()` with try/except. On failure, emit a warning: `"Video {before|after}_training skipped on headless host: <error>. Regenerate locally with 'multi-scenario regenerate-videos <run_dir>' after pulling results."` Training completes; `report.links.videos.{before,after}_training` resolves to `null`.
+2. **`bm.checkpoint_at_end = True`** for non-smoke runs (mirror the same `*_smoke` heuristic used in `_should_record_video`). Smoke runs stay off — no point checkpointing 1-iter runs. This is what makes (3) reproducible.
+3. **`multi-scenario regenerate-videos <run_dir>` CLI command:**
+   - Reads `<run_dir>/input/config.json` (cfg) and the BenchMARL checkpoint at `<run_dir>/output/benchmarl/<bm_run>/.../checkpoints/*.pt` (latest by mtime).
+   - Rebuilds the experiment with the same seed via `BenchmarlBaseAdapter.build_experiment(cfg, run_dir)` — random-init policy → records `before_training.mp4`.
+   - Loads the checkpoint state dict into `experiment.policy` → records `after_training.mp4`.
+   - Re-runs `ReportBuilder.build` and overwrites `report.json` so `videos.{before,after}_training` populate.
+
+**Optional polish (lower priority):** auto-detect OVH via `OVH_AI_TRAINING_*` env vars and short-circuit the recorder up front, so we skip the pyglet crash overhead on each OVH run.
+
+**Reproducibility caveat to document:** post-hoc regeneration is faithful for MLP (deterministic given seed) but may diverge subtly for algorithms with eval-time stochasticity that BenchMARL handles internally. The "after" video reflects the *saved* checkpoint; if `checkpoint_at_end=True` saves slightly before the final eval (e.g., during cleanup), the policy may be one update behind the run's final eval metrics. Acceptable trade-off; document it.
+
+**TDD:**
+
+- Unit: a fake `VideoRecorder` that raises → `train()` returns the experiment, warning logged, training metrics unaffected.
+- Integration: regenerate-videos against a fixture run folder (with checkpoint) → both MP4s land + `report.json` updated.
+- OVH smoke (manual, F6.5 follow-up): submit a non-smoke config, confirm crash-free completion, pull back, run `regenerate-videos`, confirm both videos generated.
 
 ---
 
