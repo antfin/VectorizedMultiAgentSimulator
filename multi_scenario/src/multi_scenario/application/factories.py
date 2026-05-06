@@ -11,6 +11,7 @@ gets one line added here.
 
 from typing import Callable
 
+from multi_scenario.adapters.algorithms.ippo import IppoAdapter
 from multi_scenario.adapters.algorithms.mappo import MappoAdapter
 from multi_scenario.adapters.scenarios.discovery import VmasDiscoveryAdapter
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
@@ -21,6 +22,7 @@ _SCENARIOS: dict[str, Callable[[], Scenario]] = {
 }
 
 _ALGORITHMS: dict[str, Callable[[], Algorithm]] = {
+    "ippo": IppoAdapter,
     "mappo": MappoAdapter,
 }
 
