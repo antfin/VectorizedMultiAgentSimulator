@@ -120,53 +120,79 @@ These conventions exist in `rendezvous_comm/` and we want to keep them — not s
 
 ### 3.5.1 Run ID (parametric, deterministic)
 
-Format: `<exp_id>_<algo>_<scenario_specific_short>_s<seed>`
+Format: `<exp_id>_s<seed>`. The folder name appends a timestamp:
+`<run_id>__<timestamp>` = `<exp_id>_s<seed>__<YYYYMMDD_HHMM>`.
 
-Example (discovery): `disc_baseline_mappo_n4_t7_k2_s0`
-Example (transport): `transp_baseline_mappo_n4_pkg50_s0`
+Example: run_id `disc_baseline_smoke_mappo_s0`,
+folder `disc_baseline_smoke_mappo_s0__20260506_1423`.
 
 Rules:
 
-- Parametric, no timestamp → reproducible run identity.
-- Must be unique per experiment.
-- Short codes (`n4`, `t7`, …) defined per scenario in its adapter (`short_id_for(cfg) -> str`).
+- Parametric, no timestamp in `run_id` itself → reproducible run identity. Timestamp lives only in the folder name and disambiguates re-runs of the same config.
+- exp_id is the discriminator across algo / scenario / variant combos. To compare mappo vs ippo on the same scenario, use distinct exp_ids (e.g. `disc_baseline_smoke_mappo` and `disc_baseline_smoke_ippo`); seeds vary independently.
 - Tested: identical config produces identical run_id.
 
 ### 3.5.2 Run folder layout
 
 ```text
-experiments/<scenario>/<exp_type>/results/<YYYYMMDD_HHMM__run_id>/
+experiments/<scenario>/<exp_type>/<run_id>__<timestamp>/
 ├── input/
-│   └── config.yaml               # the resolved, fully-merged config
+│   ├── config.json               # resolved, fully-merged config (machine-read; YAML source stays in configs/)
+│   └── provenance.json           # hashes, git_sha, hashed_source_files, library_versions, timestamps
 ├── logs/
 │   └── run.log
 ├── output/
-│   ├── metrics.json              # final M1..Mn for this run
-│   ├── eval_episodes.json        # per-episode eval data
-│   ├── policy.pt                 # final policy state_dict
-│   └── benchmarl/                # BenchMARL native outputs
-│       └── scalars/
-│           ├── train_*.csv
-│           └── eval_*.csv
-├── provenance.yaml               # config_hash, code_hash, git_sha, timestamps
-└── run_state.json                # RUNNING | DONE | CRASHED | RESUMED
+│   ├── metrics.json              # M1..M9 + config_snapshot + run metadata
+│   ├── eval_episodes.json        # per-episode raw eval data (re-aggregatable)
+│   ├── report.json               # manifest: status, summary, file links (relative paths)
+│   ├── videos/                   # opt-in (default ON for non-smoke; record_video flag)
+│   │   ├── before_training.mp4   # random-init policy, 1 eval episode
+│   │   └── after_training.mp4    # final policy, 1 eval episode
+│   └── benchmarl/                # untouched BenchMARL output (policy in checkpoints/, scalars/*.csv)
+│       └── <bm_run>/...
+└── run_state.json                # lifecycle (INITIALIZING|RUNNING|DONE|CRASHED|RESUMED)
 ```
 
-### 3.5.3 The three CSVs
+Notes:
 
-Ported from `consolidate.py`. Each is timestamped, never overwritten:
+- No `results/` parent folder — run folders are direct children of `<exp_type>/`, sibling to `configs/`.
+- All run-level files we own are JSON. BenchMARL's native CSVs (`scalars/`) remain in `benchmarl/` untouched.
+- No standalone `policy.pt` at run-folder root: the policy lives in `output/benchmarl/<bm_run>/checkpoints/`. `report.json` records the exact path.
+- `report.json` is a manifest with relative paths to `config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy`, `videos.{before,after}_training`, `benchmarl_dir`, `benchmarl_scalars`, plus a headline summary (status, duration, M1/M2 highlights). Streamlit run-detail page reads this — no globbing.
 
-- `sweep_results_<ts>.csv` — **one row per run** (final M1–Mn + flattened config). The headline file.
-- `training_iter_<ts>.csv` — **one row per (run, training iteration)**. Loss / entropy / reward curves.
-- `training_eval_<ts>.csv` — **one row per (run, eval step)**. Eval reward, eval M1, eval M4.
+### 3.5.3 Cross-run aggregations
+
+Cross-run files live at `experiments/<scenario>/<exp_type>/`, sibling to run folders. **Single canonical pair**, no timestamps — the per-run JSONs are the source of truth, the cross-run files are a derived view, fully reconstructable. Re-running consolidate replaces them in place (atomic write-rename). Each consolidate also copies the previous version to `runs.previous.csv` / `runs.previous.json` for one-step rollback.
+
+- `runs.csv` — **long-format, one CSV** with a `record_type` column:
+  - `record_type == "final"` → one row per run: final M1–M9 + flattened `config_snapshot` + run metadata. Equivalent of rendezvous_comm's `sweep_results.csv`.
+  - `record_type == "eval"` → one row per (run, eval step): subset of M1–M9 sampled mid-training (M7/M8/M9 may be `N/A` when not yet computable).
+  - Algorithm-agnostic columns. Stable schema across all scenarios. JSON nulls render as `N/A` via pandas `na_rep`.
+  - **Out of scope at cross-run level**: per-iter algorithm-internal scalars (loss / entropy / clip_fraction / grad norms). Those live in each run's `output/benchmarl/.../scalars/*.csv` and Streamlit reads them at view time when showing a single run's training internals.
+- `runs.json` — slim cross-run manifest:
+  - `scope`: scenario, exp_type, n_runs, exp_ids, seeds, algorithms.
+  - `csv`: link to `runs.csv`.
+  - `rankings`: per-metric leaderboards as `[{run_id, value, report}]` arrays.
+  - `runs`: flat list of `{run_id, report}` linking to each per-run `output/report.json`.
+  - **No file duplication**: every per-run path (config, metrics, policy, videos, benchmarl_scalars) lives only in the per-run report; the cross-run manifest dereferences via `report` links.
+- `runs.previous.csv`, `runs.previous.json` — one-step backups, overwritten on each consolidate.
 
 ### 3.5.4 Run state lifecycle
 
-`run_state.json` enum: `INITIALIZING → RUNNING → DONE` (happy path), `→ CRASHED` (on exception), `→ RESUMED` (if resumed). Drives Streamlit status icons and resume detection.
+`run_state.json` enum: `INITIALIZING → RUNNING → DONE` (happy path), `→ CRASHED` (on exception), `→ RESUMED` (if resumed). Records timestamped transitions. Drives Streamlit status icons and resume detection.
 
 ### 3.5.5 Provenance
 
-`provenance.yaml` per run, with: `config_hash` (sha256 of resolved config), `code_hash` (sha256 of relevant src files), `git_sha`, `git_dirty`, `created_at`, `python_version`, `torch_version`, `vmas_version`, `benchmarl_version`. Used to flag stale results in Streamlit.
+`input/provenance.json` per run, with:
+
+- `config_hash` (sha256 of resolved config dict)
+- `code_hash` (sha256 of the explicit `hashed_source_files` list — see §7.5/#8 for the staleness-tracking caveat)
+- `hashed_source_files` (the curated list of files contributing to `code_hash`)
+- `git_sha`, `git_dirty`
+- `created_at`, `finished_at`
+- `library_versions`: `python`, `torch`, `vmas`, `benchmarl`, `multi_scenario`
+
+Used to flag stale results in Streamlit (current code hash differs → result is from older code).
 
 ---
 
@@ -321,8 +347,8 @@ Each feature lists its **demo command** + **expected output**.
 
 #### F2.5 — `LocalStorageAdapter` — S
 
-- YAML config dump + JSON metrics + per-run-summary CSV append. Writes to the §3.5.2 layout.
-- TDD: round-trip; concurrent appends serialise correctly.
+- All run-level files we own are JSON: `input/config.json`, `output/metrics.json`, `output/eval_episodes.json`, `run_state.json`. BenchMARL's native CSVs in `benchmarl/` are preserved untouched. Per-run-summary CSV append is at the cross-run level (§3.5.3), not per-run. Writes to the §3.5.2 layout.
+- TDD: round-trip; concurrent appends to the cross-run CSV serialise correctly.
 
 #### F2.6 — `LocalRunner` + factories — S
 
@@ -331,19 +357,31 @@ Each feature lists its **demo command** + **expected output**.
 
 #### F2.7 — `FileLogger` + provenance + run_state writers — S
 
-- `FileLogger` writes to `logs/run.log`. `ProvenanceWriter` computes hashes & writes `provenance.yaml`. `RunStateWriter` updates `run_state.json` at lifecycle transitions.
+- `FileLogger` writes to `logs/run.log`. `ProvenanceWriter` computes hashes & writes `input/provenance.json` (JSON, with `hashed_source_files` and `library_versions` per §3.5.5). `RunStateWriter` updates `run_state.json` at lifecycle transitions.
 - Wire all three into `ExperimentService`.
 - **Port from rendezvous_comm:** `logging_setup.py`, `provenance.py`.
 
 #### F2.8 — CLI `multi-scenario run <yaml>` — S
 
 - Typer command. Provide `experiments/discovery/baseline/configs/mappo_smoke.yaml` (1 env, 2 iters).
-- **Demo:** `multi-scenario run experiments/discovery/baseline/configs/mappo_smoke.yaml` → returns 0; writes `results/<ts>__<run_id>/{config.yaml, metrics.json, provenance.yaml, run_state.json, logs/run.log, output/policy.pt}` and a row in `sweep_results_<ts>.csv`.
+- **Demo:** `multi-scenario run experiments/discovery/baseline/configs/mappo_smoke.yaml` → returns 0; writes the §3.5.2 run-folder layout (`<run_id>__<ts>/{input/config.json, input/provenance.json, output/metrics.json, output/eval_episodes.json, output/report.json, output/benchmarl/..., logs/run.log, run_state.json}`) and a row in `sweep_results_<ts>.csv`.
 
 #### F2.9 — Smoke integration test — XS
 
 - `tests/integration/smoke/test_discovery_mappo.py` runs the same YAML through the runner and asserts: CSV row exists, run_state=DONE, provenance fields populated.
 - **Validation gate (Phase 2 milestone):** discovery + MAPPO produces a real CSV row locally with full lifecycle artifacts.
+
+#### F2.10 — `report.json` writer — XS
+
+- At run end (after metrics aggregation, before run_state→DONE), emit `output/report.json` per §3.5.2: a manifest with status, started/finished timestamps, duration, headline summary (a few key metrics), and relative-path links to every relevant artefact (`config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy` inside `benchmarl/`, `videos.before_training`, `videos.after_training`, `benchmarl_dir`, `benchmarl_scalars`).
+- The exact `<bm_run>` directory name (BenchMARL-assigned) is captured in the manifest so consumers don't glob.
+- TDD: given a fully-populated run folder, the writer produces a manifest whose every linked path resolves to an existing file (or is `null` if opt-in artefact wasn't generated).
+
+#### F2.11 — Before/after training videos — S
+
+- Generate `output/videos/before_training.mp4` (random-init policy, 1 eval episode, rendered) and `output/videos/after_training.mp4` (final policy, 1 eval episode, rendered) when `runtime.runner.params.record_video: true`. Default ON for non-smoke runs (any `experiment.id` that doesn't end in `_smoke`); default OFF for smoke (rendering is slow).
+- Reuses the scenario adapter's render hook (`scenario.make_env(..., render=True)` + VMAS `Environment.render(mode="rgb_array")` per step).
+- TDD: smoke test with `record_video: true` produces both files, both > 0 bytes; smoke test with the flag default-off produces neither.
 
 ---
 
@@ -381,16 +419,16 @@ Each feature lists its **demo command** + **expected output**.
 
 - Hardened error messages. Optional `multi-scenario schema` command emits JSON Schema from the Pydantic model.
 
-#### F5.2 — Per-run summary CSV (`sweep_results`) — S
+#### F5.2 — `runs.csv` writer (long-format, single file) — S
 
-- One row per run; columns = run_id, timestamp, scenario, algo, seed, all hyperparams flattened, M1…Mn.
-- **Port from rendezvous_comm:** structure of `consolidate.py`.
+- One CSV with `record_type` column, two row types per run: `final` (one row, full M1–M9 + config_snapshot + metadata) and `eval` (one per eval step, M1–M9 subset). Schema is algorithm-agnostic; JSON nulls → `N/A` via pandas `na_rep`. Atomic write-rename; on overwrite, copy current to `runs.previous.csv` for one-step rollback.
+- **Port from rendezvous_comm:** structure of `consolidate.py`. Eval-step rows ported from the per-eval consolidation logic; final rows from the per-run aggregation.
+- **Gotcha to handle (port the workaround):** custom eval scalars fire one step after native eval scalars; consolidator must shift custom keys back by 1. See §7.5/#1.
 
-#### F5.3 — Per-iter and per-eval CSVs — S
+#### F5.3 — `runs.json` writer (slim cross-run manifest) — XS
 
-- `training_iter.csv` (loss / entropy / reward per iter), `training_eval.csv` (eval reward, eval M1, eval M4 per eval step).
-- **Port from rendezvous_comm:** the BenchMARL scalars-folder consolidation logic.
-- **Gotcha to handle (port the workaround):** custom eval scalars fire one step after native eval scalars; consolidator must shift custom keys back by 1. See §7.5.
+- Cross-run manifest per §3.5.3: scope, link to `runs.csv`, rankings (`{run_id, value, report}` per metric), and a flat list of per-run `report` links. No duplication of per-run file paths — consumers dereference via `report` to each run's `output/report.json`. Atomic write-rename + `runs.previous.json` backup.
+- TDD: given N populated run folders, the writer produces a manifest whose `runs[].report` paths all resolve and whose `rankings` agree with `final` rows in `runs.csv`.
 
 #### F5.4 — Per-step long-format CSV (experimental) — S
 
