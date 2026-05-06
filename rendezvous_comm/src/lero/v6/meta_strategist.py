@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from typing import Dict, List, Optional
 
@@ -165,8 +164,8 @@ def _build_meta_prompt(
         "**OUTER ITER 0 LOCK: next_evolve_observation must be true, "
         "next_evolve_reward must be false. Slot edits limited to "
         "guidance_observation and guidance_shared.**"
-        if outer_idx == 0 else
-        "Outer iter > 0: you may unlock next_evolve_reward=true with "
+        if outer_idx == 0
+        else "Outer iter > 0: you may unlock next_evolve_reward=true with "
         "justification."
     )
     return f"""[TASK SUMMARY]
@@ -221,7 +220,7 @@ def _parse_decision(raw: str) -> V6MetaDecision:
     je = body.rfind("}")
     if js < 0 or je < js:
         raise ValueError("no JSON object in DECISION section")
-    blob = body[js:je + 1]
+    blob = body[js : je + 1]
     data = json.loads(blob)
 
     return V6MetaDecision(
@@ -275,20 +274,24 @@ def call_meta_strategist(
             last_err = e
             _log.warning(
                 "v6 meta-strategist parse failed attempt %d/3: %s",
-                attempt, e,
+                attempt,
+                e,
             )
     if decision is None:
         raise ValueError(
-            f"v6 meta-strategist failed after 3 attempts. "
-            f"Last error: {last_err}"
+            f"v6 meta-strategist failed after 3 attempts. " f"Last error: {last_err}"
         )
     elapsed = time.monotonic() - t0
     _log.info(
         "v6 meta-strategist outer=%d: classification=%s next_mode=%s "
         "evolve_obs=%s evolve_rew=%s complexity=%d (%.1fs)",
-        outer_idx, decision.classification, decision.next_mode,
-        decision.next_evolve_observation, decision.next_evolve_reward,
-        decision.complexity_level, elapsed,
+        outer_idx,
+        decision.classification,
+        decision.next_mode,
+        decision.next_evolve_observation,
+        decision.next_evolve_reward,
+        decision.complexity_level,
+        elapsed,
     )
     return decision, raw_text
 

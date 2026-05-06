@@ -7,10 +7,11 @@ Configuration is loaded from configs/ovh.yaml (edit that file to change
 defaults for buckets, region, GPU model, etc.). Sensitive data (tokens,
 passwords) should NEVER go in the config — use `ovhai login`.
 """
+
 import json
 import logging
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -61,6 +62,7 @@ def _mounts_cfg() -> Dict[str, str]:
 
 
 # ── Derived defaults from config ─────────────────────────────────
+
 
 def _gpu_models_from_config() -> Dict[str, Dict]:
     """Build GPU_MODELS dict from config, with hardcoded fallback."""
@@ -126,7 +128,9 @@ def check_cli_available() -> bool:
     try:
         r = subprocess.run(
             ["ovhai", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return r.returncode == 0
     except FileNotFoundError:
@@ -138,7 +142,10 @@ def _run_ovhai(args: List[str], timeout: int = 60) -> subprocess.CompletedProces
     cmd = ["ovhai"] + args
     _log.debug(f"Running: {' '.join(cmd)}")
     return subprocess.run(
-        cmd, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -198,8 +205,7 @@ def submit_training_job(
 
     if gpu_type not in GPU_MODELS:
         _log.error(
-            f"Unknown GPU type: {gpu_type}. "
-            f"Available: {list(GPU_MODELS.keys())}"
+            f"Unknown GPU type: {gpu_type}. " f"Available: {list(GPU_MODELS.keys())}"
         )
         return None
 
@@ -231,7 +237,7 @@ def submit_training_job(
     # Also try stripping a leading rendezvous_comm/ (covers callers who
     # pass the repo-root form while CWD is already rendezvous_comm/).
     if config_yaml.startswith("rendezvous_comm/"):
-        _local_candidates.append(Path(config_yaml[len("rendezvous_comm/"):]))
+        _local_candidates.append(Path(config_yaml[len("rendezvous_comm/") :]))
     _abs_config = next(
         (c.resolve() for c in _local_candidates if c.resolve().exists()),
         None,
@@ -291,14 +297,23 @@ def submit_training_job(
     flavor = GPU_MODELS.get(gpu_type, {}).get("flavor", gpu_type)
 
     args = [
-        "job", "run", image,
-        "--name", job_name,
-        "--flavor", flavor,
-        "--gpu", str(n_gpu),
-        "--volume", code_volume,
-        "--volume", results_volume,
-        "--env", f"RESULTS_DIR={mount_results}",
-        "--env", f"CHECKPOINTS_DIR={mount_results}/checkpoints",
+        "job",
+        "run",
+        image,
+        "--name",
+        job_name,
+        "--flavor",
+        flavor,
+        "--gpu",
+        str(n_gpu),
+        "--volume",
+        code_volume,
+        "--volume",
+        results_volume,
+        "--env",
+        f"RESULTS_DIR={mount_results}",
+        "--env",
+        f"CHECKPOINTS_DIR={mount_results}/checkpoints",
     ]
     # v3 §6.2: mount prior-sweep buckets read-only for cross-run
     # mutation_log scan. Format: each entry is a
@@ -308,18 +323,25 @@ def submit_training_job(
         paths: List[str] = []
         for idx, spec in enumerate(history_buckets):
             mount_point = f"/workspace/history_{idx}"
-            args.extend([
-                "--volume", f"{spec}:{mount_point}:ro",
-            ])
+            args.extend(
+                [
+                    "--volume",
+                    f"{spec}:{mount_point}:ro",
+                ]
+            )
             paths.append(mount_point)
-        args.extend([
-            "--env", f"LERO_HISTORY_PATHS={':'.join(paths)}",
-        ])
+        args.extend(
+            [
+                "--env",
+                f"LERO_HISTORY_PATHS={':'.join(paths)}",
+            ]
+        )
     # LLM API keys for LERO experiments — encrypted before submission
     # so they appear as opaque blobs in `ovhai job get`.
     if llm_env:
         from .secrets_util import encrypt_env
         import secrets
+
         passphrase = secrets.token_urlsafe(24)
         encrypted = encrypt_env(llm_env, passphrase)
         for key, value in encrypted.items():
@@ -329,10 +351,16 @@ def submit_training_job(
             "Passphrase is ephemeral — lost after this session.",
             len(llm_env),
         )
-    args.extend([
-        "--output", "json",
-        "--", "bash", "-c", train_cmd,
-    ])
+    args.extend(
+        [
+            "--output",
+            "json",
+            "--",
+            "bash",
+            "-c",
+            train_cmd,
+        ]
+    )
 
     r = _run_ovhai(args, timeout=30)
     if r.returncode != 0:
@@ -372,14 +400,18 @@ def list_jobs(status_filter: Optional[str] = None) -> List[JobInfo]:
     items = jobs_data if isinstance(jobs_data, list) else jobs_data.get("items", [])
     for j in items:
         status = j.get("status", {})
-        status_str = status.get("state", "") if isinstance(status, dict) else str(status)
+        status_str = (
+            status.get("state", "") if isinstance(status, dict) else str(status)
+        )
         info = JobInfo(
             id=j.get("id", ""),
             name=j.get("name", j.get("id", "")[:12]),
             status=status_str,
             created_at=j.get("createdAt", ""),
             gpu_type=j.get("resources", {}).get("gpuModel", ""),
-            duration_seconds=status.get("duration", 0) if isinstance(status, dict) else 0,
+            duration_seconds=status.get("duration", 0)
+            if isinstance(status, dict)
+            else 0,
         )
         if status_filter is None or info.status == status_filter:
             jobs.append(info)
@@ -395,14 +427,18 @@ def get_job(job_id: str) -> Optional[JobInfo]:
     try:
         j = json.loads(r.stdout)
         status = j.get("status", {})
-        status_str = status.get("state", "") if isinstance(status, dict) else str(status)
+        status_str = (
+            status.get("state", "") if isinstance(status, dict) else str(status)
+        )
         return JobInfo(
             id=j.get("id", ""),
             name=j.get("name", ""),
             status=status_str,
             created_at=j.get("createdAt", ""),
             gpu_type=j.get("resources", {}).get("gpuModel", ""),
-            duration_seconds=status.get("duration", 0) if isinstance(status, dict) else 0,
+            duration_seconds=status.get("duration", 0)
+            if isinstance(status, dict)
+            else 0,
             url=j.get("status", {}).get("url", ""),
         )
     except json.JSONDecodeError:
@@ -412,7 +448,8 @@ def get_job(job_id: str) -> Optional[JobInfo]:
 def get_job_logs(job_id: str, tail: int = 100) -> str:
     """Get recent log output from a job."""
     r = _run_ovhai(
-        ["job", "logs", job_id, f"--tail={tail}"], timeout=15,
+        ["job", "logs", job_id, f"--tail={tail}"],
+        timeout=15,
     )
     return r.stdout if r.returncode == 0 else f"Error: {r.stderr}"
 
@@ -436,7 +473,9 @@ def list_buckets() -> List[str]:
         return []
 
 
-def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[str] = None) -> bool:
+def upload_code(
+    local_dir: str, bucket: Optional[str] = None, region: Optional[str] = None
+) -> bool:
     """Upload code directory to an OVH bucket.
 
     Strips the local absolute path so files appear at the bucket root
@@ -452,9 +491,14 @@ def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[s
 
     # Upload only code-relevant subdirectories and top-level files
     _CODE_DIRS = ["src", "configs", "notebooks", "tests"]
-    _CODE_FILES = ["train.py", "run_lero_mp_v4.py",
-                   "setup.py", "setup.cfg",
-                   "pyproject.toml", "requirements.txt"]
+    _CODE_FILES = [
+        "train.py",
+        "run_lero_mp_v4.py",
+        "setup.py",
+        "setup.cfg",
+        "pyproject.toml",
+        "requirements.txt",
+    ]
 
     success = True
     # Upload subdirectories
@@ -464,9 +508,12 @@ def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[s
             continue
         r = _run_ovhai(
             [
-                "bucket", "object", "upload",
+                "bucket",
+                "object",
+                "upload",
                 f"{bucket}@{region}",
-                "--remove-prefix", parent,
+                "--remove-prefix",
+                parent,
                 str(p),
             ],
             timeout=300,
@@ -482,9 +529,12 @@ def upload_code(local_dir: str, bucket: Optional[str] = None, region: Optional[s
             continue
         r = _run_ovhai(
             [
-                "bucket", "object", "upload",
+                "bucket",
+                "object",
+                "upload",
                 f"{bucket}@{region}",
-                "--remove-prefix", parent,
+                "--remove-prefix",
+                parent,
                 str(p),
             ],
             timeout=60,
@@ -516,11 +566,15 @@ def download_results(
     out_prefix = str(local_dir).rstrip("/") + "/"
 
     args = [
-        "bucket", "object", "download",
+        "bucket",
+        "object",
+        "download",
         f"{bucket}@{region}",
-        "--output", out_prefix,
+        "--output",
+        out_prefix,
         "--no-overwrite",
-        "--workers", "8",
+        "--workers",
+        "8",
     ]
     if prefix:
         args.extend(["--prefix", prefix])

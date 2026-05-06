@@ -21,13 +21,11 @@ v4 migration: subclass ``dspy.Module``, rename ``generate`` →
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from .codegen import (
     _CODE_BLOCK_RE,
-    ALLOWED_IMPORTS,
     CandidateCode,
     validate_function,
 )
@@ -84,7 +82,9 @@ def _parse_free_text_to_inner(
                 reward_src = block
         elif "def enhance_observation" in block and evolve_observation:
             if validate_function(
-                block, "enhance_observation", ["scenario_state"],
+                block,
+                "enhance_observation",
+                ["scenario_state"],
             ):
                 obs_src = block
     # Enforce the requested signatures: if the template asked for a
@@ -145,9 +145,7 @@ class InnerLLM:
         last_err: Optional[Exception] = None
 
         for i in range(self.max_attempts):
-            call_seed = (
-                (seed_base + i) % (2 ** 31) if seed_base is not None else None
-            )
+            call_seed = (seed_base + i) % (2**31) if seed_base is not None else None
             try:
                 if self.use_structured:
                     out = self.llm.generate_structured(
@@ -155,13 +153,16 @@ class InnerLLM:
                         schema=InnerLLMOutput,
                         seed=call_seed,
                         fallback_parser=lambda t: _parse_free_text_to_inner(
-                            t, self.evolve_reward, self.evolve_observation,
+                            t,
+                            self.evolve_reward,
+                            self.evolve_observation,
                         ),
                     )
                     raw = ""  # structured path doesn't expose raw
                 else:
                     responses = self.llm.generate(
-                        convo, n=1,
+                        convo,
+                        n=1,
                         seed_base=call_seed,
                     )
                     raw = responses[0]
@@ -172,7 +173,9 @@ class InnerLLM:
                     )
                 attempts.append(
                     CandidateAttempt(
-                        attempt_index=i + 1, error=None, response=raw,
+                        attempt_index=i + 1,
+                        error=None,
+                        response=raw,
                     )
                 )
                 cand = CandidateCode(
@@ -197,26 +200,29 @@ class InnerLLM:
                 )
                 _log.warning(
                     "InnerLLM attempt %d/%d failed: %s",
-                    i + 1, self.max_attempts, err_msg[:200],
+                    i + 1,
+                    self.max_attempts,
+                    err_msg[:200],
                 )
                 if i < self.max_attempts - 1:
                     # Append a retry message so the LLM can see its
                     # own mistake. We keep the system + initial-user
                     # intact so the task context doesn't drift.
-                    convo.append({
-                        "role": "user",
-                        "content": (
-                            f"Your previous response could not be used.\n"
-                            f"Error: {err_msg}\n"
-                            f"Please return a corrected version that "
-                            f"addresses this error. Return ONLY the "
-                            f"Python function(s) in a ```python code "
-                            f"block; no prose around the code."
-                        ),
-                    })
+                    convo.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Your previous response could not be used.\n"
+                                f"Error: {err_msg}\n"
+                                f"Please return a corrected version that "
+                                f"addresses this error. Return ONLY the "
+                                f"Python function(s) in a ```python code "
+                                f"block; no prose around the code."
+                            ),
+                        }
+                    )
         raise CandidateGenerationFailed(
-            f"Max retries ({self.max_attempts}) exceeded. "
-            f"Last error: {last_err}"
+            f"Max retries ({self.max_attempts}) exceeded. " f"Last error: {last_err}"
         )
 
 

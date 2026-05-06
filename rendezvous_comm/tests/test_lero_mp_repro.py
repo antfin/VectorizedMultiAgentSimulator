@@ -32,7 +32,8 @@ def test_cache_key_stable_for_identical_inputs():
 
 def test_cache_key_distinguishes_seeds():
     base = {
-        "model": "m", "temperature": 1.0,
+        "model": "m",
+        "temperature": 1.0,
         "messages": [{"role": "user", "content": "x"}],
         "response_format": None,
     }
@@ -43,7 +44,9 @@ def test_cache_key_distinguishes_seeds():
 
 def test_cache_key_distinguishes_messages():
     base = {
-        "model": "m", "temperature": 1.0, "seed": 1,
+        "model": "m",
+        "temperature": 1.0,
+        "seed": 1,
         "response_format": None,
     }
     k1 = _cache_key_for({**base, "messages": [{"role": "user", "content": "a"}]})
@@ -125,34 +128,41 @@ def test_strategy_card_defaults_include_signals():
 
 def test_strategy_card_rejects_invalid_slot():
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
-        StrategyCard.model_validate({
-            "target_domain": "reward",
-            "target_slot": "not_a_valid_slot",
-            "rationale": "x",
-        })
+        StrategyCard.model_validate(
+            {
+                "target_domain": "reward",
+                "target_slot": "not_a_valid_slot",
+                "rationale": "x",
+            }
+        )
 
 
 def test_editor_output_schema():
-    out = EditorOutput.model_validate({
-        "new_slot_content": "use proximity_count",
-        "rationale": "implements focus",
-        "expected_improvement": "small",
-    })
+    out = EditorOutput.model_validate(
+        {
+            "new_slot_content": "use proximity_count",
+            "rationale": "implements focus",
+            "expected_improvement": "small",
+        }
+    )
     assert out.new_slot_content == "use proximity_count"
 
 
 def test_editor_critique_schema():
-    c = EditorCritique.model_validate({
-        "addresses_focus": True,
-        "addresses_focus_reason": "names proximity_count",
-        "cites_specific_features": ["proximity_count"],
-        "has_fairness_restatement": False,
-        "has_fairness_restatement_reason": "no markers",
-        "diverges_from_priors": True,
-        "suggested_edits": [],
-        "suggested_signal_change": "keep",
-        "overall_quality": "keep",
-    })
+    c = EditorCritique.model_validate(
+        {
+            "addresses_focus": True,
+            "addresses_focus_reason": "names proximity_count",
+            "cites_specific_features": ["proximity_count"],
+            "has_fairness_restatement": False,
+            "has_fairness_restatement_reason": "no markers",
+            "diverges_from_priors": True,
+            "suggested_edits": [],
+            "suggested_signal_change": "keep",
+            "overall_quality": "keep",
+        }
+    )
     assert c.overall_quality == "keep"
     assert c.suggested_signal_change == "keep"

@@ -20,4 +20,3 @@ scenario_state = {
     "time_penalty":     # $time_penalty
 }
 ```
-

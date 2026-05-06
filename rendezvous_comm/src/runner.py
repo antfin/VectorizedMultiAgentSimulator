@@ -3,6 +3,7 @@
 Handles training, evaluation, and metric collection for each run
 in an experiment sweep.
 """
+
 import contextlib
 import logging
 import os
@@ -55,8 +56,6 @@ def _suppress_noise():
             logging.getLogger(name).setLevel(saved[name])
 
 
-
-
 try:
     from benchmarl.experiment import Callback as _BenchMARLCallback
 except ImportError:
@@ -71,20 +70,17 @@ class _TqdmProgressCallback(_BenchMARLCallback):
     by excluding the non-picklable tqdm bar.
     """
 
-    def __init__(self, total_frames=0, frames_per_batch=1,
-                 run_id=""):
+    def __init__(self, total_frames=0, frames_per_batch=1, run_id=""):
         super().__init__()
         from tqdm.auto import tqdm
+
         # Capture real stderr before _suppress_noise redirects it
         self._real_stderr = sys.stderr
         self._pbar = tqdm(
             total=max(1, total_frames // frames_per_batch),
             desc=f"  {run_id}",
             unit="iter",
-            bar_format=(
-                "{l_bar}{bar}| {n_fmt}/{total_fmt} "
-                "[{elapsed}<{remaining}]"
-            ),
+            bar_format=("{l_bar}{bar}| {n_fmt}/{total_fmt} " "[{elapsed}<{remaining}]"),
             leave=True,
             file=sys.stderr,  # pin to real stderr at creation time
         )
@@ -186,6 +182,7 @@ class _EvalMetricsCallback(_BenchMARLCallback):
         """Save M1/M4 history into BenchMARL scalars dirs."""
         import csv
         from pathlib import Path
+
         bdir = Path(benchmarl_dir)
         # Find the scalars dir inside benchmarl output
         scalars_dirs = list(bdir.glob("**/scalars"))
@@ -216,9 +213,7 @@ def _extract_training_dynamics(run_storage) -> Dict[str, float]:
     if entropy_data:
         result["final_entropy"] = entropy_data[-1][1]
 
-    eval_reward_data = scalars.get(
-        "eval_reward_episode_reward_mean"
-    )
+    eval_reward_data = scalars.get("eval_reward_episode_reward_mean")
     if eval_reward_data:
         result["final_eval_reward"] = eval_reward_data[-1][1]
 
@@ -228,6 +223,7 @@ def _extract_training_dynamics(run_storage) -> Dict[str, float]:
 def _timestamp() -> str:
     """Return YYYYMMDD_HHMM timestamp for file naming."""
     from datetime import datetime
+
     return datetime.now().strftime("%Y%m%d_%H%M")
 
 
@@ -239,6 +235,7 @@ def _write_sweep_csv(spec, results):
     Timestamped so previous runs are never overwritten.
     """
     import csv
+
     if not results:
         return
     ts = _timestamp()
@@ -251,7 +248,9 @@ def _write_sweep_csv(spec, results):
     fieldnames = ["run_id"] + sorted(all_keys)
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=fieldnames, restval="",
+            f,
+            fieldnames=fieldnames,
+            restval="",
             extrasaction="ignore",
         )
         writer.writeheader()
@@ -266,15 +265,19 @@ def get_algorithm_config(algorithm: str):
     """Get BenchMARL algorithm config by name."""
     if algorithm == "mappo":
         from benchmarl.algorithms import MappoConfig
+
         return MappoConfig.get_from_yaml()
     elif algorithm == "ippo":
         from benchmarl.algorithms import IppoConfig
+
         return IppoConfig.get_from_yaml()
     elif algorithm == "qmix":
         from benchmarl.algorithms import QmixConfig
+
         return QmixConfig.get_from_yaml()
     elif algorithm == "maddpg":
         from benchmarl.algorithms import MaddpgConfig
+
         return MaddpgConfig.get_from_yaml()
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}")
@@ -308,8 +311,7 @@ def build_experiment(
     if task_overrides:
         config.update(task_overrides)
     # Enable dict observations for GNN from_pos topology
-    if (train_config.model_type == "gnn"
-            and train_config.gnn_topology == "from_pos"):
+    if train_config.model_type == "gnn" and train_config.gnn_topology == "from_pos":
         config["dict_obs"] = True
     task.config.update(config)
 
@@ -335,7 +337,8 @@ def build_experiment(
             "GINConv": pyg_conv.GINConv,
         }
         gnn_cls = gnn_cls_map.get(
-            train_config.gnn_class, pyg_conv.GATv2Conv,
+            train_config.gnn_class,
+            pyg_conv.GATv2Conv,
         )
         edge_radius = train_config.gnn_edge_radius
         if edge_radius is None:
@@ -385,7 +388,8 @@ def build_experiment(
                     ),
                 ],
                 intermediate_sizes=[
-                    gnn_hidden, gnn_hidden,
+                    gnn_hidden,
+                    gnn_hidden,
                 ],
             )
         else:
@@ -405,7 +409,8 @@ def build_experiment(
                     ),
                 ],
                 intermediate_sizes=[
-                    gnn_hidden, gnn_hidden,
+                    gnn_hidden,
+                    gnn_hidden,
                 ],
             )
         # Critic: MLP (GNN topology not needed for
@@ -421,6 +426,7 @@ def build_experiment(
         critic_model_config.num_cells = train_config.hidden_layers
     if train_config.activation is not None:
         import torch.nn as nn
+
         act_map = {
             "tanh": nn.Tanh,
             "relu": nn.ReLU,
@@ -445,9 +451,7 @@ def build_experiment(
     experiment_config.on_policy_n_minibatch_iters = (
         train_config.on_policy_n_minibatch_iters
     )
-    experiment_config.on_policy_minibatch_size = (
-        train_config.on_policy_minibatch_size
-    )
+    experiment_config.on_policy_minibatch_size = train_config.on_policy_minibatch_size
     experiment_config.train_device = train_config.train_device
     experiment_config.sampling_device = train_config.sampling_device
     experiment_config.share_policy_params = train_config.share_policy_params
@@ -504,10 +508,10 @@ def run_lero(
     """
     if spec.lero is None:
         raise ValueError(
-            "ExperimentSpec has no LERO config. "
-            "Add a 'lero:' section to the YAML."
+            "ExperimentSpec has no LERO config. " "Add a 'lero:' section to the YAML."
         )
     from .lero import LeroLoop
+
     loop = LeroLoop(
         spec=spec,
         lero_config=spec.lero,
@@ -553,7 +557,8 @@ def run_single(
         existing = storage.find_existing(run_id)
         if existing is not None:
             logger = setup_run_logger(
-                existing.run_dir, console=not quiet,
+                existing.run_dir,
+                console=not quiet,
             )
             try:
                 logger.info(f"SKIP  {run_id} — already complete")
@@ -561,13 +566,13 @@ def run_single(
                 if existing.has_policy() and not video_final.exists():
                     try:
                         generate_run_videos(
-                            existing, spec.task,
-                            task_overrides, logger,
+                            existing,
+                            spec.task,
+                            task_overrides,
+                            logger,
                         )
                     except Exception as exc:
-                        logger.warning(
-                            f"Video generation failed: {exc}"
-                        )
+                        logger.warning(f"Video generation failed: {exc}")
                 return existing.load_metrics()
             finally:
                 teardown_run_logger(logger)
@@ -580,15 +585,17 @@ def run_single(
 
     try:
         # Save config snapshot + provenance
-        run_storage.save_config({
-            "exp_id": spec.exp_id,
-            "run_id": run_id,
-            "algorithm": algorithm,
-            "seed": seed,
-            "task_overrides": task_overrides,
-            "task": spec.task.to_dict(),
-            "train": {k: v for k, v in spec.train.__dict__.items()},
-        })
+        run_storage.save_config(
+            {
+                "exp_id": spec.exp_id,
+                "run_id": run_id,
+                "algorithm": algorithm,
+                "seed": seed,
+                "task_overrides": task_overrides,
+                "task": spec.task.to_dict(),
+                "train": {k: v for k, v in spec.train.__dict__.items()},
+            }
+        )
         save_provenance(
             run_storage.run_dir,
             task_dict=spec.task.to_dict(),
@@ -619,9 +626,7 @@ def run_single(
         if quiet and _in_notebook():
             progress_cb = _TqdmProgressCallback(
                 total_frames=spec.train.max_n_frames,
-                frames_per_batch=(
-                    spec.train.on_policy_collected_frames_per_batch
-                ),
+                frames_per_batch=(spec.train.on_policy_collected_frames_per_batch),
                 run_id=run_id,
             )
             callbacks.append(progress_cb)
@@ -630,7 +635,11 @@ def run_single(
         noise_ctx = _suppress_noise() if quiet else contextlib.nullcontext()
         with noise_ctx:
             experiment = build_experiment(
-                spec.task, spec.train, algorithm, seed, task_overrides,
+                spec.task,
+                spec.train,
+                algorithm,
+                seed,
+                task_overrides,
                 save_folder=str(run_storage.benchmarl_dir),
                 callbacks=callbacks,
             )
@@ -638,8 +647,7 @@ def run_single(
             # Save initial (untrained) policy for before/after videos
             try:
                 init_sd = {
-                    k: v.clone() for k, v in
-                    experiment.policy.state_dict().items()
+                    k: v.clone() for k, v in experiment.policy.state_dict().items()
                 }
                 torch.save(
                     init_sd,
@@ -671,7 +679,9 @@ def run_single(
         logger.info(f"  Policy saved to {run_storage.output_dir / 'policy.pt'}")
 
         # Post-training evaluation
-        logger.info(f"Evaluating trained policy ({spec.train.evaluation_episodes} episodes)...")
+        logger.info(
+            f"Evaluating trained policy ({spec.train.evaluation_episodes} episodes)..."
+        )
         t_eval = time.monotonic()
         metrics = evaluate_trained(spec, experiment, task_overrides)
         eval_elapsed = time.monotonic() - t_eval
@@ -707,9 +717,7 @@ def run_single(
         metrics["lidar_range"] = _ov("lidar_range")
         metrics["covering_range"] = _ov("covering_range")
         metrics["max_steps"] = _ov("max_steps")
-        metrics["agent_collision_penalty"] = _ov(
-            "agent_collision_penalty"
-        )
+        metrics["agent_collision_penalty"] = _ov("agent_collision_penalty")
         metrics["covering_rew_coeff"] = _ov("covering_rew_coeff")
         metrics["time_penalty"] = _ov("time_penalty")
         metrics["shared_reward"] = _ov("shared_reward")
@@ -721,15 +729,9 @@ def run_single(
         metrics["max_n_frames"] = spec.train.max_n_frames
         metrics["gamma"] = spec.train.gamma
         metrics["lr"] = spec.train.lr
-        metrics["frames_per_batch"] = (
-            spec.train.on_policy_collected_frames_per_batch
-        )
-        metrics["n_envs_per_worker"] = (
-            spec.train.on_policy_n_envs_per_worker
-        )
-        metrics["n_minibatch_iters"] = (
-            spec.train.on_policy_n_minibatch_iters
-        )
+        metrics["frames_per_batch"] = spec.train.on_policy_collected_frames_per_batch
+        metrics["n_envs_per_worker"] = spec.train.on_policy_n_envs_per_worker
+        metrics["n_minibatch_iters"] = spec.train.on_policy_n_minibatch_iters
         metrics["minibatch_size"] = spec.train.on_policy_minibatch_size
         metrics["share_policy_params"] = spec.train.share_policy_params
         metrics["evaluation_interval"] = spec.train.evaluation_interval
@@ -753,20 +755,16 @@ def run_single(
 
         # Derived
         metrics["n_iterations"] = (
-            spec.train.max_n_frames
-            // spec.train.on_policy_collected_frames_per_batch
+            spec.train.max_n_frames // spec.train.on_policy_collected_frames_per_batch
         )
         if elapsed > 0:
-            metrics["throughput_fps"] = round(
-                spec.train.max_n_frames / elapsed, 1
-            )
+            metrics["throughput_fps"] = round(spec.train.max_n_frames / elapsed, 1)
 
         # Policy size
         try:
             sd = experiment.policy.state_dict()
             metrics["policy_params"] = sum(
-                p.numel() for p in sd.values()
-                if hasattr(p, "numel")
+                p.numel() for p in sd.values() if hasattr(p, "numel")
             )
         except Exception:
             pass
@@ -779,6 +777,7 @@ def run_single(
         # Append to master_results.csv
         try:
             from .storage import append_to_master_csv
+
             append_to_master_csv(
                 run_id=run_id,
                 config={
@@ -786,10 +785,7 @@ def run_single(
                     "algorithm": algorithm,
                     "seed": seed,
                     "task": spec.task.to_dict(),
-                    "train": {
-                        k: v for k, v
-                        in spec.train.__dict__.items()
-                    },
+                    "train": {k: v for k, v in spec.train.__dict__.items()},
                 },
                 metrics=metrics,
                 old_path=str(
@@ -800,11 +796,10 @@ def run_single(
             )
             logger.info("  Appended to master_results.csv")
         except Exception as exc:
-            logger.warning(
-                f"  master_results.csv append failed: {exc}"
-            )
+            logger.warning(f"  master_results.csv append failed: {exc}")
 
         from .report import METRIC_DETAILS
+
         for key, val in metrics.items():
             detail = METRIC_DETAILS.get(key)
             if detail and isinstance(val, (int, float)):
@@ -814,15 +809,24 @@ def run_single(
 
         # Generate report
         generate_run_report(
-            run_storage.run_dir, run_id, spec, metrics,
-            elapsed_seconds=elapsed, task_overrides=task_overrides,
+            run_storage.run_dir,
+            run_id,
+            spec,
+            metrics,
+            elapsed_seconds=elapsed,
+            task_overrides=task_overrides,
         )
-        logger.info(f"DONE  {run_id} — report saved to {run_storage.run_dir / 'report.md'}")
+        logger.info(
+            f"DONE  {run_id} — report saved to {run_storage.run_dir / 'report.md'}"
+        )
 
         # Generate before/after videos from saved policies
         try:
             generate_run_videos(
-                run_storage, spec.task, task_overrides, logger,
+                run_storage,
+                spec.task,
+                task_overrides,
+                logger,
             )
         except Exception as exc:
             logger.warning(f"Video generation failed: {exc}")
@@ -859,13 +863,13 @@ def evaluate_trained(
     n_agents = task_overrides.get("n_agents", 5) if task_overrides else 5
 
     # Per-env accumulators
-    all_returns = []       # float per env
-    all_steps = []         # int per env
-    all_collisions = []    # float per env
-    all_coverage = []      # float per env (fraction of targets)
+    all_returns = []  # float per env
+    all_steps = []  # int per env
+    all_collisions = []  # float per env
+    all_coverage = []  # float per env (fraction of targets)
     all_agent_covering = []  # (n_agents,) per env
     all_spatial_spread = []  # float per env
-    all_tokens = []          # float per env
+    all_tokens = []  # float per env
     n_success = 0
     n_envs_total = 0
 
@@ -906,20 +910,14 @@ def evaluate_trained(
                     cumtc = tc_per_env.cumsum(dim=1)  # [ne, T]
 
                     # M1: success = all targets covered at some point
-                    per_env_success = (
-                        cumtc >= n_targets
-                    ).any(dim=1)  # [ne]
+                    per_env_success = (cumtc >= n_targets).any(dim=1)  # [ne]
                     n_success += per_env_success.sum().item()
 
                     # M3: step when all targets first covered
                     for e in range(ne):
-                        success_steps = (
-                            cumtc[e] >= n_targets
-                        ).nonzero(as_tuple=False)
+                        success_steps = (cumtc[e] >= n_targets).nonzero(as_tuple=False)
                         if len(success_steps) > 0:
-                            all_steps.append(
-                                success_steps[0].item() + 1
-                            )
+                            all_steps.append(success_steps[0].item() + 1)
                         else:
                             all_steps.append(max_steps)
 
@@ -927,9 +925,7 @@ def evaluate_trained(
                     # covered by end of episode
                     final_coverage = cumtc[:, -1]  # [ne]
                     for v in final_coverage.tolist():
-                        all_coverage.append(
-                            min(v, n_targets) / n_targets
-                        )
+                        all_coverage.append(min(v, n_targets) / n_targets)
                     break
             else:
                 # No targets_covered found — fill steps/coverage
@@ -957,8 +953,12 @@ def evaluate_trained(
                 if coll_key in rollout_td.keys(True):
                     coll = rollout_td[coll_key]
                     # Reshape to [ne, everything_else] and sum
-                    per_env_coll = (coll < 0).reshape(ne, -1).sum(
-                        dim=1,
+                    per_env_coll = (
+                        (coll < 0)
+                        .reshape(ne, -1)
+                        .sum(
+                            dim=1,
+                        )
                     )  # [ne]
                     all_collisions.extend(per_env_coll.tolist())
                     break
@@ -991,13 +991,8 @@ def evaluate_trained(
                     if cov.dim() >= 3:
                         for e in range(ne):
                             env_cov = cov[e]  # [T, n_agents]
-                            if (
-                                env_cov.dim() >= 2
-                                and env_cov.shape[-1] > 1
-                            ):
-                                counts = (
-                                    (env_cov > 0).sum(dim=0).float()
-                                )
+                            if env_cov.dim() >= 2 and env_cov.shape[-1] > 1:
+                                counts = (env_cov > 0).sum(dim=0).float()
                                 all_agent_covering.append(counts)
                             else:
                                 c = torch.zeros(n_agents)
@@ -1018,13 +1013,12 @@ def evaluate_trained(
                             # pos: [ne, T, n_agents, 2]
                             pos_td = obs["pos"]
                             if pos_td.dim() >= 4:
-                                ne_o, T_s, n_ag = (
-                                    pos_td.shape[:3]
-                                )
+                                ne_o, T_s, n_ag = pos_td.shape[:3]
                                 if n_ag >= 2:
                                     mask = torch.triu(
                                         torch.ones(
-                                            n_ag, n_ag,
+                                            n_ag,
+                                            n_ag,
                                             device=pos_td.device,
                                         ),
                                         diagonal=1,
@@ -1033,20 +1027,12 @@ def evaluate_trained(
                                         ep_spread = 0.0
                                         for t in range(T_s):
                                             d = torch.cdist(
-                                                pos_td[
-                                                    e, t
-                                                ].unsqueeze(0),
-                                                pos_td[
-                                                    e, t
-                                                ].unsqueeze(0),
+                                                pos_td[e, t].unsqueeze(0),
+                                                pos_td[e, t].unsqueeze(0),
                                             )[0]
-                                            ep_spread += (
-                                                d[mask].mean()
-                                                .item()
-                                            )
+                                            ep_spread += d[mask].mean().item()
                                         all_spatial_spread.append(
-                                            ep_spread
-                                            / max(T_s, 1)
+                                            ep_spread / max(T_s, 1)
                                         )
                         break
                     # Flat tensor obs: [ne, T, n_agents, obs_dim]
@@ -1066,9 +1052,7 @@ def evaluate_trained(
                                         pos[e, t].unsqueeze(0),
                                     )[0]
                                     ep_spread += d[mask].mean().item()
-                                all_spatial_spread.append(
-                                    ep_spread / max(T_s, 1)
-                                )
+                                all_spatial_spread.append(ep_spread / max(T_s, 1))
                     elif obs.dim() == 3:
                         T_s, n_ag, obs_dim = obs.shape
                         if n_ag >= 2 and obs_dim >= 2:
@@ -1084,9 +1068,7 @@ def evaluate_trained(
                                     pos[t].unsqueeze(0),
                                 )[0]
                                 ep_spread += d[mask].mean().item()
-                            all_spatial_spread.append(
-                                ep_spread / max(T_s, 1)
-                            )
+                            all_spatial_spread.append(ep_spread / max(T_s, 1))
                     break
 
     total_episodes = n_envs_total if n_envs_total > 0 else num_envs * n_rollouts
@@ -1097,7 +1079,8 @@ def evaluate_trained(
         mean_cov = covering_stack.mean(dim=-1)
         std_cov = covering_stack.std(dim=-1)
         cv = torch.where(
-            mean_cov > 0, std_cov / mean_cov,
+            mean_cov > 0,
+            std_cov / mean_cov,
             torch.zeros_like(mean_cov),
         )
         agent_util = cv.mean().item()
@@ -1106,21 +1089,11 @@ def evaluate_trained(
 
     metrics = {
         "M1_success_rate": n_success / max(total_episodes, 1),
-        "M2_avg_return": (
-            sum(all_returns) / max(len(all_returns), 1)
-        ),
-        "M3_avg_steps": (
-            sum(all_steps) / max(len(all_steps), 1)
-        ),
-        "M4_avg_collisions": (
-            sum(all_collisions) / max(len(all_collisions), 1)
-        ),
-        "M5_avg_tokens": (
-            sum(all_tokens) / max(len(all_tokens), 1)
-        ),
-        "M6_coverage_progress": (
-            sum(all_coverage) / max(len(all_coverage), 1)
-        ),
+        "M2_avg_return": (sum(all_returns) / max(len(all_returns), 1)),
+        "M3_avg_steps": (sum(all_steps) / max(len(all_steps), 1)),
+        "M4_avg_collisions": (sum(all_collisions) / max(len(all_collisions), 1)),
+        "M5_avg_tokens": (sum(all_tokens) / max(len(all_tokens), 1)),
+        "M6_coverage_progress": (sum(all_coverage) / max(len(all_coverage), 1)),
         "M8_agent_utilization": agent_util,
         "M9_spatial_spread": (
             sum(all_spatial_spread) / max(len(all_spatial_spread), 1)
@@ -1169,7 +1142,9 @@ def evaluate_with_vmas(
 
     for batch in range(n_batches):
         episode_metrics = EpisodeMetrics().init(
-            n_envs, n_targets=n_targets, n_agents=n_agents,
+            n_envs,
+            n_targets=n_targets,
+            n_agents=n_agents,
         )
         obs = env.reset()
 
@@ -1177,9 +1152,7 @@ def evaluate_with_vmas(
             if policy_fn is not None:
                 actions = policy_fn(obs, env)
             else:
-                actions = [
-                    env.get_random_action(agent) for agent in env.agents
-                ]
+                actions = [env.get_random_action(agent) for agent in env.agents]
             obs, rews, dones, info = env.step(actions)
 
             # Get agent positions for M9
@@ -1194,7 +1167,10 @@ def evaluate_with_vmas(
                     tokens_step += agent_info["comm_tokens"].sum().item()
 
             episode_metrics.update_step(
-                rews, dones, info, step,
+                rews,
+                dones,
+                info,
+                step,
                 tokens_this_step=tokens_step,
                 agent_positions=agent_positions,
             )
@@ -1205,9 +1181,7 @@ def evaluate_with_vmas(
     if len(all_metrics) == 1:
         return all_metrics[0]
     keys = all_metrics[0].keys()
-    return {
-        k: sum(m[k] for m in all_metrics) / len(all_metrics) for k in keys
-    }
+    return {k: sum(m[k] for m in all_metrics) / len(all_metrics) for k in keys}
 
 
 def generate_run_videos(
@@ -1227,7 +1201,6 @@ def generate_run_videos(
       output/video_init.mp4   — untrained policy (iteration 0)
       output/video_final.mp4  — trained policy (final)
     """
-    from pathlib import Path
 
     init_path = run_storage.output_dir / "policy_init.pt"
     final_path = run_storage.output_dir / "policy.pt"
@@ -1247,6 +1220,7 @@ def generate_run_videos(
 
     # Build a fresh VMAS env for rendering (single env, not batched)
     from vmas import make_env
+
     env = make_env(
         scenario="discovery",
         num_envs=1,
@@ -1327,26 +1301,23 @@ def generate_run_videos(
 
                         # Hidden layers: Linear -> Tanh
                         for layer in layers[:-1]:
-                            x = F.linear(x, layer["weight"],
-                                         layer["bias"])
+                            x = F.linear(x, layer["weight"], layer["bias"])
                             x = torch.tanh(x)
                         # Output layer (no activation)
                         last = layers[-1]
-                        x = F.linear(x, last["weight"],
-                                     last["bias"])
+                        x = F.linear(x, last["weight"], last["bias"])
 
                         # Physical action: tanh(loc) for [-1, 1]
                         phys = torch.tanh(x[..., :phys_act_dim])
                         if comm_dim > 0:
                             # Comm action: sigmoid(loc) for [0, 1]
-                            comm = torch.sigmoid(
-                                x[..., phys_act_dim:total_act_dim]
-                            )
+                            comm = torch.sigmoid(x[..., phys_act_dim:total_act_dim])
                             action = torch.cat([phys, comm], dim=-1)
                         else:
                             action = phys
                         actions.append(action)
                     return actions
+
             return policy_fn
         except Exception:
             return None
@@ -1355,14 +1326,18 @@ def generate_run_videos(
     policies = []
     if init_path.exists():
         init_sd = torch.load(
-            init_path, map_location="cpu", weights_only=True,
+            init_path,
+            map_location="cpu",
+            weights_only=True,
         )
         policies.append(("video_init", init_sd))
     else:
         # No saved init policy — use random actions as proxy
         policies.append(("video_init", None))
     final_sd = torch.load(
-        final_path, map_location="cpu", weights_only=True,
+        final_path,
+        map_location="cpu",
+        weights_only=True,
     )
     policies.append(("video_final", final_sd))
 
@@ -1370,10 +1345,7 @@ def generate_run_videos(
     phys_act_dim = env.agents[0].action_size
 
     for name, sd in policies:
-        policy_fn = (
-            _make_policy_fn(sd, phys_act_dim)
-            if sd is not None else None
-        )
+        policy_fn = _make_policy_fn(sd, phys_act_dim) if sd is not None else None
 
         try:
             frames = []
@@ -1382,9 +1354,7 @@ def generate_run_videos(
                 if policy_fn is not None:
                     actions = policy_fn(obs, env)
                 else:
-                    actions = [
-                        env.get_random_action(a) for a in env.agents
-                    ]
+                    actions = [env.get_random_action(a) for a in env.agents]
                 obs, _, _, _ = env.step(actions)
                 frame = env.render(
                     mode="rgb_array",
@@ -1399,8 +1369,7 @@ def generate_run_videos(
                 _save_video(frames, video_path, fps=fps)
                 if logger:
                     logger.info(
-                        f"  Video: {video_path.name} "
-                        f"({len(frames)} frames)"
+                        f"  Video: {video_path.name} " f"({len(frames)} frames)"
                     )
         except Exception as exc:
             if logger:
@@ -1412,6 +1381,7 @@ def _save_video(frames, path, fps=15):
     import imageio
     import numpy as np
     from pathlib import Path
+
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     # Normalize frames to consistent size (VMAS can vary by 1-2px)
@@ -1436,7 +1406,9 @@ def _save_video(frames, path, fps=15):
             processed[i] = out
 
     writer = imageio.get_writer(
-        str(path), fps=fps, codec="libx264",
+        str(path),
+        fps=fps,
+        codec="libx264",
         macro_block_size=1,  # avoid resize warnings
     )
     for frame in processed:
@@ -1455,6 +1427,7 @@ def make_heuristic_policy_fn(scenario_name: str = "discovery"):
             policy.compute_action(observations[i], u_range=env.agents[i].u_range)
             for i in range(len(observations))
         ]
+
     return policy_fn
 
 
@@ -1462,6 +1435,7 @@ def _in_notebook() -> bool:
     """Detect if running inside a Jupyter/IPython notebook."""
     try:
         from IPython import get_ipython
+
         return get_ipython() is not None
     except ImportError:
         return False
@@ -1526,6 +1500,7 @@ def run_sweep(
     pbar = None
     if notebook:
         from tqdm.auto import tqdm
+
         pbar = tqdm(
             total=total,
             desc=f"{spec.exp_id.upper()} sweep",
@@ -1537,10 +1512,7 @@ def run_sweep(
         )
 
     for i, (run_id, overrides, algo, seed) in enumerate(all_runs):
-        is_complete = (
-            skip_complete
-            and storage.find_existing(run_id) is not None
-        )
+        is_complete = skip_complete and storage.find_existing(run_id) is not None
 
         if notebook and pbar is not None:
             if is_complete:
@@ -1552,8 +1524,13 @@ def run_sweep(
             _log.info(f"Run {i + 1}/{total}: {run_id}")
 
         metrics = run_single(
-            spec, run_id, overrides, algo, seed,
-            skip_complete=skip_complete, dry_run=dry_run,
+            spec,
+            run_id,
+            overrides,
+            algo,
+            seed,
+            skip_complete=skip_complete,
+            dry_run=dry_run,
             quiet=notebook,
         )
         results[run_id] = metrics
@@ -1565,9 +1542,7 @@ def run_sweep(
 
         if notebook and pbar is not None:
             pbar.update(1)
-            pbar.set_postfix_str(
-                f"trained: {n_train}  skipped: {n_skip}"
-            )
+            pbar.set_postfix_str(f"trained: {n_train}  skipped: {n_skip}")
 
     elapsed = time.monotonic() - t0
 
@@ -1586,14 +1561,13 @@ def run_sweep(
     # Consolidate all CSVs (sweep + training iter/eval)
     try:
         from .consolidate import consolidate_csvs
+
         consolidate_csvs(spec.exp_id)
     except Exception as exc:
         _log.warning(f"CSV consolidation failed: {exc}")
 
     if not notebook:
         _log.info(f"Sweep complete: {len(results)} runs in {elapsed:.0f}s")
-        _log.info(
-            f"Sweep report: {spec.results_dir / 'sweep_report_*.md'}"
-        )
+        _log.info(f"Sweep report: {spec.results_dir / 'sweep_report_*.md'}")
 
     return results

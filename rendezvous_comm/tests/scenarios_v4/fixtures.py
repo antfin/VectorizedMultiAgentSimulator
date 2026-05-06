@@ -62,7 +62,9 @@ def fake_candidate_analysis(
         noise_std_M1=0.02,
         shape_tag=shape,
         stability_score=(
-            0.3 * peak_M1 + 0.7 * final_M1 - 0.2 * max(0, peak_M1 - final_M1)
+            0.3 * peak_M1
+            + 0.7 * final_M1
+            - 0.2 * max(0, peak_M1 - final_M1)
             + 0.05 * (final_M1 + 0.10)
         ),
         qualitative_summary=f"{shape} shape, final_M1={final_M1:.3f}",
@@ -97,7 +99,10 @@ def fake_round_result(
     ]
     cands = [
         fake_candidate_analysis(
-            o["strategy_id"], o["shape"], o["final_M1"], o["peak_M1"],
+            o["strategy_id"],
+            o["shape"],
+            o["final_M1"],
+            o["peak_M1"],
         )
         for o in candidate_outcomes
     ]
@@ -107,8 +112,10 @@ def fake_round_result(
         diversity_rationale="synthetic diverse strategies",
     )
     mid = fake_candidate_analysis(
-        best_id, best_outcome["shape"],
-        best_outcome["final_M1"], best_outcome["peak_M1"],
+        best_id,
+        best_outcome["shape"],
+        best_outcome["final_M1"],
+        best_outcome["peak_M1"],
     )
     cross_summary = (
         f"Round {round_idx}: best={best_id} "

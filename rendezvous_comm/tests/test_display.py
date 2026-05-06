@@ -1,5 +1,4 @@
 """Tests for the display module (text fallback paths)."""
-import pytest
 
 from src.display import (
     METRIC_INFO,
@@ -46,8 +45,10 @@ def _make_spec():
         task=TaskConfig(n_agents=4, n_targets=7, lidar_range=0.35),
         train=TrainConfig(algorithm="mappo", max_n_frames=100_000),
         sweep=SweepConfig(
-            seeds=[0], algorithms=["mappo"],
-            n_agents=[4], lidar_range=[0.35],
+            seeds=[0],
+            algorithms=["mappo"],
+            n_agents=[4],
+            lidar_range=[0.35],
         ),
     )
 
@@ -59,10 +60,16 @@ class TestMetricInfo:
     """Verify METRIC_INFO structure and completeness."""
 
     EXPECTED_KEYS = {
-        "M1_success_rate", "M2_avg_return", "M3_avg_steps",
-        "M4_avg_collisions", "M5_avg_tokens", "M6_coverage_progress",
-        "M7_sample_efficiency", "M8_agent_utilization",
-        "M9_spatial_spread", "n_envs",
+        "M1_success_rate",
+        "M2_avg_return",
+        "M3_avg_steps",
+        "M4_avg_collisions",
+        "M5_avg_tokens",
+        "M6_coverage_progress",
+        "M7_sample_efficiency",
+        "M8_agent_utilization",
+        "M9_spatial_spread",
+        "n_envs",
     }
 
     def test_contains_all_expected_keys(self):
@@ -339,8 +346,6 @@ class TestDisplayResultsDashboard:
         display_results_dashboard(trained_metrics=SAMPLE_METRICS)
 
     def test_prints_metric_cards(self, capsys):
-        display_results_dashboard(
-            trained_metrics=SAMPLE_METRICS, run_id="test_run"
-        )
+        display_results_dashboard(trained_metrics=SAMPLE_METRICS, run_id="test_run")
         out = capsys.readouterr().out
         assert "test_run" in out

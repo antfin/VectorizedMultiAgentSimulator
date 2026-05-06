@@ -40,9 +40,14 @@ from .meta_strategist import enumerate_bundle_v9
 
 
 _TASK_OVERRIDES = {
-    "n_agents": 4, "n_targets": 4, "agents_per_target": 2,
-    "covering_range": 0.25, "lidar_range": 0.35, "max_steps": 400,
-    "n_lidar_rays_entities": 15, "n_lidar_rays_agents": 12,
+    "n_agents": 4,
+    "n_targets": 4,
+    "agents_per_target": 2,
+    "covering_range": 0.25,
+    "lidar_range": 0.35,
+    "max_steps": 400,
+    "n_lidar_rays_entities": 15,
+    "n_lidar_rays_agents": 12,
 }
 
 _TASK_SUMMARY = (
@@ -59,6 +64,7 @@ def _render_full_prompt(
     """Render system + user with slot overrides applied. Returns
     {'system': ..., 'user': ..., 'full': system + '\\n\\n' + user}."""
     from ..prompts import loader as _l
+
     base_dir = Path(_l.__file__).parent / base_prompt_version
     with tempfile.TemporaryDirectory() as tmp:
         new_dir = Path(tmp) / base_prompt_version
@@ -67,9 +73,7 @@ def _render_full_prompt(
         if td_src.exists():
             shutil.copytree(td_src, Path(tmp) / "task_domains")
         for slot, text in slot_overrides.items():
-            (new_dir / f"{slot}.txt").write_text(
-                (text or "").rstrip() + "\n"
-            )
+            (new_dir / f"{slot}.txt").write_text((text or "").rstrip() + "\n")
         orig = _l._PROMPTS_DIR
         try:
             _l._PROMPTS_DIR = Path(tmp)
@@ -93,9 +97,7 @@ def _score_prompt(text: str, td_concepts: List[Dict]) -> Dict:
     """Compute S3b-local-likeness scores for a rendered prompt."""
     text_lower = text.lower()
 
-    has_can_infer_header = bool(
-        re.search(r"what\s+you\s+can\s+infer", text_lower)
-    )
+    has_can_infer_header = bool(re.search(r"what\s+you\s+can\s+infer", text_lower))
     has_fairness = bool(
         re.search(r"fairness|will raise keyerror|forbidden|do not have", text_lower)
     )
@@ -197,10 +199,14 @@ def main(n_trials: int = 5) -> int:
     log.info("S3b-local: %s", s3b_score)
 
     # === v9 trials ===
-    meta_llm = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v3_modular_taskdomain",
-    ))
+    meta_llm = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v3_modular_taskdomain",
+        )
+    )
     loader = PromptLoader(version="v3_modular_taskdomain")
 
     v9_scores: List[Dict] = []
@@ -208,7 +214,9 @@ def main(n_trials: int = 5) -> int:
         log.info("=== v9 trial %d/%d ===", i + 1, n_trials)
         try:
             bundle, raw = enumerate_bundle_v9(
-                meta_llm, loader, _TASK_SUMMARY,
+                meta_llm,
+                loader,
+                _TASK_SUMMARY,
             )
         except Exception as e:  # noqa: BLE001
             log.warning("trial %d: bundle enum failed: %s", i, e)
@@ -221,7 +229,9 @@ def main(n_trials: int = 5) -> int:
             "examples": chosen.artifacts.examples_text,
         }
         rendered = _render_full_prompt(
-            "v3_modular_taskdomain", slot_overrides, _TASK_OVERRIDES,
+            "v3_modular_taskdomain",
+            slot_overrides,
+            _TASK_OVERRIDES,
         )
 
         # Save
@@ -231,17 +241,21 @@ def main(n_trials: int = 5) -> int:
         (trial_dir / "user.txt").write_text(rendered["user"])
         (trial_dir / "full_prompt.txt").write_text(rendered["full"])
         (trial_dir / "chosen_strategy.json").write_text(
-            json.dumps({
-                "name": chosen.name,
-                "full_solution": chosen.full_solution,
-                "lero_codability": chosen.lero_codability,
-                "rl_trainability": chosen.rl_trainability,
-                "chain_of_thought": {
-                    "why_it_works": chosen.chain_of_thought.why_it_works,
-                    "what_is_needed": chosen.chain_of_thought.what_is_needed,
-                    "failure_modes": chosen.chain_of_thought.failure_modes,
+            json.dumps(
+                {
+                    "name": chosen.name,
+                    "full_solution": chosen.full_solution,
+                    "lero_codability": chosen.lero_codability,
+                    "rl_trainability": chosen.rl_trainability,
+                    "chain_of_thought": {
+                        "why_it_works": chosen.chain_of_thought.why_it_works,
+                        "what_is_needed": chosen.chain_of_thought.what_is_needed,
+                        "failure_modes": chosen.chain_of_thought.failure_modes,
+                    },
                 },
-            }, indent=2, default=str)
+                indent=2,
+                default=str,
+            )
         )
 
         score = _score_prompt(rendered["full"], td_concepts)
@@ -251,10 +265,13 @@ def main(n_trials: int = 5) -> int:
         log.info(
             "  chosen='%s' words=%d concepts=%d/%d examples=%d "
             "role_in_ex=%s role_lang=%s",
-            chosen.name, score["word_count"],
-            score["concepts_hit"], score["concepts_total"],
+            chosen.name,
+            score["word_count"],
+            score["concepts_hit"],
+            score["concepts_total"],
             score["n_python_examples"],
-            score["role_in_example"], score["role_differentiation_language"],
+            score["role_in_example"],
+            score["role_differentiation_language"],
         )
 
     # === Side-by-side comparison ===
@@ -266,30 +283,38 @@ def main(n_trials: int = 5) -> int:
 
     avg = lambda k: sum(s[k] for s in valid) / n  # noqa: E731
     cmp_table = [
-        ("has_can_infer_header",
-         s3b_score["has_can_infer_header"],
-         f"{sum(1 for s in valid if s['has_can_infer_header'])}/{n}"),
-        ("has_fairness",
-         s3b_score["has_fairness"],
-         f"{sum(1 for s in valid if s['has_fairness'])}/{n}"),
-        ("concepts_hit (of 7)",
-         f"{s3b_score['concepts_hit']}/{s3b_score['concepts_total']}",
-         f"{avg('concepts_hit'):.1f}/7 avg"),
-        ("n_python_examples",
-         s3b_score["n_python_examples"],
-         f"{avg('n_python_examples'):.1f} avg"),
-        ("role_in_example",
-         s3b_score["role_in_example"],
-         f"{sum(1 for s in valid if s['role_in_example'])}/{n}"),
-        ("role_differentiation_language",
-         s3b_score["role_differentiation_language"],
-         f"{sum(1 for s in valid if s['role_differentiation_language'])}/{n}"),
-        ("word_count",
-         s3b_score["word_count"],
-         f"{int(avg('word_count'))} avg"),
-        ("char_count",
-         s3b_score["char_count"],
-         f"{int(avg('char_count'))} avg"),
+        (
+            "has_can_infer_header",
+            s3b_score["has_can_infer_header"],
+            f"{sum(1 for s in valid if s['has_can_infer_header'])}/{n}",
+        ),
+        (
+            "has_fairness",
+            s3b_score["has_fairness"],
+            f"{sum(1 for s in valid if s['has_fairness'])}/{n}",
+        ),
+        (
+            "concepts_hit (of 7)",
+            f"{s3b_score['concepts_hit']}/{s3b_score['concepts_total']}",
+            f"{avg('concepts_hit'):.1f}/7 avg",
+        ),
+        (
+            "n_python_examples",
+            s3b_score["n_python_examples"],
+            f"{avg('n_python_examples'):.1f} avg",
+        ),
+        (
+            "role_in_example",
+            s3b_score["role_in_example"],
+            f"{sum(1 for s in valid if s['role_in_example'])}/{n}",
+        ),
+        (
+            "role_differentiation_language",
+            s3b_score["role_differentiation_language"],
+            f"{sum(1 for s in valid if s['role_differentiation_language'])}/{n}",
+        ),
+        ("word_count", s3b_score["word_count"], f"{int(avg('word_count'))} avg"),
+        ("char_count", s3b_score["char_count"], f"{int(avg('char_count'))} avg"),
     ]
 
     summary = {

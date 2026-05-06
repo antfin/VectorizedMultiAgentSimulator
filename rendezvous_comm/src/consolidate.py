@@ -12,6 +12,7 @@ Usage:
 CLI:
     python -m rendezvous_comm.src.consolidate er1
 """
+
 import json
 import logging
 from datetime import datetime
@@ -39,6 +40,7 @@ def _load_run_config(run_dir: Path) -> dict:
     if not config_path.exists():
         return {}
     import yaml
+
     with open(config_path) as f:
         return yaml.safe_load(f) or {}
 
@@ -91,6 +93,7 @@ def _build_sweep_row(run_dir: Path, run_id: str) -> Optional[dict]:
 def _load_scalars(run_dir: Path) -> dict:
     """Load all BenchMARL CSV scalars as {name: [(step, value), ...]}."""
     import csv as csv_mod
+
     scalars = {}
     benchmarl_dir = run_dir / "output" / "benchmarl"
     if not benchmarl_dir.exists():
@@ -105,9 +108,7 @@ def _load_scalars(run_dir: Path) -> dict:
                 for row in csv_mod.reader(f):
                     if len(row) >= 2:
                         try:
-                            rows.append(
-                                (int(row[0]), float(row[1]))
-                            )
+                            rows.append((int(row[0]), float(row[1])))
                         except ValueError:
                             continue
             if rows:
@@ -135,10 +136,7 @@ def _classify_scalars(scalars: dict):
     native_keys = set(eval_scalars.keys()) - custom_keys
     if custom_keys & set(eval_scalars.keys()) and native_keys:
         # Get native step set for alignment
-        native_ref = next(
-            eval_scalars[k] for k in native_keys
-            if k in eval_scalars
-        )
+        native_ref = next(eval_scalars[k] for k in native_keys if k in eval_scalars)
         native_steps = {s for s, _ in native_ref}
         for ck in custom_keys & set(eval_scalars.keys()):
             data = eval_scalars[ck]
@@ -264,9 +262,7 @@ def consolidate_csvs(
     if sweep_rows:
         sweep_df = pd.DataFrame(sweep_rows)
         # Stable column order: run_id first, then sorted
-        cols = ["run_id"] + sorted(
-            [c for c in sweep_df.columns if c != "run_id"]
-        )
+        cols = ["run_id"] + sorted([c for c in sweep_df.columns if c != "run_id"])
         sweep_df = sweep_df[cols]
         sweep_path = results_dir / f"sweep_results_{ts}.csv"
         sweep_df.to_csv(sweep_path, index=False)
@@ -344,6 +340,7 @@ def list_experiments_with_data(
     """Return exp_ids that have at least one completed run or CSV."""
     if results_root is None:
         from .config import RESULTS_DIR
+
         results_root = RESULTS_DIR
 
     exp_ids = []
@@ -371,6 +368,7 @@ def list_experiments_with_data(
 
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.INFO)
     if len(sys.argv) < 2:
         print("Usage: python -m rendezvous_comm.src.consolidate <exp_id>")

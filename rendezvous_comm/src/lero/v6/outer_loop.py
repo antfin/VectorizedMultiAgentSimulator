@@ -19,7 +19,6 @@ found_good candidate exists (see docs/v6_plan.md §4.5).
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import os
@@ -45,7 +44,7 @@ _log = logging.getLogger("rendezvous.lero.v6.outer")
 class V6Checkpoint:
     schema_version: int = 1
     seed: int = 0
-    outer_idx_completed: int = -1     # last outer whose inner finished
+    outer_idx_completed: int = -1  # last outer whose inner finished
     outer_registry: Registry = field(default_factory=Registry)
     iter_records: List["V6OuterIterRecord"] = field(default_factory=list)
     last_decision: Optional[V6MetaDecision] = None  # drives next outer's flags
@@ -62,7 +61,7 @@ class V6OuterIterRecord:
     prompt_dir: Path
     inner: InnerResult
     decision: V6MetaDecision  # the decision MADE AFTER this iter (drives next)
-    decision_raw_text: str    # full meta-LLM response for postmortem
+    decision_raw_text: str  # full meta-LLM response for postmortem
 
 
 _CHECKPOINT_BASENAME = "_v6_checkpoint.pkl"
@@ -80,7 +79,8 @@ def _save_checkpoint(output_dir: Path, ckpt: V6Checkpoint) -> None:
     os.replace(tmp, path)
     _log.info(
         "v6 checkpoint saved: outer_done=%d early_stopped=%s",
-        ckpt.outer_idx_completed, ckpt.early_stopped,
+        ckpt.outer_idx_completed,
+        ckpt.early_stopped,
     )
 
 
@@ -92,13 +92,15 @@ def _load_checkpoint(output_dir: Path) -> Optional[V6Checkpoint]:
         ckpt = pickle.load(f)
     _log.info(
         "v6 checkpoint loaded: outer_done=%d early_stopped=%s",
-        ckpt.outer_idx_completed, ckpt.early_stopped,
+        ckpt.outer_idx_completed,
+        ckpt.early_stopped,
     )
     return ckpt
 
 
 def _redirect_prompt_loader(prompts_root: Path) -> None:
     from ..prompts import loader as _l
+
     prompts_root.mkdir(parents=True, exist_ok=True)
     _l._PROMPTS_DIR = prompts_root
 
@@ -120,9 +122,7 @@ def _apply_slot_edits(
         shutil.rmtree(next_dir)
     shutil.copytree(prev_dir, next_dir)
     for slot, text in slot_edits.items():
-        (next_dir / f"{slot}.txt").write_text(
-            (text or "").rstrip() + "\n"
-        )
+        (next_dir / f"{slot}.txt").write_text((text or "").rstrip() + "\n")
 
 
 def _build_outer_registry_entry(
@@ -135,7 +135,9 @@ def _build_outer_registry_entry(
             iter_idx=iter_idx,
             handle=f"v6_outer_{iter_idx}_dead",
             summary="inner produced zero valid candidates",
-            fitness=-1.0, M1=0.0, shape="flat_zero",
+            fitness=-1.0,
+            M1=0.0,
+            shape="flat_zero",
             code_excerpt="",
         )
     flag_str = (
@@ -156,9 +158,7 @@ def _build_outer_registry_entry(
         M1=float(inner.best.metrics.get("M1_success_rate", 0.0)),
         shape=inner.best.shape,
         code_excerpt=(
-            inner.best.candidate.obs_source
-            or inner.best.candidate.reward_source
-            or ""
+            inner.best.candidate.obs_source or inner.best.candidate.reward_source or ""
         )[:1500],
     )
 
@@ -205,12 +205,11 @@ def run_v6_outer_loop(
     _redirect_prompt_loader(prompts_root)
 
     from ..prompts import loader as _l_mod
+
     _orig_prompts_dir = Path(_l_mod.__file__).parent
     base_src = _orig_prompts_dir / cfg.base_prompt_version
     if not base_src.exists():
-        raise FileNotFoundError(
-            f"base prompt version not found: {base_src}"
-        )
+        raise FileNotFoundError(f"base prompt version not found: {base_src}")
 
     ckpt: Optional[V6Checkpoint] = None
     if resume:
@@ -226,9 +225,11 @@ def run_v6_outer_loop(
         # result so V4-style operational guidance is active from
         # outer 0's first inner candidate. See docs/v6_plan.md §4.x.
         if cfg.cold_start_bootstrap:
-            _log.info("v6 COLD-START bootstrap: meta-LLM call with no "
-                      "prior inner (outer 0 will start with seeded "
-                      "guidance instead of empty slots)")
+            _log.info(
+                "v6 COLD-START bootstrap: meta-LLM call with no "
+                "prior inner (outer 0 will start with seeded "
+                "guidance instead of empty slots)"
+            )
             bootstrap_decision, bootstrap_raw = decide_and_enforce(
                 meta_llm=meta_llm,
                 task_summary=cfg.task_summary or spec.description or "",
@@ -243,22 +244,23 @@ def run_v6_outer_loop(
                 (seed_prompt_dir / f"{slot}.txt").write_text(
                     (text or "").rstrip() + "\n"
                 )
-            (seed_prompt_dir / "_bootstrap_response.txt").write_text(
-                bootstrap_raw
-            )
+            (seed_prompt_dir / "_bootstrap_response.txt").write_text(bootstrap_raw)
             (seed_prompt_dir / "_bootstrap_decision.json").write_text(
-                json.dumps({
-                    "classification": bootstrap_decision.classification,
-                    "next_mode": bootstrap_decision.next_mode,
-                    "rationale": bootstrap_decision.rationale,
-                    "complexity_level": bootstrap_decision.complexity_level,
-                    "slot_edits_keys": list(bootstrap_decision.slot_edits.keys()),
-                    "enforcement_notes": bootstrap_decision.enforcement_notes,
-                }, indent=2, default=str)
+                json.dumps(
+                    {
+                        "classification": bootstrap_decision.classification,
+                        "next_mode": bootstrap_decision.next_mode,
+                        "rationale": bootstrap_decision.rationale,
+                        "complexity_level": bootstrap_decision.complexity_level,
+                        "slot_edits_keys": list(bootstrap_decision.slot_edits.keys()),
+                        "enforcement_notes": bootstrap_decision.enforcement_notes,
+                    },
+                    indent=2,
+                    default=str,
+                )
             )
             _log.info(
-                "v6 cold-start: emitted %d slot edits, complexity=%d, "
-                "rationale: %s",
+                "v6 cold-start: emitted %d slot edits, complexity=%d, " "rationale: %s",
                 len(bootstrap_decision.slot_edits),
                 bootstrap_decision.complexity_level,
                 bootstrap_decision.rationale[:120],
@@ -318,12 +320,8 @@ def run_v6_outer_loop(
         )
 
         # Meta-strategist call (with code-side cross-check + enforcement).
-        prior_complexity = (
-            last_decision.complexity_level if last_decision else 1
-        )
-        prior_classification = (
-            last_decision.classification if last_decision else None
-        )
+        prior_complexity = last_decision.complexity_level if last_decision else 1
+        prior_classification = last_decision.classification if last_decision else None
         decision, raw_text = decide_and_enforce(
             meta_llm=meta_llm,
             task_summary=cfg.task_summary or spec.description or "",
@@ -336,26 +334,34 @@ def run_v6_outer_loop(
         )
 
         # Persist meta-LLM response + enforcement notes for postmortem.
-        (inner_out_dir / "_decision.json").write_text(json.dumps({
-            "classification": decision.classification,
-            "next_mode": decision.next_mode,
-            "rationale": decision.rationale,
-            "next_evolve_observation": decision.next_evolve_observation,
-            "next_evolve_reward": decision.next_evolve_reward,
-            "complexity_level": decision.complexity_level,
-            "slot_edits_keys": list(decision.slot_edits.keys()),
-            "enforcement_notes": decision.enforcement_notes,
-        }, indent=2, default=str))
+        (inner_out_dir / "_decision.json").write_text(
+            json.dumps(
+                {
+                    "classification": decision.classification,
+                    "next_mode": decision.next_mode,
+                    "rationale": decision.rationale,
+                    "next_evolve_observation": decision.next_evolve_observation,
+                    "next_evolve_reward": decision.next_evolve_reward,
+                    "complexity_level": decision.complexity_level,
+                    "slot_edits_keys": list(decision.slot_edits.keys()),
+                    "enforcement_notes": decision.enforcement_notes,
+                },
+                indent=2,
+                default=str,
+            )
+        )
         (inner_out_dir / "_meta_response.txt").write_text(raw_text)
 
         # Record outer iter
-        iter_records.append(V6OuterIterRecord(
-            iter_idx=outer_idx,
-            prompt_dir=current_prompt_dir,
-            inner=inner_result,
-            decision=decision,
-            decision_raw_text=raw_text,
-        ))
+        iter_records.append(
+            V6OuterIterRecord(
+                iter_idx=outer_idx,
+                prompt_dir=current_prompt_dir,
+                inner=inner_result,
+                decision=decision,
+                decision_raw_text=raw_text,
+            )
+        )
         entry = _build_outer_registry_entry(outer_idx, inner_result, decision)
         outer_registry.add(entry)
         outer_registry.record_iter_best_fitness(entry.fitness)
@@ -367,9 +373,11 @@ def run_v6_outer_loop(
         t_start = time.monotonic()
 
         _log.info(
-            "v6 outer %d done: classification=%s M1=%.3f shape=%s "
-            "next_mode=%s",
-            outer_idx, decision.classification, entry.M1, entry.shape,
+            "v6 outer %d done: classification=%s M1=%.3f shape=%s " "next_mode=%s",
+            outer_idx,
+            decision.classification,
+            entry.M1,
+            entry.shape,
             decision.next_mode,
         )
 
@@ -421,14 +429,10 @@ def run_v6_outer_loop(
         "early_stopped": early_stopped,
         "outer_iters_completed": ckpt.outer_idx_completed + 1,
         "global_best_outer_idx": global_best_outer_idx,
-        "global_best_M1": float(
-            global_best.metrics.get("M1_success_rate", 0.0)
-        ),
+        "global_best_M1": float(global_best.metrics.get("M1_success_rate", 0.0)),
         "global_best_shape": global_best.shape,
         "global_best_fitness": global_best.fitness,
-        "global_best_M6": float(
-            global_best.metrics.get("M6_coverage_progress", 0.0)
-        ),
+        "global_best_M6": float(global_best.metrics.get("M6_coverage_progress", 0.0)),
         "outer_classification_trajectory": [
             r.decision.classification for r in iter_records
         ],
@@ -436,13 +440,11 @@ def run_v6_outer_loop(
             r.decision.complexity_level for r in iter_records
         ],
         "outer_flag_trajectory": [
-            (r.decision.next_evolve_observation,
-             r.decision.next_evolve_reward) for r in iter_records
+            (r.decision.next_evolve_observation, r.decision.next_evolve_reward)
+            for r in iter_records
         ],
         "outer_fitness_trajectory": list(outer_registry.fitness_trajectory),
-        "elapsed_s_total": ckpt.elapsed_s_so_far + (
-            time.monotonic() - t_start
-        ),
+        "elapsed_s_total": ckpt.elapsed_s_so_far + (time.monotonic() - t_start),
     }
     ckpt.final_summary = summary
     _save_checkpoint(output_dir, ckpt)

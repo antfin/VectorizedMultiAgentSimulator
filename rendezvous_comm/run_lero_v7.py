@@ -42,12 +42,14 @@ def main(argv=None) -> int:
 
     if os.environ.get("LERO_ENCRYPTED"):
         from src.secrets_util import decrypt_and_load_env
+
         n_keys = len(decrypt_and_load_env())
         log.info("Decrypted %d LLM key(s)", n_keys)
 
     import random as _random
     import numpy as _np
     import torch as _torch
+
     _random.seed(args.seed)
     _np.random.seed(args.seed)
     _torch.manual_seed(args.seed)
@@ -65,6 +67,7 @@ def main(argv=None) -> int:
         return 2
 
     from src.config import load_experiment
+
     spec = load_experiment(cfg_path)
     if spec.lero is None or spec.llm is None:
         log.error("Config missing 'lero:' or 'llm:' block")
@@ -72,16 +75,18 @@ def main(argv=None) -> int:
 
     v7_raw = raw["v7"]
     from src.lero.v7.outer_loop import V7OuterConfig
+
     v7_cfg = V7OuterConfig(
         max_outer=int(v7_raw.get("max_outer", 5)),
         n_inner_iter=int(v7_raw.get("n_inner_iter", 4)),
-        n_inner_candidates_per_iter=int(
-            v7_raw.get("n_inner_candidates_per_iter", 3)
-        ),
+        n_inner_candidates_per_iter=int(v7_raw.get("n_inner_candidates_per_iter", 3)),
         eval_frames=int(v7_raw.get("eval_frames", 1_000_000)),
-        base_prompt_version=str(v7_raw.get(
-            "base_prompt_version", "v2_fewshot_modular_v2_local",
-        )),
+        base_prompt_version=str(
+            v7_raw.get(
+                "base_prompt_version",
+                "v2_fewshot_modular_v2_local",
+            )
+        ),
         meta_model=str(v7_raw.get("meta_model", spec.llm.model)),
         meta_temperature=float(
             v7_raw.get("meta_temperature", spec.llm.temperature),
@@ -97,13 +102,20 @@ def main(argv=None) -> int:
         output_root = base / "lero_v7" / spec.exp_id.lower() / run_id
     output_root.mkdir(parents=True, exist_ok=True)
 
-    (output_root / "run_manifest.json").write_text(json.dumps({
-        "exp_id": spec.exp_id, "name": spec.name,
-        "config_source": str(cfg_path),
-        "seed": args.seed, "algorithm": args.algorithm,
-        "v7_config": v7_raw,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }, indent=2))
+    (output_root / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "exp_id": spec.exp_id,
+                "name": spec.name,
+                "config_source": str(cfg_path),
+                "seed": args.seed,
+                "algorithm": args.algorithm,
+                "v7_config": v7_raw,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            indent=2,
+        )
+    )
 
     log.info("v7 ready: exp=%s out=%s", spec.exp_id, output_root)
 
@@ -114,16 +126,22 @@ def main(argv=None) -> int:
     spec.lero.eval_frames = v7_cfg.eval_frames
 
     from src.lero.loop import LeroLoop
+
     base_loop = LeroLoop(
-        spec=spec, lero_config=spec.lero, llm_config=spec.llm,
+        spec=spec,
+        lero_config=spec.lero,
+        llm_config=spec.llm,
         output_dir=output_root / "_inner_legacy_outdir",
     )
 
     from src.lero.config import LLMConfig
     from src.lero.llm_client import LLMClient
+
     meta_cfg = LLMConfig(
-        model=v7_cfg.meta_model, temperature=v7_cfg.meta_temperature,
-        max_retries=spec.llm.max_retries, prompt_version=spec.llm.prompt_version,
+        model=v7_cfg.meta_model,
+        temperature=v7_cfg.meta_temperature,
+        max_retries=spec.llm.max_retries,
+        prompt_version=spec.llm.prompt_version,
     )
     meta_llm = LLMClient(meta_cfg)
 
@@ -132,9 +150,15 @@ def main(argv=None) -> int:
         return 2
 
     from src.lero.v7.outer_loop import run_v7_outer_loop
+
     summary = run_v7_outer_loop(
-        spec=spec, base_loop=base_loop, cfg=v7_cfg, meta_llm=meta_llm,
-        output_dir=output_root, seed=args.seed, algorithm=args.algorithm,
+        spec=spec,
+        base_loop=base_loop,
+        cfg=v7_cfg,
+        meta_llm=meta_llm,
+        output_dir=output_root,
+        seed=args.seed,
+        algorithm=args.algorithm,
         resume=args.resume,
     )
     log.info(

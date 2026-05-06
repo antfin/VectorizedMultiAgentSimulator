@@ -3,6 +3,7 @@
 Provides file + console logging so that all run output is captured
 in the run directory while still visible in notebooks.
 """
+
 import logging
 from pathlib import Path
 

@@ -1,4 +1,5 @@
 """OVH AI Training job management."""
+
 import streamlit as st
 import sys
 from pathlib import Path
@@ -7,11 +8,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import CONFIGS_DIR, RESULTS_DIR
 from src.ovh import (
-    GPU_MODELS, check_cli_available, submit_training_job,
-    list_jobs, get_job, get_job_logs, stop_job,
-    list_buckets, upload_code, download_results, estimate_cost,
-    default_bucket_code, default_bucket_results, default_region,
-    default_gpu, default_image,
+    GPU_MODELS,
+    check_cli_available,
+    submit_training_job,
+    list_jobs,
+    get_job_logs,
+    stop_job,
+    upload_code,
+    download_results,
+    estimate_cost,
+    default_bucket_code,
+    default_bucket_results,
+    default_region,
+    default_gpu,
 )
 
 from src.theme import apply_theme
@@ -31,9 +40,14 @@ if not cli_ok:
 
 st.success("ovhai CLI available")
 
-tab_launch, tab_monitor, tab_download, tab_cost = st.tabs([
-    "Launch Job", "Monitor Jobs", "Download Results", "Cost Estimator",
-])
+tab_launch, tab_monitor, tab_download, tab_cost = st.tabs(
+    [
+        "Launch Job",
+        "Monitor Jobs",
+        "Download Results",
+        "Cost Estimator",
+    ]
+)
 
 # ── Launch Tab ──
 with tab_launch:
@@ -50,15 +64,16 @@ with tab_launch:
         config_dir = CONFIGS_DIR / exp_id
         yamls = sorted(config_dir.glob("*.yaml")) if config_dir.exists() else []
         config_name = st.selectbox(
-            "Config", [y.name for y in yamls], key="launch_config",
+            "Config",
+            [y.name for y in yamls],
+            key="launch_config",
         )
         config_rel = f"rendezvous_comm/configs/{exp_id}/{config_name}"
 
     with col2:
         gpu_keys = list(GPU_MODELS.keys())
         gpu_default_idx = (
-            gpu_keys.index(default_gpu())
-            if default_gpu() in gpu_keys else 0
+            gpu_keys.index(default_gpu()) if default_gpu() in gpu_keys else 0
         )
         gpu_type = st.selectbox(
             "GPU Model",
@@ -86,7 +101,10 @@ with tab_launch:
     is_lero = False
     try:
         import yaml
-        with open(Path(__file__).parent.parent / "configs" / exp_id / config_name) as _f:
+
+        with open(
+            Path(__file__).parent.parent / "configs" / exp_id / config_name
+        ) as _f:
             _raw = yaml.safe_load(_f)
         is_lero = "lero" in (_raw or {})
     except Exception:
@@ -96,9 +114,11 @@ with tab_launch:
         env_path = Path(__file__).parent.parent / ".env"
         if env_path.exists():
             from dotenv import dotenv_values
+
             _env = dotenv_values(env_path)
             llm_keys_count = sum(
-                1 for k, v in _env.items()
+                1
+                for k, v in _env.items()
                 if v and any(p in k.upper() for p in ["API_KEY", "ACCESS_TOKEN"])
             )
             st.info(
@@ -119,6 +139,7 @@ with tab_launch:
                 env_path = Path(__file__).parent.parent / ".env"
                 if env_path.exists():
                     from dotenv import dotenv_values
+
                     llm_env = dotenv_values(env_path)
 
             with st.spinner("Submitting..."):
@@ -156,20 +177,23 @@ with tab_monitor:
         rows = []
         for j in jobs:
             dur_m = int(j.duration_seconds) // 60 if j.duration_seconds else 0
-            rows.append({
-                "ID": j.id[:12],
-                "Name": j.name,
-                "Status": j.status,
-                "GPU": j.gpu_type,
-                "Duration": f"{dur_m}m",
-                "Created": j.created_at[:19] if j.created_at else "",
-            })
+            rows.append(
+                {
+                    "ID": j.id[:12],
+                    "Name": j.name,
+                    "Status": j.status,
+                    "GPU": j.gpu_type,
+                    "Duration": f"{dur_m}m",
+                    "Created": j.created_at[:19] if j.created_at else "",
+                }
+            )
         st.dataframe(rows, use_container_width=True)
 
         # Job detail
         job_ids = [j.id for j in jobs]
-        selected_job = st.selectbox("Select job for details", job_ids,
-                                     format_func=lambda x: x[:12])
+        selected_job = st.selectbox(
+            "Select job for details", job_ids, format_func=lambda x: x[:12]
+        )
         if selected_job:
             col_log, col_stop = st.columns([4, 1])
             with col_log:
@@ -189,8 +213,9 @@ with tab_monitor:
 with tab_download:
     st.subheader("Download Results from OVH")
 
-    dl_bucket = st.text_input("Results bucket", default_bucket_results(),
-                               key="dl_bucket")
+    dl_bucket = st.text_input(
+        "Results bucket", default_bucket_results(), key="dl_bucket"
+    )
     dl_prefix = st.text_input(
         "Prefix (e.g., er1/)",
         placeholder="Leave empty for all",
@@ -202,8 +227,10 @@ with tab_download:
     if st.button("Download", type="primary", key="dl_btn"):
         with st.spinner("Downloading..."):
             ok = download_results(
-                dl_bucket, dl_dir,
-                prefix=dl_prefix, region=dl_region,
+                dl_bucket,
+                dl_dir,
+                prefix=dl_prefix,
+                region=dl_region,
             )
         if ok:
             st.success(f"Downloaded to {dl_dir}")
@@ -217,15 +244,23 @@ with tab_cost:
     col1, col2 = st.columns(2)
     with col1:
         est_gpu = st.selectbox(
-            "GPU Model", list(GPU_MODELS.keys()), key="est_gpu",
+            "GPU Model",
+            list(GPU_MODELS.keys()),
+            key="est_gpu",
         )
         est_runs = st.number_input("Number of runs", 1, 500, 4)
     with col2:
         est_min = st.number_input(
-            "Est. minutes per run", 5, 600, 30,
+            "Est. minutes per run",
+            5,
+            600,
+            30,
         )
         est_storage = st.number_input(
-            "Storage (GB)", 0.1, 100.0, 1.0,
+            "Storage (GB)",
+            0.1,
+            100.0,
+            1.0,
         )
 
     cost = estimate_cost(est_gpu, est_runs, est_min, est_storage)

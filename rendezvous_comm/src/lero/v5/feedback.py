@@ -10,7 +10,7 @@ Differences vs `codegen.build_feedback`:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from .registry import Registry
 
@@ -73,8 +73,10 @@ def build_v5_inner_feedback(
         )
 
     parts.append("")
-    parts.append(f"✅ BEST: fitness={best_fit:+.3f}  shape={best_shape}  "
-                 f"M1={best_metrics.get('M1_success_rate', 0):.3f}")
+    parts.append(
+        f"✅ BEST: fitness={best_fit:+.3f}  shape={best_shape}  "
+        f"M1={best_metrics.get('M1_success_rate', 0):.3f}"
+    )
     if best_cand.obs_source:
         parts.append("Best candidate's observation code:")
         parts.append(f"```python\n{_truncate_code(best_cand.obs_source)}\n```")
@@ -84,8 +86,10 @@ def build_v5_inner_feedback(
 
     if worst_cand is not best_cand:
         parts.append("")
-        parts.append(f"❌ WORST: fitness={worst_fit:+.3f}  shape={worst_shape}  "
-                     f"M1={worst_metrics.get('M1_success_rate', 0):.3f}")
+        parts.append(
+            f"❌ WORST: fitness={worst_fit:+.3f}  shape={worst_shape}  "
+            f"M1={worst_metrics.get('M1_success_rate', 0):.3f}"
+        )
         parts.append("Worst candidate's code (DO NOT recreate this approach):")
         if worst_cand.obs_source:
             parts.append("```python")

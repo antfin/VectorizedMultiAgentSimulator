@@ -20,13 +20,12 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ...config import ExperimentSpec
 from ..llm_client import LLMClient
 from ..loop import LeroLoop
-from ..v5.inner_loop import InnerResult, run_inner_loop
-from ..v5.registry import Registry, RegistryEntry
+from ..v5.inner_loop import run_inner_loop
 from ..v7.outer_loop import (
     _bundle_dict,
     _read_slot_files,
@@ -35,10 +34,9 @@ from ..v7.outer_loop import (
     _strategy_to_slots,
     _write_slots,
 )
-from ..v7.strategy import V7Strategy, V7StrategyBundle
-from .diagnosis import V8Diagnosis, diagnose_inner_result_v8
+from ..v7.strategy import V7StrategyBundle
+from .diagnosis import diagnose_inner_result_v8
 from .meta_strategist import (
-    V8ReflectionDecision,
     enumerate_bundle_v8,
     reflect_and_decide_v8,
 )
@@ -83,8 +81,9 @@ def _save_ckpt(output_dir: Path, ckpt: V8Checkpoint) -> None:
     with open(tmp, "wb") as f:
         pickle.dump(ckpt, f)
     os.replace(tmp, p)
-    _log.info("v8 ckpt: outer_done=%d early=%s",
-               ckpt.outer_idx_completed, ckpt.early_stopped)
+    _log.info(
+        "v8 ckpt: outer_done=%d early=%s", ckpt.outer_idx_completed, ckpt.early_stopped
+    )
 
 
 def _load_ckpt(output_dir: Path) -> Optional[V8Checkpoint]:
@@ -112,6 +111,7 @@ def run_v8_outer_loop(
     prompts_root = output_dir / "prompts"
     _redirect_prompt_loader(prompts_root)
     from ..prompts import loader as _l_mod
+
     _orig_prompts_dir = Path(_l_mod.__file__).parent
     base_src = _orig_prompts_dir / cfg.base_prompt_version
     if not base_src.exists():
@@ -125,8 +125,10 @@ def run_v8_outer_loop(
     if ckpt is None:
         _log.info(
             "v8 COLD-START: bundle enum (target=%d-%d, cap=%d, gated_cap=%d)",
-            cfg.feature_count_target_min, cfg.feature_count_target_max,
-            cfg.feature_count_cap, cfg.gated_feature_cap,
+            cfg.feature_count_target_min,
+            cfg.feature_count_target_max,
+            cfg.feature_count_cap,
+            cfg.gated_feature_cap,
         )
         bundle, raw_bundle = enumerate_bundle_v8(
             meta_llm,
@@ -160,8 +162,7 @@ def run_v8_outer_loop(
         if ckpt.early_stopped:
             break
 
-        _log.info("=== v8 OUTER ITER %d/%d ===",
-                   outer_idx + 1, cfg.max_outer)
+        _log.info("=== v8 OUTER ITER %d/%d ===", outer_idx + 1, cfg.max_outer)
         outer_dir = output_dir / f"outer_{outer_idx:02d}"
         outer_dir.mkdir(exist_ok=True)
         active = bundle.current()
@@ -189,20 +190,28 @@ def run_v8_outer_loop(
         )
 
         diag = diagnose_inner_result_v8(
-            inner_result, active,
-            cfg.feature_count_cap, cfg.gated_feature_cap,
+            inner_result,
+            active,
+            cfg.feature_count_cap,
+            cfg.gated_feature_cap,
         )
-        (outer_dir / "_diagnosis.json").write_text(json.dumps({
-            "label": diag.label,
-            "pattern_present": diag.pattern_present,
-            "metrics_signature_match": diag.metrics_signature_match,
-            "rationale": diag.rationale,
-            "inner_M1": diag.inner_M1,
-            "inner_M6": diag.inner_M6,
-            "n_features": diag.n_features,
-            "n_gated": diag.n_gated,
-            "n_dense": diag.n_dense,
-        }, indent=2, default=str))
+        (outer_dir / "_diagnosis.json").write_text(
+            json.dumps(
+                {
+                    "label": diag.label,
+                    "pattern_present": diag.pattern_present,
+                    "metrics_signature_match": diag.metrics_signature_match,
+                    "rationale": diag.rationale,
+                    "inner_M1": diag.inner_M1,
+                    "inner_M6": diag.inner_M6,
+                    "n_features": diag.n_features,
+                    "n_gated": diag.n_gated,
+                    "n_dense": diag.n_dense,
+                },
+                indent=2,
+                default=str,
+            )
+        )
         (outer_dir / "_diagnosis_full.txt").write_text(
             f"=== V8 DIAGNOSIS ===\n"
             f"label: {diag.label}\n"
@@ -215,17 +224,24 @@ def run_v8_outer_loop(
             f"rationale:\n{diag.rationale}\n"
         )
         _log.info(
-            "v8 outer %d diag: label=%s n_feat=%d gated=%d dense=%d "
-            "M1=%.3f M6=%.3f",
-            outer_idx, diag.label, diag.n_features, diag.n_gated,
-            diag.n_dense, diag.inner_M1, diag.inner_M6,
+            "v8 outer %d diag: label=%s n_feat=%d gated=%d dense=%d " "M1=%.3f M6=%.3f",
+            outer_idx,
+            diag.label,
+            diag.n_features,
+            diag.n_gated,
+            diag.n_dense,
+            diag.inner_M1,
+            diag.inner_M6,
         )
 
         if diag.label == "achieved":
             ckpt.early_stopped = True
             bundle.record_outcome(
-                outer_idx, diag.label, diag.inner_M1,
-                diag.inner_M6, diag.pattern_present,
+                outer_idx,
+                diag.label,
+                diag.inner_M1,
+                diag.inner_M6,
+                diag.pattern_present,
             )
             ckpt.outer_idx_completed = outer_idx
             _save_ckpt(output_dir, ckpt)
@@ -238,22 +254,36 @@ def run_v8_outer_loop(
             continue
 
         decision, raw_reflect = reflect_and_decide_v8(
-            meta_llm, bundle, inner_result, diag,
-            cfg.feature_count_target_min, cfg.feature_count_target_max,
-            cfg.feature_count_cap, cfg.gated_feature_cap,
+            meta_llm,
+            bundle,
+            inner_result,
+            diag,
+            cfg.feature_count_target_min,
+            cfg.feature_count_target_max,
+            cfg.feature_count_cap,
+            cfg.gated_feature_cap,
         )
         (outer_dir / "_reflection_response.txt").write_text(raw_reflect)
-        (outer_dir / "_decision.json").write_text(json.dumps({
-            "next_action": decision.next_action,
-            "rationale": decision.rationale,
-            "slot_edits_keys": list(decision.slot_edits.keys()),
-            "bundle_demote": decision.bundle_demote,
-            "bundle_add_names": [s.name for s in decision.bundle_add],
-        }, indent=2, default=str))
+        (outer_dir / "_decision.json").write_text(
+            json.dumps(
+                {
+                    "next_action": decision.next_action,
+                    "rationale": decision.rationale,
+                    "slot_edits_keys": list(decision.slot_edits.keys()),
+                    "bundle_demote": decision.bundle_demote,
+                    "bundle_add_names": [s.name for s in decision.bundle_add],
+                },
+                indent=2,
+                default=str,
+            )
+        )
 
         bundle.record_outcome(
-            outer_idx, diag.label, diag.inner_M1,
-            diag.inner_M6, diag.pattern_present,
+            outer_idx,
+            diag.label,
+            diag.inner_M1,
+            diag.inner_M6,
+            diag.pattern_present,
         )
         if decision.bundle_demote:
             for name in decision.bundle_demote:
@@ -279,16 +309,14 @@ def run_v8_outer_loop(
         if decision.next_action == "switch_to_next_strategy":
             nb = bundle.next_best_idx(exclude_current=True)
             if nb is None:
-                _log.warning("v8 outer %d: no eligible strategy left; stop",
-                             outer_idx)
+                _log.warning("v8 outer %d: no eligible strategy left; stop", outer_idx)
                 ckpt.early_stopped = True
                 ckpt.outer_idx_completed = outer_idx
                 _save_ckpt(output_dir, ckpt)
                 break
             bundle.chosen_idx = nb
             _write_slots(next_prompt_dir, _strategy_to_slots(bundle.current()))
-            _log.info("v8 outer %d: SWITCHED to '%s'",
-                       outer_idx, bundle.current().name)
+            _log.info("v8 outer %d: SWITCHED to '%s'", outer_idx, bundle.current().name)
         else:
             # refine_current_strategy / refine_inner_prompt_for_current /
             # trim_features / replace_gated_with_dense — all apply slot_edits
@@ -328,6 +356,9 @@ def run_v8_outer_loop(
     )
     ckpt.final_summary = summary
     _save_ckpt(output_dir, ckpt)
-    _log.info("=== v8 DONE === outer_done=%d early=%s",
-               ckpt.outer_idx_completed + 1, ckpt.early_stopped)
+    _log.info(
+        "=== v8 DONE === outer_done=%d early=%s",
+        ckpt.outer_idx_completed + 1,
+        ckpt.early_stopped,
+    )
     return summary

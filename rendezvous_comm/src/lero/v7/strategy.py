@@ -23,8 +23,8 @@ DiagnosisLabel = Literal[
     "achieved",
     "partial",
     "translation_failure",  # pattern absent — inner LLM didn't realize the strategy
-    "rl_too_hard",          # pattern present but metrics flat — strategy too complex for PPO at 1M
-    "too_early",            # not enough info to judge (no inner result yet)
+    "rl_too_hard",  # pattern present but metrics flat — strategy too complex for PPO at 1M
+    "too_early",  # not enough info to judge (no inner result yet)
 ]
 
 
@@ -41,8 +41,8 @@ class SuccessSignature:
     # Metric signatures: what M1/M6/M3/M4 should look like at 1M-frame eval
     # if the strategy is working. Used by code-side diagnosis to label
     # an inner result as achieved / partial / rl_too_hard.
-    expected_M1_at_1M: float = 0.05         # threshold for "found_good"
-    expected_M6_at_1M_min: float = 0.20     # threshold for "partial_signal"
+    expected_M1_at_1M: float = 0.05  # threshold for "found_good"
+    expected_M6_at_1M_min: float = 0.20  # threshold for "partial_signal"
     expected_M3_at_1M_max: Optional[float] = None  # if set, M3 must be ≤
     expected_M4_at_1M_max: Optional[float] = None  # collisions cap
 
@@ -51,8 +51,8 @@ class SuccessSignature:
 class V7Strategy:
     """One full-solution policy-level hypothesis."""
 
-    name: str                              # short handle, e.g. "pairs_commit"
-    full_solution: str                     # 2-3 sentences: what should agents do
+    name: str  # short handle, e.g. "pairs_commit"
+    full_solution: str  # 2-3 sentences: what should agents do
     success_signature: SuccessSignature
 
     # How to translate this strategy into operational slot text for the
@@ -60,8 +60,8 @@ class V7Strategy:
     lero_translation_hint: str
 
     # 0-10 self-reported scores by the meta-LLM
-    lero_codability: int                   # how easily LERO can prompt for it
-    rl_trainability: int                   # how easily PPO can learn from it
+    lero_codability: int  # how easily LERO can prompt for it
+    rl_trainability: int  # how easily PPO can learn from it
 
     # Mutated across outer iters
     attempts: int = 0
@@ -85,7 +85,7 @@ class V7StrategyBundle:
     """Ordered set of strategies with bundle-level memory."""
 
     strategies: List[V7Strategy] = field(default_factory=list)
-    chosen_idx: int = 0       # which strategy is currently active
+    chosen_idx: int = 0  # which strategy is currently active
     history: List[Dict[str, Any]] = field(default_factory=list)
     # history entries: {"outer_idx": k, "strategy_name": "...", "outcome": "..."}
 
@@ -128,14 +128,16 @@ class V7StrategyBundle:
         s.last_inner_M1 = inner_M1
         s.last_inner_M6 = inner_M6
         s.last_pattern_present = pattern_present
-        self.history.append({
-            "outer_idx": outer_idx,
-            "strategy_name": s.name,
-            "outcome": outcome,
-            "M1": inner_M1,
-            "M6": inner_M6,
-            "pattern_present": pattern_present,
-        })
+        self.history.append(
+            {
+                "outer_idx": outer_idx,
+                "strategy_name": s.name,
+                "outcome": outcome,
+                "M1": inner_M1,
+                "M6": inner_M6,
+                "pattern_present": pattern_present,
+            }
+        )
 
     def format_for_prompt(self) -> str:
         """Compact textual summary of the bundle for the meta-LLM."""

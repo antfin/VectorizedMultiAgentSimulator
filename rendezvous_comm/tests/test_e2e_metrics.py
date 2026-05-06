@@ -8,7 +8,6 @@ Strategy: after env.reset(), override agent/target positions to
 create deterministic scenarios, then step with zero actions and
 verify metrics match expected values.
 """
-import math
 
 import pytest
 import torch
@@ -58,7 +57,9 @@ def _make_env(max_steps=50, **overrides):
 
 def _zero_actions(env):
     """Return zero actions for all agents."""
-    return [torch.zeros(N_ENVS, env.agents[i].action_size) for i in range(len(env.agents))]
+    return [
+        torch.zeros(N_ENVS, env.agents[i].action_size) for i in range(len(env.agents))
+    ]
 
 
 def _set_positions(env, agent_positions, target_positions=None):
@@ -89,7 +90,9 @@ def _run_episode(env, max_steps, policy_fn=None, setup_fn=None):
     n_targets = len(env.world.landmarks)
 
     metrics = EpisodeMetrics().init(
-        N_ENVS, n_targets=n_targets, n_agents=n_agents,
+        N_ENVS,
+        n_targets=n_targets,
+        n_agents=n_agents,
     )
     obs = env.reset()
 
@@ -104,10 +107,14 @@ def _run_episode(env, max_steps, policy_fn=None, setup_fn=None):
         obs, rews, dones, info = env.step(actions)
 
         agent_positions = torch.stack(
-            [a.state.pos for a in env.agents], dim=1,
+            [a.state.pos for a in env.agents],
+            dim=1,
         )
         metrics.update_step(
-            rews, dones, info, step,
+            rews,
+            dones,
+            info,
+            step,
             agent_positions=agent_positions,
         )
 
@@ -153,9 +160,9 @@ class TestM1EndToEnd:
                 env.agents[i].state.vel[:] = 0.0
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M1_success_rate"] == pytest.approx(1.0), (
-            f"Expected M1=1.0 when agents placed on targets, got {result['M1_success_rate']}"
-        )
+        assert (
+            result["M1_success_rate"] == pytest.approx(1.0)
+        ), f"Expected M1=1.0 when agents placed on targets, got {result['M1_success_rate']}"
 
     def test_stationary_agents_far_from_targets_fail(self):
         """Agents far from targets, few steps → M1=0.0."""
@@ -169,9 +176,9 @@ class TestM1EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M1_success_rate"] == pytest.approx(0.0), (
-            f"Expected M1=0.0 with agents far from targets, got {result['M1_success_rate']}"
-        )
+        assert (
+            result["M1_success_rate"] == pytest.approx(0.0)
+        ), f"Expected M1=0.0 with agents far from targets, got {result['M1_success_rate']}"
 
     def test_truncation_not_counted_as_success(self):
         """Time-limit truncation (done=True at max_steps) must NOT count as M1 success."""
@@ -210,9 +217,9 @@ class TestM2EndToEnd:
         result = _run_episode(env, max_steps, setup_fn=setup)
         # Covering reward (positive) should outweigh time penalty
         # At minimum: covering_rew_coeff * targets_covered - time_penalty * steps
-        assert result["M2_avg_return"] > 0.0, (
-            f"Expected positive return when covering targets, got {result['M2_avg_return']}"
-        )
+        assert (
+            result["M2_avg_return"] > 0.0
+        ), f"Expected positive return when covering targets, got {result['M2_avg_return']}"
 
     def test_no_covering_gives_negative_return(self):
         """Stationary agents far from targets → only time penalty → negative return."""
@@ -227,9 +234,9 @@ class TestM2EndToEnd:
 
         result = _run_episode(env, max_steps, setup_fn=setup)
         # Only time_penalty (-0.01) per step per agent, no covering reward
-        assert result["M2_avg_return"] < 0.0, (
-            f"Expected negative return with no covering, got {result['M2_avg_return']}"
-        )
+        assert (
+            result["M2_avg_return"] < 0.0
+        ), f"Expected negative return with no covering, got {result['M2_avg_return']}"
 
 
 # ── M3: Steps to Completion ────────────────────────────────────
@@ -250,9 +257,9 @@ class TestM3EndToEnd:
 
         result = _run_episode(env, max_steps, setup_fn=setup)
         # Should complete very quickly (step 0 or 1)
-        assert result["M3_avg_steps"] < 5.0, (
-            f"Expected quick completion, got M3={result['M3_avg_steps']}"
-        )
+        assert (
+            result["M3_avg_steps"] < 5.0
+        ), f"Expected quick completion, got M3={result['M3_avg_steps']}"
 
     def test_no_completion_gives_max_steps(self):
         """Agents far from targets, never complete → M3=max_steps."""
@@ -267,9 +274,9 @@ class TestM3EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M3_avg_steps"] == pytest.approx(max_steps, abs=1.0), (
-            f"Expected M3≈{max_steps} for incomplete episodes, got {result['M3_avg_steps']}"
-        )
+        assert (
+            result["M3_avg_steps"] == pytest.approx(max_steps, abs=1.0)
+        ), f"Expected M3≈{max_steps} for incomplete episodes, got {result['M3_avg_steps']}"
 
 
 # ── M4: Collisions ─────────────────────────────────────────────
@@ -290,9 +297,9 @@ class TestM4EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M4_avg_collisions"] > 0.0, (
-            f"Expected collisions when agents overlap, got {result['M4_avg_collisions']}"
-        )
+        assert (
+            result["M4_avg_collisions"] > 0.0
+        ), f"Expected collisions when agents overlap, got {result['M4_avg_collisions']}"
 
     def test_separated_agents_no_collisions(self):
         """Agents far apart → no collisions."""
@@ -306,9 +313,9 @@ class TestM4EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M4_avg_collisions"] == pytest.approx(0.0), (
-            f"Expected 0 collisions when agents are 1.6 apart, got {result['M4_avg_collisions']}"
-        )
+        assert (
+            result["M4_avg_collisions"] == pytest.approx(0.0)
+        ), f"Expected 0 collisions when agents are 1.6 apart, got {result['M4_avg_collisions']}"
 
 
 # ── M5: Tokens ──────────────────────────────────────────────────
@@ -340,9 +347,9 @@ class TestM6EndToEnd:
                 env.agents[i].state.vel[:] = 0.0
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M6_coverage_progress"] == pytest.approx(1.0), (
-            f"Expected M6=1.0 when all targets covered, got {result['M6_coverage_progress']}"
-        )
+        assert (
+            result["M6_coverage_progress"] == pytest.approx(1.0)
+        ), f"Expected M6=1.0 when all targets covered, got {result['M6_coverage_progress']}"
 
     def test_one_of_two_targets_covered(self):
         """Only one agent near one target → M6≈0.5."""
@@ -359,9 +366,9 @@ class TestM6EndToEnd:
             targets[1].state.pos[:] = torch.tensor([-0.9, -0.9])
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M6_coverage_progress"] == pytest.approx(0.5, abs=0.15), (
-            f"Expected M6≈0.5 with 1/2 targets covered, got {result['M6_coverage_progress']}"
-        )
+        assert (
+            result["M6_coverage_progress"] == pytest.approx(0.5, abs=0.15)
+        ), f"Expected M6≈0.5 with 1/2 targets covered, got {result['M6_coverage_progress']}"
 
     def test_no_coverage(self):
         """No agents near any target → M6=0.0."""
@@ -375,9 +382,9 @@ class TestM6EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert result["M6_coverage_progress"] == pytest.approx(0.0), (
-            f"Expected M6=0.0 with no coverage, got {result['M6_coverage_progress']}"
-        )
+        assert result["M6_coverage_progress"] == pytest.approx(
+            0.0
+        ), f"Expected M6=0.0 with no coverage, got {result['M6_coverage_progress']}"
 
 
 # ── M8: Agent Utilization ──────────────────────────────────────
@@ -399,14 +406,16 @@ class TestM8EndToEnd:
         result = _run_episode(env, max_steps, setup_fn=setup)
         # Both agents contribute equally → CV should be low
         # (Not exactly 0 because covering reward timing may differ)
-        assert result["M8_agent_utilization"] < 1.0, (
-            f"Expected low utilization CV with balanced covering, got {result['M8_agent_utilization']}"
-        )
+        assert (
+            result["M8_agent_utilization"] < 1.0
+        ), f"Expected low utilization CV with balanced covering, got {result['M8_agent_utilization']}"
 
     def test_one_agent_covers_all(self):
         """Only agent 0 covers targets, agent 1 far away → high CV."""
         env, max_steps = _make_env(
-            max_steps=10, n_targets=3, agents_per_target=1,
+            max_steps=10,
+            n_targets=3,
+            agents_per_target=1,
         )
 
         def setup(env):
@@ -478,12 +487,10 @@ class TestM9EndToEnd:
         env_c, ms_c = _make_env(max_steps=3)
 
         def setup_spread(env):
-            _set_positions(env, [(-0.8, 0.0), (0.8, 0.0)],
-                           [(0.0, 0.5), (0.0, -0.5)])
+            _set_positions(env, [(-0.8, 0.0), (0.8, 0.0)], [(0.0, 0.5), (0.0, -0.5)])
 
         def setup_clumped(env):
-            _set_positions(env, [(0.0, 0.0), (0.02, 0.0)],
-                           [(0.5, 0.5), (-0.5, -0.5)])
+            _set_positions(env, [(0.0, 0.0), (0.02, 0.0)], [(0.5, 0.5), (-0.5, -0.5)])
 
         r_spread = _run_episode(env_s, ms_s, setup_fn=setup_spread)
         r_clumped = _run_episode(env_c, ms_c, setup_fn=setup_clumped)
@@ -512,9 +519,9 @@ class TestCrossMetricConsistency:
 
         result = _run_episode(env, max_steps, setup_fn=setup)
         if result["M1_success_rate"] == 1.0:
-            assert result["M6_coverage_progress"] == pytest.approx(1.0), (
-                f"M1=1.0 but M6={result['M6_coverage_progress']} — inconsistent!"
-            )
+            assert result["M6_coverage_progress"] == pytest.approx(
+                1.0
+            ), f"M1=1.0 but M6={result['M6_coverage_progress']} — inconsistent!"
 
     def test_no_success_with_max_steps(self):
         """M1=0 implies M3=max_steps."""
@@ -530,9 +537,9 @@ class TestCrossMetricConsistency:
 
         result = _run_episode(env, max_steps, setup_fn=setup)
         if result["M1_success_rate"] == 0.0:
-            assert result["M3_avg_steps"] == pytest.approx(max_steps, abs=1.0), (
-                f"M1=0 but M3={result['M3_avg_steps']} ≠ max_steps={max_steps}"
-            )
+            assert result["M3_avg_steps"] == pytest.approx(
+                max_steps, abs=1.0
+            ), f"M1=0 but M3={result['M3_avg_steps']} ≠ max_steps={max_steps}"
 
     def test_tokens_zero_without_comm(self):
         """M5 must be 0 in every scenario without communication wrapper."""
@@ -552,9 +559,9 @@ class TestCrossMetricConsistency:
 
         result = _run_episode(env, max_steps, setup_fn=setup)
         if result["M1_success_rate"] == 1.0:
-            assert result["M2_avg_return"] > 0.0, (
-                f"M1=1.0 but M2={result['M2_avg_return']} ≤ 0 — covering reward missing?"
-            )
+            assert (
+                result["M2_avg_return"] > 0.0
+            ), f"M1=1.0 but M2={result['M2_avg_return']} ≤ 0 — covering reward missing?"
 
 
 # ── evaluate_with_vmas integration ─────────────────────────────
@@ -566,12 +573,19 @@ class TestEvaluateWithVmasE2E:
     def test_random_policy_metrics_ranges(self):
         """Random policy: all metrics should be in valid ranges."""
         task = TaskConfig(
-            n_agents=2, n_targets=2, agents_per_target=1,
-            covering_range=0.25, lidar_range=0.35,
-            targets_respawn=False, max_steps=10,
+            n_agents=2,
+            n_targets=2,
+            agents_per_target=1,
+            covering_range=0.25,
+            lidar_range=0.35,
+            targets_respawn=False,
+            max_steps=10,
         )
         result = evaluate_with_vmas(
-            task, policy_fn=None, n_eval_episodes=8, n_envs=8,
+            task,
+            policy_fn=None,
+            n_eval_episodes=8,
+            n_envs=8,
         )
 
         assert 0.0 <= result["M1_success_rate"] <= 1.0
@@ -587,17 +601,27 @@ class TestEvaluateWithVmasE2E:
         from src.runner import make_heuristic_policy_fn
 
         task = TaskConfig(
-            n_agents=3, n_targets=3, agents_per_target=1,
-            covering_range=0.25, lidar_range=0.35,
-            targets_respawn=False, max_steps=100,
+            n_agents=3,
+            n_targets=3,
+            agents_per_target=1,
+            covering_range=0.25,
+            lidar_range=0.35,
+            targets_respawn=False,
+            max_steps=100,
         )
 
         random_result = evaluate_with_vmas(
-            task, policy_fn=None, n_eval_episodes=50, n_envs=50,
+            task,
+            policy_fn=None,
+            n_eval_episodes=50,
+            n_envs=50,
         )
         heuristic_fn = make_heuristic_policy_fn()
         heuristic_result = evaluate_with_vmas(
-            task, policy_fn=heuristic_fn, n_eval_episodes=50, n_envs=50,
+            task,
+            policy_fn=heuristic_fn,
+            n_eval_episodes=50,
+            n_envs=50,
         )
 
         # Heuristic should have higher coverage or return than random

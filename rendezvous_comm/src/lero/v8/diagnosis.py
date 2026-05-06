@@ -65,9 +65,12 @@ def diagnose_inner_result_v8(
     `too_many_features` and `over_gated`."""
     if inner is None or inner.best is None:
         return V8Diagnosis(
-            label="too_early", pattern_present=False,
+            label="too_early",
+            pattern_present=False,
             metrics_signature_match=False,
-            rationale="no inner result yet", inner_M1=0.0, inner_M6=0.0,
+            rationale="no inner result yet",
+            inner_M1=0.0,
+            inner_M6=0.0,
         )
 
     metrics = inner.best.metrics
@@ -90,9 +93,7 @@ def diagnose_inner_result_v8(
     label: V8DiagnosisLabel
     if m1 >= sig.expected_M1_at_1M and ast_ana.has_cross_source:
         label = "achieved"
-        rationale = (
-            f"M1={m1:.3f} ≥ {sig.expected_M1_at_1M} and pattern present"
-        )
+        rationale = f"M1={m1:.3f} ≥ {sig.expected_M1_at_1M} and pattern present"
     elif m6 >= sig.expected_M6_at_1M_min:
         label = "partial"
         rationale = (
@@ -123,9 +124,7 @@ def diagnose_inner_result_v8(
         )
     else:
         label = "translation_failure"
-        rationale = (
-            f"pattern absent in best inner code; M1={m1:.3f} M6={m6:.3f}"
-        )
+        rationale = f"pattern absent in best inner code; M1={m1:.3f} M6={m6:.3f}"
 
     return V8Diagnosis(
         label=label,

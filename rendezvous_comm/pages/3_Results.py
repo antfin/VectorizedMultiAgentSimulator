@@ -1,4 +1,5 @@
 """Results Dashboard — merged view for sweep overview, run detail, and training curves."""
+
 import streamlit as st
 import sys
 from pathlib import Path
@@ -6,18 +7,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 from src.theme import apply_theme
-from src.config import CONFIGS_DIR, RESULTS_DIR
+from src.config import RESULTS_DIR
 from src.storage import ExperimentStorage
-from src.consolidate import load_latest_csv, consolidate_csvs, list_experiments_with_data
+from src.consolidate import (
+    load_latest_csv,
+    consolidate_csvs,
+    list_experiments_with_data,
+)
 from src.plotting import (
-    plot_sweep_heatmap, plot_seed_variance, plot_sweep_overview,
-    plot_training_dashboard, set_style, METRIC_LABELS,
-    POLIMI_DARK_BLUE, POLIMI_RED, POLIMI_LIGHT_BLUE,
+    plot_sweep_heatmap,
+    plot_sweep_overview,
+    plot_training_dashboard,
+    set_style,
+    METRIC_LABELS,
+    POLIMI_DARK_BLUE,
+    POLIMI_RED,
 )
 
 st.set_page_config(page_title="Results Dashboard", layout="wide")
@@ -38,8 +47,7 @@ if st.sidebar.button("Rebuild CSVs"):
         paths = consolidate_csvs(exp_id)
     if paths:
         st.sidebar.success(
-            f"Built {len(paths)} CSVs: "
-            + ", ".join(p.name for p in paths.values())
+            f"Built {len(paths)} CSVs: " + ", ".join(p.name for p in paths.values())
         )
     else:
         st.sidebar.warning("No data to consolidate.")
@@ -65,9 +73,7 @@ if sweep_df is None or sweep_df.empty:
     st.info(f"No completed runs for {exp_id.upper()}. Run an experiment first.")
     st.stop()
 
-metric_cols = sorted(
-    [c for c in sweep_df.columns if c.startswith("M")]
-)
+metric_cols = sorted([c for c in sweep_df.columns if c.startswith("M")])
 
 # ─────────────────────────────────────────────────────────────────────
 # OVERVIEW MODE
@@ -95,8 +101,12 @@ if view_mode == "Overview":
     )
 
     sweep_params = [
-        c for c in [
-            "n_agents", "n_targets", "agents_per_target", "lidar_range",
+        c
+        for c in [
+            "n_agents",
+            "n_targets",
+            "agents_per_target",
+            "lidar_range",
         ]
         if c in sweep_df.columns and sweep_df[c].nunique() > 1
     ]
@@ -110,8 +120,10 @@ if view_mode == "Overview":
             col_param = st.selectbox("Column axis", remaining, index=0)
         try:
             fig = plot_sweep_heatmap(
-                sweep_df, metric=metric,
-                row_param=row_param, col_param=col_param,
+                sweep_df,
+                metric=metric,
+                row_param=row_param,
+                col_param=col_param,
                 title=f"{METRIC_LABELS.get(metric, metric)} — {exp_id.upper()}",
             )
             st.pyplot(fig)
@@ -125,7 +137,8 @@ if view_mode == "Overview":
     st.subheader("Cross-Metric Overview")
     try:
         fig = plot_sweep_overview(
-            sweep_df, title=f"Sweep Overview — {exp_id.upper()}",
+            sweep_df,
+            title=f"Sweep Overview — {exp_id.upper()}",
         )
         st.pyplot(fig)
         plt.close(fig)
@@ -160,7 +173,8 @@ elif view_mode == "Run Detail":
     # pyglet/OpenGL crashes inside Streamlit's threaded callbacks)
     if rs.has_policy():
         if st.sidebar.button("Rebuild Videos"):
-            import subprocess, sys
+            import subprocess
+            import sys
 
             script = (
                 "import sys, yaml; "
@@ -181,16 +195,15 @@ elif view_mode == "Run Detail":
             with st.spinner("Generating videos (subprocess)..."):
                 result = subprocess.run(
                     [sys.executable, "-c", script],
-                    capture_output=True, text=True,
+                    capture_output=True,
+                    text=True,
                     timeout=300,
                 )
             if result.returncode == 0:
                 st.sidebar.success("Videos generated")
                 st.rerun()
             else:
-                st.sidebar.error(
-                    f"Video generation failed:\n{result.stderr[-500:]}"
-                )
+                st.sidebar.error(f"Video generation failed:\n{result.stderr[-500:]}")
 
     metrics = rs.load_metrics()
 
@@ -230,8 +243,9 @@ elif view_mode == "Run Detail":
 
         if m1_data:
             s, v = zip(*m1_data)
-            ax1.plot(s, v, color=POLIMI_DARK_BLUE, linewidth=1.8,
-                     marker="o", markersize=4)
+            ax1.plot(
+                s, v, color=POLIMI_DARK_BLUE, linewidth=1.8, marker="o", markersize=4
+            )
             ax1.fill_between(s, v, alpha=0.1, color=POLIMI_DARK_BLUE)
         ax1.set_ylim(0, 1.05)
         ax1.set_title("M1 — Success Rate")
@@ -240,15 +254,13 @@ elif view_mode == "Run Detail":
 
         if m4_data:
             s, v = zip(*m4_data)
-            ax4.plot(s, v, color=POLIMI_RED, linewidth=1.8,
-                     marker="o", markersize=4)
+            ax4.plot(s, v, color=POLIMI_RED, linewidth=1.8, marker="o", markersize=4)
             ax4.fill_between(s, v, alpha=0.1, color=POLIMI_RED)
         ax4.set_title("M4 — Avg Collisions")
         ax4.set_xlabel("Iteration")
         ax4.grid(True, alpha=0.3)
 
-        fig.suptitle(f"Eval Metrics — {run_id}",
-                     fontsize=13, fontweight="bold")
+        fig.suptitle(f"Eval Metrics — {run_id}", fontsize=13, fontweight="bold")
         fig.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
@@ -257,7 +269,8 @@ elif view_mode == "Run Detail":
     if scalars:
         st.subheader("Training Dashboard")
         fig = plot_training_dashboard(
-            scalars, title=f"Training Progress — {run_id}",
+            scalars,
+            title=f"Training Progress — {run_id}",
         )
         st.pyplot(fig)
         plt.close(fig)
@@ -324,7 +337,9 @@ elif view_mode == "Training Curves":
         st.stop()
 
     selected_runs = st.sidebar.multiselect(
-        "Runs", completed, default=completed[:3],
+        "Runs",
+        completed,
+        default=completed[:3],
     )
     if not selected_runs:
         st.info("Select at least one run.")
@@ -340,7 +355,8 @@ elif view_mode == "Training Curves":
 
         with st.expander(run_id, expanded=len(selected_runs) == 1):
             fig = plot_training_dashboard(
-                scalars, title=f"Training — {run_id}",
+                scalars,
+                title=f"Training — {run_id}",
             )
             st.pyplot(fig)
             plt.close(fig)
@@ -357,8 +373,7 @@ elif view_mode == "Training Curves":
             if m1:
                 s, v = zip(*m1)
                 label = run_id.split(f"{exp_id}_")[-1].rsplit("_s", 1)[0]
-                ax.plot(s, v, linewidth=1.8, marker="o",
-                        markersize=3, label=label)
+                ax.plot(s, v, linewidth=1.8, marker="o", markersize=3, label=label)
         ax.set_ylim(0, 1.05)
         ax.set_title("M1 Success Rate — Comparison")
         ax.set_xlabel("Iteration")

@@ -38,11 +38,13 @@ def main(argv=None) -> int:
 
     if os.environ.get("LERO_ENCRYPTED"):
         from src.secrets_util import decrypt_and_load_env
+
         decrypt_and_load_env()
 
     import random as _random
     import numpy as _np
     import torch as _torch
+
     _random.seed(args.seed)
     _np.random.seed(args.seed)
     _torch.manual_seed(args.seed)
@@ -58,6 +60,7 @@ def main(argv=None) -> int:
         return 2
 
     from src.config import load_experiment
+
     spec = load_experiment(cfg_path)
     if spec.lero is None or spec.llm is None:
         log.error("Config missing 'lero:' or 'llm:' block")
@@ -65,14 +68,18 @@ def main(argv=None) -> int:
 
     v8_raw = raw["v8"]
     from src.lero.v8.outer_loop import V8OuterConfig
+
     v8_cfg = V8OuterConfig(
         max_outer=int(v8_raw.get("max_outer", 5)),
         n_inner_iter=int(v8_raw.get("n_inner_iter", 4)),
         n_inner_candidates_per_iter=int(v8_raw.get("n_inner_candidates_per_iter", 3)),
         eval_frames=int(v8_raw.get("eval_frames", 1_000_000)),
-        base_prompt_version=str(v8_raw.get(
-            "base_prompt_version", "v2_fewshot_modular_v2_local",
-        )),
+        base_prompt_version=str(
+            v8_raw.get(
+                "base_prompt_version",
+                "v2_fewshot_modular_v2_local",
+            )
+        ),
         meta_model=str(v8_raw.get("meta_model", spec.llm.model)),
         meta_temperature=float(v8_raw.get("meta_temperature", spec.llm.temperature)),
         task_summary=str(v8_raw.get("task_summary", spec.description or "")),
@@ -89,16 +96,27 @@ def main(argv=None) -> int:
         run_id = f"{time.strftime('%Y%m%d_%H%M')}_s{args.seed}"
         output_root = base / "lero_v8" / spec.exp_id.lower() / run_id
     output_root.mkdir(parents=True, exist_ok=True)
-    (output_root / "run_manifest.json").write_text(json.dumps({
-        "exp_id": spec.exp_id, "name": spec.name,
-        "config_source": str(cfg_path),
-        "seed": args.seed, "algorithm": args.algorithm,
-        "v8_config": v8_raw,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }, indent=2))
-    log.info("v8 ready: exp=%s out=%s feature_cap=%d gated_cap=%d",
-              spec.exp_id, output_root,
-              v8_cfg.feature_count_cap, v8_cfg.gated_feature_cap)
+    (output_root / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "exp_id": spec.exp_id,
+                "name": spec.name,
+                "config_source": str(cfg_path),
+                "seed": args.seed,
+                "algorithm": args.algorithm,
+                "v8_config": v8_raw,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            indent=2,
+        )
+    )
+    log.info(
+        "v8 ready: exp=%s out=%s feature_cap=%d gated_cap=%d",
+        spec.exp_id,
+        output_root,
+        v8_cfg.feature_count_cap,
+        v8_cfg.gated_feature_cap,
+    )
 
     if args.dry_run:
         return 0
@@ -106,15 +124,21 @@ def main(argv=None) -> int:
     spec.lero.eval_frames = v8_cfg.eval_frames
 
     from src.lero.loop import LeroLoop
+
     base_loop = LeroLoop(
-        spec=spec, lero_config=spec.lero, llm_config=spec.llm,
+        spec=spec,
+        lero_config=spec.lero,
+        llm_config=spec.llm,
         output_dir=output_root / "_inner_legacy_outdir",
     )
     from src.lero.config import LLMConfig
     from src.lero.llm_client import LLMClient
+
     meta_cfg = LLMConfig(
-        model=v8_cfg.meta_model, temperature=v8_cfg.meta_temperature,
-        max_retries=spec.llm.max_retries, prompt_version=spec.llm.prompt_version,
+        model=v8_cfg.meta_model,
+        temperature=v8_cfg.meta_temperature,
+        max_retries=spec.llm.max_retries,
+        prompt_version=spec.llm.prompt_version,
     )
     meta_llm = LLMClient(meta_cfg)
 
@@ -123,15 +147,23 @@ def main(argv=None) -> int:
         return 2
 
     from src.lero.v8.outer_loop import run_v8_outer_loop
+
     summary = run_v8_outer_loop(
-        spec=spec, base_loop=base_loop, cfg=v8_cfg, meta_llm=meta_llm,
-        output_dir=output_root, seed=args.seed, algorithm=args.algorithm,
+        spec=spec,
+        base_loop=base_loop,
+        cfg=v8_cfg,
+        meta_llm=meta_llm,
+        output_dir=output_root,
+        seed=args.seed,
+        algorithm=args.algorithm,
         resume=args.resume,
     )
-    log.info("=== DONE === early=%s outers=%d strategy=%s",
-              summary.get("early_stopped"),
-              summary.get("outer_iters_completed"),
-              summary.get("bundle_chosen_at_end"))
+    log.info(
+        "=== DONE === early=%s outers=%d strategy=%s",
+        summary.get("early_stopped"),
+        summary.get("outer_iters_completed"),
+        summary.get("bundle_chosen_at_end"),
+    )
     return 0
 
 

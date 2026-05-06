@@ -9,14 +9,9 @@ gpt-5.4-mini.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
-from src.lero.config import LLMConfig
 from src.lero.llm_client import LLMClient
-from src.lero.meta.v4_bootstrap import (
-    _build_bootstrap_prompt,
-    _parse_response,
-)
 from src.lero.meta.v4_schemas import (
     BootstrapCard,
     RoundResult,
@@ -58,7 +53,8 @@ def run_strategist_scenario(
         )
     except Exception as e:
         return V4ScenarioResult(
-            name=name, bundle=None,
+            name=name,
+            bundle=None,
             parse_error=f"{type(e).__name__}: {e}",
             expectations_passed={},
         )
@@ -70,6 +66,8 @@ def run_strategist_scenario(
         except Exception:
             passed[exp_name] = False
     return V4ScenarioResult(
-        name=name, bundle=bundle,
-        parse_error=None, expectations_passed=passed,
+        name=name,
+        bundle=bundle,
+        parse_error=None,
+        expectations_passed=passed,
     )

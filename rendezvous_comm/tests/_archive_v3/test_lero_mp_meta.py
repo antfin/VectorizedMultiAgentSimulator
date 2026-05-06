@@ -33,10 +33,12 @@ from src.lero.prompts.loader import FrozenSlotMismatch, PromptLoader
 
 # ── failmode ─────────────────────────────────────────────────────
 
+
 def _ok(**kw):
     """Healthy candidate metrics."""
     base = dict(
-        M1_success_rate=0.5, M2_avg_return=10.0,
+        M1_success_rate=0.5,
+        M2_avg_return=10.0,
         M6_coverage_progress=0.8,
     )
     base.update(kw)
@@ -70,7 +72,9 @@ class TestClassifyInnerResult:
 
     def test_reward_hack_from_peak_vs_final(self):
         tier2 = {"peak_M1": 0.86, "final_M1": 0.09}
-        assert classify_inner_result([_ok()], tier2_metrics=tier2) == FailMode.REWARD_HACK
+        assert (
+            classify_inner_result([_ok()], tier2_metrics=tier2) == FailMode.REWARD_HACK
+        )
 
     def test_reward_hack_below_threshold_is_healthy(self):
         tier2 = {"peak_M1": 0.60, "final_M1": 0.55}  # gap = 0.05
@@ -107,7 +111,7 @@ class TestClassifyInnerResult:
         """Even if the ratio looks big, a tiny absolute baseline must
         not count as real inflation evidence."""
         history = [
-            {"best_M2": 0.3, "best_M1": 0.1},   # below floor of 1.0
+            {"best_M2": 0.3, "best_M1": 0.1},  # below floor of 1.0
             {"best_M2": 0.4, "best_M1": 0.1},
         ]
         # 2.0 vs 0.4 = 5× ratio, would fire if not floored
@@ -128,17 +132,21 @@ class TestClassifyInnerResult:
         )
 
     def test_stuck_detection(self):
-        cands = [_ok(
-            M1_success_rate=0.05,
-            M1_per_seed=[0.04, 0.05, 0.06],   # σ ≈ 0.008 < 0.05
-        )]
+        cands = [
+            _ok(
+                M1_success_rate=0.05,
+                M1_per_seed=[0.04, 0.05, 0.06],  # σ ≈ 0.008 < 0.05
+            )
+        ]
         assert classify_inner_result(cands) == FailMode.STUCK
 
     def test_stuck_not_fired_when_variance_high(self):
-        cands = [_ok(
-            M1_success_rate=0.05,
-            M1_per_seed=[0.0, 0.5, 0.0],       # σ high → not stuck
-        )]
+        cands = [
+            _ok(
+                M1_success_rate=0.05,
+                M1_per_seed=[0.0, 0.5, 0.0],  # σ high → not stuck
+            )
+        ]
         assert classify_inner_result(cands) != FailMode.STUCK
 
     def test_priority_fairness_over_nan(self):
@@ -166,7 +174,9 @@ class TestPickSlotToEdit:
         history: list = []
         for _ in range(6):
             slot = pick_slot_to_edit(
-                FailMode.HEALTHY, history=history, policy="round_robin",
+                FailMode.HEALTHY,
+                history=history,
+                policy="round_robin",
             )
             order.append(slot)
             history.append(slot)
@@ -175,9 +185,9 @@ class TestPickSlotToEdit:
         assert order[5] == order[0]
 
     def test_fixed_policy(self):
-        assert pick_slot_to_edit(
-            FailMode.HEALTHY, policy="fixed:examples"
-        ) == "examples"
+        assert (
+            pick_slot_to_edit(FailMode.HEALTHY, policy="fixed:examples") == "examples"
+        )
 
     def test_unknown_policy_raises(self):
         with pytest.raises(ValueError):
@@ -193,13 +203,15 @@ class TestFailModeThresholds:
 
 # ── trigger ──────────────────────────────────────────────────────
 
+
 def _rec(**kw):
     base = dict(
         template_version="v",
         inner_iter_count=3,
         best_peak_M1=0.5,
         best_final_M1=0.5,
-        best_M6=0.8, best_M2=10.0,
+        best_M6=0.8,
+        best_M2=10.0,
         seed_M1_std=0.02,
         fail_mode=FailMode.HEALTHY,
     )
@@ -223,7 +235,9 @@ class TestShouldMetaIterate:
 
     def test_budget_exceeded_outer_iters(self):
         d = should_meta_iterate(
-            [_rec(), _rec(), _rec()], 10, self.cfg,
+            [_rec(), _rec(), _rec()],
+            10,
+            self.cfg,
         )
         assert d.should_stop is True
         assert d.reason is TriggerReason.BUDGET_EXCEEDED
@@ -258,7 +272,9 @@ class TestShouldMetaIterate:
             _rec(best_peak_M1=0.81),
         ]
         cfg = TriggerConfig(
-            max_outer_iters=10, converged_iters=3, converged_delta=0.02,
+            max_outer_iters=10,
+            converged_iters=3,
+            converged_delta=0.02,
         )
         d = should_meta_iterate(hist, 10, cfg, inner_iters_since_last_mutation=99)
         assert d.should_stop is True
@@ -291,7 +307,10 @@ class TestShouldMetaIterate:
     def test_cooldown_blocks_even_when_trigger_fires(self):
         hist = [_rec(best_peak_M1=0.86, best_final_M1=0.09)]  # hack
         d = should_meta_iterate(
-            hist, 5, self.cfg, inner_iters_since_last_mutation=0,
+            hist,
+            5,
+            self.cfg,
+            inner_iters_since_last_mutation=0,
         )
         assert d.should_iterate is False
         assert d.should_stop is False
@@ -331,6 +350,7 @@ class TestTriggerDecision:
 
 # ── provenance ───────────────────────────────────────────────────
 
+
 class TestSha256Text:
     def test_deterministic(self):
         assert sha256_text("hello") == sha256_text("hello")
@@ -341,7 +361,9 @@ class TestSha256Text:
 
 class TestProposeVersionName:
     def test_format(self):
-        assert propose_version_name("v2_fewshot_modular", 1) == "v2_fewshot_modular_mp_001"
+        assert (
+            propose_version_name("v2_fewshot_modular", 1) == "v2_fewshot_modular_mp_001"
+        )
         assert propose_version_name("foo", 999) == "foo_mp_999"
 
 
@@ -357,15 +379,20 @@ def tmp_prompts(tmp_path: Path) -> Path:
     (parent / "examples.txt").write_text("examples original\n")
     (parent / "fairness.txt").write_text("FROZEN RULES\n")
     frozen_hash = sha256_text("FROZEN RULES\n")
-    (parent / "meta.yaml").write_text(yaml.safe_dump({
-        "version": "parent_v1",
-        "initial_user_slots": [
-            {"name": "guidance", "file": "guidance.txt"},
-            {"name": "examples", "file": "examples.txt"},
-            {"name": "fairness", "file": "fairness.txt", "frozen": True},
-        ],
-        "frozen_hashes": {"fairness": frozen_hash},
-    }, sort_keys=False))
+    (parent / "meta.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": "parent_v1",
+                "initial_user_slots": [
+                    {"name": "guidance", "file": "guidance.txt"},
+                    {"name": "examples", "file": "examples.txt"},
+                    {"name": "fairness", "file": "fairness.txt", "frozen": True},
+                ],
+                "frozen_hashes": {"fairness": frozen_hash},
+            },
+            sort_keys=False,
+        )
+    )
     return tmp_path
 
 
@@ -481,6 +508,7 @@ class TestMaterializeMutation:
         )
         # Point the loader's root at our tmp.
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
         loader = PromptLoader("parent_v1_mp_005")
         out = loader.render("initial_user.txt")
@@ -497,18 +525,24 @@ class TestMaterializeMutation:
 class TestLineage:
     def test_chain(self, tmp_prompts):
         materialize_mutation(
-            "parent_v1", "parent_v1_mp_001",
-            {"guidance": "a\n"}, rationale="r1",
+            "parent_v1",
+            "parent_v1_mp_001",
+            {"guidance": "a\n"},
+            rationale="r1",
             prompts_dir=tmp_prompts,
         )
         materialize_mutation(
-            "parent_v1_mp_001", "parent_v1_mp_002",
-            {"guidance": "b\n"}, rationale="r2",
+            "parent_v1_mp_001",
+            "parent_v1_mp_002",
+            {"guidance": "b\n"},
+            rationale="r2",
             prompts_dir=tmp_prompts,
         )
         chain = lineage("parent_v1_mp_002", tmp_prompts)
         assert chain == [
-            "parent_v1_mp_002", "parent_v1_mp_001", "parent_v1",
+            "parent_v1_mp_002",
+            "parent_v1_mp_001",
+            "parent_v1",
         ]
 
     def test_root_template_has_length_one(self, tmp_prompts):

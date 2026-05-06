@@ -7,7 +7,7 @@ import pytest
 import torch
 import yaml
 
-from src.config import ExperimentSpec, load_experiment
+from src.config import load_experiment
 from src.lero.codegen import (
     CandidateCode,
     build_feedback,
@@ -180,7 +180,9 @@ class TestConfigWithLero:
     def test_load_real_e1_config(self):
         cfg_path = (
             Path(__file__).parent.parent
-            / "configs" / "e1" / "single_lero_al_lp_sr_ms400.yaml"
+            / "configs"
+            / "e1"
+            / "single_lero_al_lp_sr_ms400.yaml"
         )
         spec = load_experiment(cfg_path)
         assert spec.exp_id == "e1_al_lp_sr_ms400"
@@ -193,7 +195,9 @@ class TestConfigWithLero:
     def test_load_real_e1_n2_k1_config(self):
         cfg_path = (
             Path(__file__).parent.parent
-            / "configs" / "e1" / "single_lero_al_lp_sr_ms400_n2_k1.yaml"
+            / "configs"
+            / "e1"
+            / "single_lero_al_lp_sr_ms400_n2_k1.yaml"
         )
         spec = load_experiment(cfg_path)
         assert spec.exp_id == "e1_al_lp_sr_ms400_n2_k1"
@@ -205,7 +209,9 @@ class TestConfigWithLero:
     def test_load_real_e2_config(self):
         cfg_path = (
             Path(__file__).parent.parent
-            / "configs" / "e2" / "single_lero_al_lp_sr_prox_dc8_ms400.yaml"
+            / "configs"
+            / "e2"
+            / "single_lero_al_lp_sr_prox_dc8_ms400.yaml"
         )
         spec = load_experiment(cfg_path)
         assert spec.exp_id == "e2_al_lp_sr_prox_dc8_ms400"
@@ -218,20 +224,32 @@ class TestConfigWithLero:
         """E1 task params must match ER1 baseline for fair comparison."""
         e1_path = (
             Path(__file__).parent.parent
-            / "configs" / "e1" / "single_lero_al_lp_sr_ms400.yaml"
+            / "configs"
+            / "e1"
+            / "single_lero_al_lp_sr_ms400.yaml"
         )
         er1_path = (
             Path(__file__).parent.parent
-            / "configs" / "er1" / "single_al_lp_sr_ms400.yaml"
+            / "configs"
+            / "er1"
+            / "single_al_lp_sr_ms400.yaml"
         )
         e1 = load_experiment(e1_path)
         er1 = load_experiment(er1_path)
         # All task params must match exactly
         for key in [
-            "n_agents", "n_targets", "agents_per_target", "lidar_range",
-            "covering_range", "use_agent_lidar", "targets_respawn",
-            "shared_reward", "agent_collision_penalty", "covering_rew_coeff",
-            "time_penalty", "max_steps",
+            "n_agents",
+            "n_targets",
+            "agents_per_target",
+            "lidar_range",
+            "covering_range",
+            "use_agent_lidar",
+            "targets_respawn",
+            "shared_reward",
+            "agent_collision_penalty",
+            "covering_rew_coeff",
+            "time_penalty",
+            "max_steps",
         ]:
             assert getattr(e1.task, key) == getattr(er1.task, key), (
                 f"E1 vs ER1 mismatch on {key}: "
@@ -242,19 +260,33 @@ class TestConfigWithLero:
         """E2 task params must match ER2 baseline for fair comparison."""
         e2_path = (
             Path(__file__).parent.parent
-            / "configs" / "e2" / "single_lero_al_lp_sr_prox_dc8_ms400.yaml"
+            / "configs"
+            / "e2"
+            / "single_lero_al_lp_sr_prox_dc8_ms400.yaml"
         )
         er2_path = (
             Path(__file__).parent.parent
-            / "configs" / "er2" / "single_al_lp_sr_prox_dc8_ms400.yaml"
+            / "configs"
+            / "er2"
+            / "single_al_lp_sr_prox_dc8_ms400.yaml"
         )
         e2 = load_experiment(e2_path)
         er2 = load_experiment(er2_path)
         for key in [
-            "n_agents", "n_targets", "agents_per_target", "lidar_range",
-            "covering_range", "use_agent_lidar", "targets_respawn",
-            "shared_reward", "agent_collision_penalty", "covering_rew_coeff",
-            "time_penalty", "max_steps", "dim_c", "comm_proximity",
+            "n_agents",
+            "n_targets",
+            "agents_per_target",
+            "lidar_range",
+            "covering_range",
+            "use_agent_lidar",
+            "targets_respawn",
+            "shared_reward",
+            "agent_collision_penalty",
+            "covering_rew_coeff",
+            "time_penalty",
+            "max_steps",
+            "dim_c",
+            "comm_proximity",
         ]:
             assert getattr(e2.task, key) == getattr(er2.task, key), (
                 f"E2 vs ER2 mismatch on {key}: "
@@ -284,11 +316,16 @@ class TestPromptLoader:
         loader = PromptLoader("v1")
         text = loader.render(
             "initial_user.txt",
-            n_agents=4, n_targets=4, agents_per_target=2,
-            covering_range=0.25, lidar_range=0.35,
-            max_steps=400, collision_penalty=-0.01,
+            n_agents=4,
+            n_targets=4,
+            agents_per_target=2,
+            covering_range=0.25,
+            lidar_range=0.35,
+            max_steps=400,
+            collision_penalty=-0.01,
             time_penalty=-0.01,
-            n_lidar_rays_entities=15, n_lidar_rays_agents=12,
+            n_lidar_rays_entities=15,
+            n_lidar_rays_agents=12,
             agent_lidar_description="Agent LiDAR is ENABLED.",
             comm_description="- **Communication**: NONE.",
             reward_description="- Covering reward: +1.0 per target.",
@@ -306,10 +343,13 @@ class TestPromptLoader:
         loader = PromptLoader("v1")
         text = loader.render(
             "feedback.txt",
-            n_candidates=3, n_agents=4, n_targets=4,
+            n_candidates=3,
+            n_agents=4,
+            n_targets=4,
             agents_per_target=2,
             candidates_results="Candidate #1: M1=0.5",
-            best_idx=1, comm_metrics="",
+            best_idx=1,
+            comm_metrics="",
         )
         assert "M1" in text
         assert "Candidate #1" in text
@@ -343,13 +383,15 @@ class TestValidateFunction:
     def test_valid_reward_function(self):
         assert validate_function(
             VALID_REWARD_SRC.strip(),
-            "compute_reward_bonus", ["scenario_state"],
+            "compute_reward_bonus",
+            ["scenario_state"],
         )
 
     def test_valid_obs_function(self):
         assert validate_function(
             VALID_OBS_SRC.strip(),
-            "enhance_observation", ["scenario_state"],
+            "enhance_observation",
+            ["scenario_state"],
         )
 
     def test_wrong_function_name(self):
@@ -359,19 +401,25 @@ class TestValidateFunction:
     def test_wrong_arguments(self):
         src = "def compute_reward(x, y):\n    return 0"
         assert not validate_function(
-            src, "compute_reward", ["scenario_state"],
+            src,
+            "compute_reward",
+            ["scenario_state"],
         )
 
     def test_syntax_error(self):
         src = "def compute_reward(scenario_state)\n    return 0"  # missing :
         assert not validate_function(
-            src, "compute_reward", ["scenario_state"],
+            src,
+            "compute_reward",
+            ["scenario_state"],
         )
 
     def test_disallowed_import(self):
         src = "import os\ndef compute_reward(scenario_state):\n    return 0"
         assert not validate_function(
-            src, "compute_reward", ["scenario_state"],
+            src,
+            "compute_reward",
+            ["scenario_state"],
         )
 
     def test_allowed_imports(self):
@@ -380,7 +428,9 @@ class TestValidateFunction:
             "def compute_reward(scenario_state):\n    return 0"
         )
         assert validate_function(
-            src, "compute_reward", ["scenario_state"],
+            src,
+            "compute_reward",
+            ["scenario_state"],
         )
 
     def test_disallowed_from_import(self):
@@ -389,7 +439,9 @@ class TestValidateFunction:
             "def compute_reward(scenario_state):\n    return 0"
         )
         assert not validate_function(
-            src, "compute_reward", ["scenario_state"],
+            src,
+            "compute_reward",
+            ["scenario_state"],
         )
 
 
@@ -409,7 +461,9 @@ class TestExtractCandidates:
     def test_extract_reward_only(self):
         resp = f"```python\n{VALID_REWARD_SRC}\n```"
         candidates = extract_candidates(
-            [resp], evolve_reward=True, evolve_observation=False,
+            [resp],
+            evolve_reward=True,
+            evolve_observation=False,
         )
         assert len(candidates) == 1
         assert candidates[0].reward_source is not None
@@ -418,7 +472,9 @@ class TestExtractCandidates:
     def test_extract_obs_only(self):
         resp = f"```python\n{VALID_OBS_SRC}\n```"
         candidates = extract_candidates(
-            [resp], evolve_reward=False, evolve_observation=True,
+            [resp],
+            evolve_reward=False,
+            evolve_observation=True,
         )
         assert len(candidates) == 1
         assert candidates[0].obs_source is not None
@@ -463,13 +519,23 @@ class TestBuildFeedback:
             CandidateCode(VALID_REWARD_SRC, VALID_OBS_SRC, "resp2"),
         ]
         metrics = [
-            {"M1_success_rate": 0.5, "M2_avg_return": 10.0,
-             "M4_avg_collisions": 1.0, "M6_coverage_progress": 0.8},
-            {"M1_success_rate": 0.3, "M2_avg_return": 5.0,
-             "M4_avg_collisions": 2.0, "M6_coverage_progress": 0.6},
+            {
+                "M1_success_rate": 0.5,
+                "M2_avg_return": 10.0,
+                "M4_avg_collisions": 1.0,
+                "M6_coverage_progress": 0.8,
+            },
+            {
+                "M1_success_rate": 0.3,
+                "M2_avg_return": 5.0,
+                "M4_avg_collisions": 2.0,
+                "M6_coverage_progress": 0.6,
+            },
         ]
         feedback = build_feedback(
-            candidates, metrics, top_k=1,
+            candidates,
+            metrics,
+            top_k=1,
             prompt_loader=loader,
             task_params={"n_agents": 4, "n_targets": 4, "agents_per_target": 2},
         )
@@ -483,12 +549,18 @@ class TestBuildFeedback:
             CandidateCode(VALID_REWARD_SRC, None, "resp"),
         ]
         metrics = [
-            {"M1_success_rate": 0.5, "M2_avg_return": 10.0,
-             "M4_avg_collisions": 1.0, "M6_coverage_progress": 0.8,
-             "M5_avg_tokens": 32.0},
+            {
+                "M1_success_rate": 0.5,
+                "M2_avg_return": 10.0,
+                "M4_avg_collisions": 1.0,
+                "M6_coverage_progress": 0.8,
+                "M5_avg_tokens": 32.0,
+            },
         ]
         feedback = build_feedback(
-            candidates, metrics, top_k=1,
+            candidates,
+            metrics,
+            top_k=1,
             prompt_loader=loader,
             task_params={"n_agents": 4, "n_targets": 4, "agents_per_target": 2},
         )
@@ -582,20 +654,26 @@ class TestScenarioPatch:
 
         # Computed state (normally set by reward preamble)
         scenario.agents_pos = torch.stack(
-            [a.state.pos for a in agents], dim=1,
+            [a.state.pos for a in agents],
+            dim=1,
         )
         scenario.targets_pos = torch.stack(
-            [t.state.pos for t in targets], dim=1,
+            [t.state.pos for t in targets],
+            dim=1,
         )
         scenario.agents_targets_dists = torch.cdist(
-            scenario.agents_pos, scenario.targets_pos,
+            scenario.agents_pos,
+            scenario.targets_pos,
         )
         scenario.agents_per_target = torch.sum(
-            (scenario.agents_targets_dists < 0.25).int(), dim=1,
+            (scenario.agents_targets_dists < 0.25).int(),
+            dim=1,
         )
         scenario.covered_targets = scenario.agents_per_target >= 1
         scenario.all_time_covered_targets = torch.zeros(
-            batch, n_targets, dtype=torch.bool,
+            batch,
+            n_targets,
+            dtype=torch.bool,
         )
 
         # Original methods
@@ -699,7 +777,8 @@ class TestLLMClient:
 
         with patch.object(client, "_call", return_value="response text"):
             results = client.generate(
-                [{"role": "user", "content": "test"}], n=3,
+                [{"role": "user", "content": "test"}],
+                n=3,
             )
         assert len(results) == 3
         assert all(r == "response text" for r in results)
@@ -720,7 +799,8 @@ class TestLLMClient:
 
         with patch.object(client, "_call", side_effect=flaky_call):
             results = client.generate(
-                [{"role": "user", "content": "test"}], n=1,
+                [{"role": "user", "content": "test"}],
+                n=1,
             )
         assert results == ["success"]
         assert call_count == 3
@@ -731,11 +811,14 @@ class TestLLMClient:
         client = LLMClient(cfg)
 
         with patch.object(
-            client, "_call", side_effect=RuntimeError("fail"),
+            client,
+            "_call",
+            side_effect=RuntimeError("fail"),
         ):
             with pytest.raises(RuntimeError, match="failed after 2"):
                 client.generate(
-                    [{"role": "user", "content": "test"}], n=1,
+                    [{"role": "user", "content": "test"}],
+                    n=1,
                 )
 
     @patch.dict("sys.modules", {"litellm": MagicMock()})

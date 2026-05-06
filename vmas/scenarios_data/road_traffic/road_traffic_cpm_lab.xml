@@ -37,7 +37,7 @@
     <highway/>
    </scenarioTags>
 
-                
+
    <lanelet id="1">
       <leftBound>
          <point>
@@ -254,7 +254,7 @@
       <adjacentRight drivingDir="same" ref="1"/>
       <laneletType>highway</laneletType>
    </lanelet>
-  
+
    <lanelet id="3">
       <leftBound>
          <point>
@@ -473,7 +473,7 @@
       <adjacentRight drivingDir="same" ref="3"/>
       <laneletType>highway</laneletType>
    </lanelet>
-   
+
    <lanelet id="5">
       <leftBound>
          <point>
@@ -909,7 +909,7 @@
       <adjacentRight drivingDir="same" ref="7"/>
       <laneletType>highway</laneletType>
    </lanelet>
-  
+
    <lanelet id="9">
       <leftBound>
          <point>
@@ -1110,7 +1110,7 @@
       <adjacentLeft drivingDir="same" ref="9"/>
       <laneletType>urban</laneletType>
    </lanelet>
-  
+
    <lanelet id="11">
       <leftBound>
          <point>
@@ -1315,7 +1315,7 @@
       <adjacentLeft drivingDir="same" ref="11"/>
       <laneletType>urban</laneletType>
    </lanelet>
- 
+
    <lanelet id="13">
       <leftBound>
          <point>
@@ -1520,7 +1520,7 @@
       <adjacentLeft drivingDir="same" ref="13"/>
       <laneletType>urban</laneletType>
    </lanelet>
- 
+
    <lanelet id="15">
       <leftBound>
          <point>
@@ -1721,7 +1721,7 @@
       <adjacentLeft drivingDir="same" ref="15"/>
       <laneletType>urban</laneletType>
    </lanelet>
-  
+
    <lanelet id="17">
       <leftBound>
          <point>
@@ -3161,7 +3161,7 @@
       <adjacentRight drivingDir="same" ref="29"/>
       <laneletType>highway</laneletType>
    </lanelet>
-  
+
    <lanelet id="31">
       <leftBound>
          <point>
@@ -3380,7 +3380,7 @@
       <adjacentRight drivingDir="same" ref="31"/>
       <laneletType>highway</laneletType>
    </lanelet>
- 
+
    <lanelet id="33">
       <leftBound>
          <point>
@@ -6067,7 +6067,7 @@
       <adjacentRight drivingDir="same" ref="57"/>
       <laneletType>highway</laneletType>
    </lanelet>
- 
+
    <lanelet id="59">
       <leftBound>
          <point>
@@ -6895,7 +6895,7 @@
       <adjacentLeft drivingDir="same" ref="65"/>
       <laneletType>urban</laneletType>
    </lanelet>
- 
+
    <lanelet id="67">
       <leftBound>
          <point>
@@ -7096,7 +7096,7 @@
       <adjacentLeft drivingDir="same" ref="67"/>
       <laneletType>urban</laneletType>
    </lanelet>
- 
+
    <lanelet id="69">
       <leftBound>
          <point>
@@ -8317,7 +8317,7 @@
       <adjacentRight drivingDir="same" ref="79"/>
       <laneletType>highway</laneletType>
    </lanelet>
-   
+
    <lanelet id="81">
       <leftBound>
          <point>
@@ -8755,7 +8755,7 @@
       <adjacentRight drivingDir="same" ref="83"/>
       <laneletType>highway</laneletType>
    </lanelet>
-  
+
    <lanelet id="85">
       <leftBound>
          <point>
@@ -8972,7 +8972,7 @@
       <adjacentRight drivingDir="same" ref="85"/>
       <laneletType>highway</laneletType>
    </lanelet>
-   
+
    <lanelet id="87">
       <leftBound>
          <point>
@@ -9173,7 +9173,7 @@
       <adjacentLeft drivingDir="same" ref="87"/>
       <laneletType>urban</laneletType>
    </lanelet>
-  
+
    <lanelet id="89">
       <leftBound>
          <point>
@@ -9378,7 +9378,7 @@
       <adjacentLeft drivingDir="same" ref="89"/>
       <laneletType>urban</laneletType>
    </lanelet>
-  
+
    <lanelet id="91">
       <leftBound>
          <point>
@@ -9583,7 +9583,7 @@
       <adjacentLeft drivingDir="same" ref="91"/>
       <laneletType>urban</laneletType>
    </lanelet>
-   
+
    <lanelet id="93">
       <leftBound>
          <point>
@@ -9784,7 +9784,7 @@
       <adjacentLeft drivingDir="same" ref="93"/>
       <laneletType>urban</laneletType>
    </lanelet>
- 
+
    <lanelet id="95">
       <leftBound>
          <point>
@@ -10789,7 +10789,7 @@
       <adjacentRight drivingDir="same" ref="95"/>
       <laneletType>urban</laneletType>
    </lanelet>
-   
+
    <intersection id="105">
     <incoming id="1">
       <incomingLanelet ref="11"/>
@@ -10848,5 +10848,5 @@
       <successorsLeft ref="99"/>
     </incoming>
   </intersection>
-  
+
 </commonRoad>

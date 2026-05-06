@@ -12,10 +12,6 @@ from src.lero.meta.v4_composer import compose_prompt_for_strategy
 from src.lero.meta.v4_strategist import _parse_bundle, emit_strategies
 from src.lero.meta.v4_schemas import (
     BootstrapCard,
-    CandidateAnalysis,
-    FitnessWeights,
-    RoundResult,
-    StrategyBundle,
     StrategyV4,
 )
 
@@ -32,7 +28,9 @@ def bootstrap_card():
         failure_modes_anticipated=["ships_passing", "anti_crowding"],
         high_level_strategies_considered=["hold_signal", "proximity_count"],
         proposed_initial_obs_features=[
-            "hold_signal", "proximity_count", "gap",
+            "hold_signal",
+            "proximity_count",
+            "gap",
         ],
         proposed_initial_reward_components=[],
         fairness_audit="Uses lidar + own state only",
@@ -40,8 +38,7 @@ def bootstrap_card():
     )
 
 
-def _stub_response(strategies, round_idx=0,
-                   diversity="diverse strategies"):
+def _stub_response(strategies, round_idx=0, diversity="diverse strategies"):
     bundle_dict = {
         "round_idx": round_idx,
         "diversity_rationale": diversity,
@@ -49,8 +46,7 @@ def _stub_response(strategies, round_idx=0,
     }
     return (
         "### REASONING\nthinking here\n\n"
-        "### STRATEGY_BUNDLE\n```json\n"
-        + json.dumps(bundle_dict, indent=2) + "\n```\n"
+        "### STRATEGY_BUNDLE\n```json\n" + json.dumps(bundle_dict, indent=2) + "\n```\n"
     )
 
 
@@ -88,11 +84,13 @@ class _StubLLM:
 
 
 def test_parse_bundle_basic():
-    raw = _stub_response([
-        _strategy("S1", domain="observation"),
-        _strategy("S2", domain="reward"),
-        _strategy("S3", domain="both"),
-    ])
+    raw = _stub_response(
+        [
+            _strategy("S1", domain="observation"),
+            _strategy("S2", domain="reward"),
+            _strategy("S3", domain="both"),
+        ]
+    )
     b = _parse_bundle(raw, expected_round=0)
     assert b.round_idx == 0
     assert len(b.strategies) == 3
@@ -116,13 +114,21 @@ def test_parse_bundle_rejects_missing_section():
 
 
 def test_emit_strategies_round_0_no_history(bootstrap_card):
-    raw = _stub_response([
-        _strategy("S1", domain="observation",
-                  slot_edits={"guidance_observation": "use proximity_count"}),
-        _strategy("S2", domain="reward",
-                  slot_edits={"guidance_reward": "potential shaping"}),
-        _strategy("S3", domain="both"),
-    ])
+    raw = _stub_response(
+        [
+            _strategy(
+                "S1",
+                domain="observation",
+                slot_edits={"guidance_observation": "use proximity_count"},
+            ),
+            _strategy(
+                "S2",
+                domain="reward",
+                slot_edits={"guidance_reward": "potential shaping"},
+            ),
+            _strategy("S3", domain="both"),
+        ]
+    )
     llm = _StubLLM([raw])
     bundle = emit_strategies(
         bootstrap=bootstrap_card,
@@ -137,11 +143,13 @@ def test_emit_strategies_round_0_no_history(bootstrap_card):
 
 
 def test_emit_strategies_renames_off_convention_ids(bootstrap_card):
-    raw = _stub_response([
-        _strategy("Alpha"),
-        _strategy("Beta"),
-        _strategy("Gamma"),
-    ])
+    raw = _stub_response(
+        [
+            _strategy("Alpha"),
+            _strategy("Beta"),
+            _strategy("Gamma"),
+        ]
+    )
     llm = _StubLLM([raw])
     bundle = emit_strategies(
         bootstrap=bootstrap_card,
@@ -155,11 +163,13 @@ def test_emit_strategies_renames_off_convention_ids(bootstrap_card):
 
 
 def test_emit_strategies_clears_revert_without_reason(bootstrap_card):
-    raw = _stub_response([
-        _strategy("S1", revert=True, revert_reason=None),
-        _strategy("S2"),
-        _strategy("S3"),
-    ])
+    raw = _stub_response(
+        [
+            _strategy("S1", revert=True, revert_reason=None),
+            _strategy("S2"),
+            _strategy("S3"),
+        ]
+    )
     llm = _StubLLM([raw])
     bundle = emit_strategies(
         bootstrap=bootstrap_card,
@@ -264,15 +274,20 @@ def test_composer_overwrites_existing_target(tmp_path, base_prompt_dir):
         high_level_idea="v1",
         target_domain="observation",
         slot_edits={"guidance_observation": "first version"},
-        expected_effect="x", rationale="x",
+        expected_effect="x",
+        rationale="x",
     )
     compose_prompt_for_strategy(
-        base_prompt_dir=base_prompt_dir, strategy=s,
-        output_root=tmp_path, candidate_id="S1",
+        base_prompt_dir=base_prompt_dir,
+        strategy=s,
+        output_root=tmp_path,
+        candidate_id="S1",
     )
     s.slot_edits = {"guidance_observation": "second version"}
     target = compose_prompt_for_strategy(
-        base_prompt_dir=base_prompt_dir, strategy=s,
-        output_root=tmp_path, candidate_id="S1",
+        base_prompt_dir=base_prompt_dir,
+        strategy=s,
+        output_root=tmp_path,
+        candidate_id="S1",
     )
     assert "second version" in (target / "guidance_observation.txt").read_text()

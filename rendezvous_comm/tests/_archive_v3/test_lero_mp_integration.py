@@ -7,12 +7,9 @@ BenchMARL integration is covered by the live OVH dry-run.
 
 from __future__ import annotations
 
-from typing import Dict, List
-from pathlib import Path
+from typing import List
 
-import pytest
 
-from src.lero.codegen import CandidateCode
 from src.lero.inner_llm import InnerLLM
 from src.lero.meta.behavioral_summary import format_behavioral_block
 from src.lero.meta.critique import critique_and_revise
@@ -55,12 +52,13 @@ def test_inner_to_critic_end_to_end():
     # 1. Inner LLM: first response fails, second succeeds.
     stub_inner = _StubLLM(["not a valid block", _VALID_OBS])
     inner = InnerLLM(
-        stub_inner, evolve_reward=False, evolve_observation=True,
+        stub_inner,
+        evolve_reward=False,
+        evolve_observation=True,
         max_attempts=3,
     )
     cand = inner.generate(
-        [{"role": "system", "content": "s"},
-         {"role": "user", "content": "u"}],
+        [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}],
         seed_base=42,
     )
     assert cand.attempts == 2
@@ -68,17 +66,20 @@ def test_inner_to_critic_end_to_end():
 
     # 2. Behavioral block filters per Strategist's include_signals.
     metrics = {
-        "M1_success_rate": 0.1, "M4_avg_collisions": 80,
+        "M1_success_rate": 0.1,
+        "M4_avg_collisions": 80,
         "M9_spatial_spread": 0.15,
     }
     block_scalar_only = format_behavioral_block(
-        metrics, include_signals=["scalar"],
+        metrics,
+        include_signals=["scalar"],
     )
     assert "Tier 1" in block_scalar_only
     assert "Tier 2" not in block_scalar_only
 
     block_with_curve = format_behavioral_block(
-        metrics, include_signals=["scalar", "curve_shape"],
+        metrics,
+        include_signals=["scalar", "curve_shape"],
         trajectory=[0.0, 0.3, 0.3, 0.1],
     )
     assert "Tier 3" in block_with_curve
@@ -87,17 +88,19 @@ def test_inner_to_critic_end_to_end():
     import json
 
     def _cjson(q, edits=None):
-        return json.dumps({
-            "addresses_focus": True,
-            "addresses_focus_reason": "named proximity_count",
-            "cites_specific_features": ["proximity_count"],
-            "has_fairness_restatement": False,
-            "has_fairness_restatement_reason": "no markers",
-            "diverges_from_priors": True,
-            "suggested_edits": edits or [],
-            "suggested_signal_change": "keep",
-            "overall_quality": q,
-        })
+        return json.dumps(
+            {
+                "addresses_focus": True,
+                "addresses_focus_reason": "named proximity_count",
+                "cites_specific_features": ["proximity_count"],
+                "has_fairness_restatement": False,
+                "has_fairness_restatement_reason": "no markers",
+                "diverges_from_priors": True,
+                "suggested_edits": edits or [],
+                "suggested_signal_change": "keep",
+                "overall_quality": q,
+            }
+        )
 
     responses = [_cjson("revise", ["also name gap feature"]), _cjson("keep")]
 

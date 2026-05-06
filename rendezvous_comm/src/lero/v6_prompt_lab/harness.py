@@ -12,7 +12,6 @@ A typical N=9 sweep takes ~60-90s total LLM cost, ~$0.10-$0.30.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -20,7 +19,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ..codegen import CandidateCode
-from ..config import LLMConfig
 from ..inner_llm import CandidateGenerationFailed, InnerLLM
 from ..llm_client import LLMClient
 from ..prompts.loader import PromptLoader
@@ -29,10 +27,8 @@ from ..v5.registry import Registry, RegistryEntry
 from ..v6.decision import V6MetaDecision, classify_inner_result, enforce_decision
 from ..v6.meta_strategist import _build_meta_prompt, _parse_decision
 from .analyzer import (
-    BatchSummary,
     CodeAnalysis,
     analyze_inner_code,
-    summarize_batch,
 )
 from .judge import JudgeResult, avg_judge_score, judge_batch
 
@@ -98,18 +94,28 @@ def make_synthetic_inner_result(
 
     registry = Registry()
     registry.fitness_trajectory = list(fitness_trajectory)
-    registry.add(RegistryEntry(
-        iter_idx=0, handle="i0_r1_synthetic_best",
-        summary="synthetic best", fitness=best_fitness,
-        M1=best_M1, shape=best_shape,
-        code_excerpt=best_obs_code[:1500],
-    ))
-    registry.add(RegistryEntry(
-        iter_idx=0, handle="i0_r3_synthetic_worst",
-        summary="synthetic worst", fitness=-0.50,
-        M1=0.0, shape="flat_zero",
-        code_excerpt=worst_obs_code[:1500],
-    ))
+    registry.add(
+        RegistryEntry(
+            iter_idx=0,
+            handle="i0_r1_synthetic_best",
+            summary="synthetic best",
+            fitness=best_fitness,
+            M1=best_M1,
+            shape=best_shape,
+            code_excerpt=best_obs_code[:1500],
+        )
+    )
+    registry.add(
+        RegistryEntry(
+            iter_idx=0,
+            handle="i0_r3_synthetic_worst",
+            summary="synthetic worst",
+            fitness=-0.50,
+            M1=0.0,
+            shape="flat_zero",
+            code_excerpt=worst_obs_code[:1500],
+        )
+    )
 
     return InnerResult(
         best=best_outcome,
@@ -134,9 +140,11 @@ def load_v6_old_best_obs(
     )
     text = f.read_text()
     import re
+
     m = re.search(
         r"Best candidate.*?observation code:\s*```python(.+?)```",
-        text, re.DOTALL,
+        text,
+        re.DOTALL,
     )
     if not m:
         return ""
@@ -212,6 +220,7 @@ def _build_inner_messages_with_slots(
     """
     import shutil
     import tempfile
+
     base_dir = Path(__file__).parent.parent / "prompts" / prompt_version
     with tempfile.TemporaryDirectory() as tmp:
         new_dir = Path(tmp) / prompt_version
@@ -220,6 +229,7 @@ def _build_inner_messages_with_slots(
             (new_dir / f"{slot}.txt").write_text((text or "").rstrip() + "\n")
         # Repoint loader at temp parent
         from ..prompts import loader as _l
+
         orig = _l._PROMPTS_DIR
         try:
             _l._PROMPTS_DIR = Path(tmp)
@@ -234,11 +244,16 @@ def _build_inner_messages_with_slots(
                 output_spec_variant="obs_only",
                 **task_overrides,
                 experiment_context="",
-                agent_lidar_description="", comm_description="",
-                reward_description="", coordination_guidance="",
-                comm_state_description="", obs_lidar_agents="",
-                obs_comm_state="", comm_obs_guidance="",
-                scenario_reward_code="", scenario_observation_code="",
+                agent_lidar_description="",
+                comm_description="",
+                reward_description="",
+                coordination_guidance="",
+                comm_state_description="",
+                obs_lidar_agents="",
+                obs_comm_state="",
+                comm_obs_guidance="",
+                scenario_reward_code="",
+                scenario_observation_code="",
             )
         finally:
             _l._PROMPTS_DIR = orig
@@ -266,8 +281,9 @@ class PromptTrialResult:
     def cross_source_rate(self) -> float:
         if not self.analyses:
             return 0.0
-        return sum(1 for a in self.analyses if a.touches_both_lidars) \
-            / len(self.analyses)
+        return sum(1 for a in self.analyses if a.touches_both_lidars) / len(
+            self.analyses
+        )
 
     @property
     def avg_cross_source_ops(self) -> float:
@@ -320,7 +336,7 @@ def run_harness_trial(
     meta_llm: LLMClient,
     inner_llm_client: LLMClient,
     judge_llm: LLMClient,
-    outer_idx: int = 1,            # >0 so reward unlock is allowed
+    outer_idx: int = 1,  # >0 so reward unlock is allowed
     prior_complexity: int = 1,
     prior_classification: str = "no_signal_simple",
 ) -> PromptTrialResult:
@@ -362,9 +378,7 @@ def run_harness_trial(
         best_M1=float(synthetic_inner.best.metrics.get("M1_success_rate", 0.0)),
         best_shape=synthetic_inner.best.shape,
         fitness_trajectory=list(synthetic_inner.registry.fitness_trajectory),
-        best_M6=float(synthetic_inner.best.metrics.get(
-            "M6_coverage_progress", 0.0
-        )),
+        best_M6=float(synthetic_inner.best.metrics.get("M6_coverage_progress", 0.0)),
         prior_complexity=prior_complexity,
     )
     decision = enforce_decision(

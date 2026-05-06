@@ -55,7 +55,8 @@ def main(argv=None) -> int:
     parser.add_argument("--log-level", type=str, default="INFO")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
-        "--resume", action="store_true",
+        "--resume",
+        action="store_true",
         help="Resume from _v6_checkpoint.pkl in output_dir if present.",
     )
     args = parser.parse_args(argv)
@@ -65,12 +66,14 @@ def main(argv=None) -> int:
 
     if os.environ.get("LERO_ENCRYPTED"):
         from src.secrets_util import decrypt_and_load_env
+
         n_keys = len(decrypt_and_load_env())
         log.info("Decrypted %d LLM key(s)", n_keys)
 
     import random as _random
     import numpy as _np
     import torch as _torch
+
     _random.seed(args.seed)
     _np.random.seed(args.seed)
     _torch.manual_seed(args.seed)
@@ -89,6 +92,7 @@ def main(argv=None) -> int:
         return 2
 
     from src.config import load_experiment
+
     spec = load_experiment(cfg_path)
     if spec.lero is None or spec.llm is None:
         log.error("Config missing 'lero:' or 'llm:' block")
@@ -96,20 +100,17 @@ def main(argv=None) -> int:
 
     v6_raw = raw["v6"]
     from src.lero.v6.outer_loop import V6OuterConfig
+
     v6_cfg = V6OuterConfig(
         max_outer=int(v6_raw.get("max_outer", 5)),
         n_inner_iter=int(v6_raw.get("n_inner_iter", 4)),
-        n_inner_candidates_per_iter=int(
-            v6_raw.get("n_inner_candidates_per_iter", 3)
-        ),
+        n_inner_candidates_per_iter=int(v6_raw.get("n_inner_candidates_per_iter", 3)),
         eval_frames=int(v6_raw.get("eval_frames", 1_000_000)),
         base_prompt_version=str(
             v6_raw.get("base_prompt_version", "v2_fewshot_modular_v2_local")
         ),
         meta_model=str(v6_raw.get("meta_model", spec.llm.model)),
-        meta_temperature=float(
-            v6_raw.get("meta_temperature", spec.llm.temperature)
-        ),
+        meta_temperature=float(v6_raw.get("meta_temperature", spec.llm.temperature)),
         task_summary=str(v6_raw.get("task_summary", spec.description or "")),
     )
 
@@ -121,15 +122,20 @@ def main(argv=None) -> int:
         output_root = base / "lero_v6" / spec.exp_id.lower() / run_id
     output_root.mkdir(parents=True, exist_ok=True)
 
-    (output_root / "run_manifest.json").write_text(json.dumps({
-        "exp_id": spec.exp_id,
-        "name": spec.name,
-        "config_source": str(cfg_path),
-        "seed": args.seed,
-        "algorithm": args.algorithm,
-        "v6_config": v6_raw,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }, indent=2))
+    (output_root / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "exp_id": spec.exp_id,
+                "name": spec.name,
+                "config_source": str(cfg_path),
+                "seed": args.seed,
+                "algorithm": args.algorithm,
+                "v6_config": v6_raw,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            indent=2,
+        )
+    )
 
     log.info("v6 ready: exp=%s out=%s", spec.exp_id, output_root)
 
@@ -141,6 +147,7 @@ def main(argv=None) -> int:
     spec.lero.eval_frames = v6_cfg.eval_frames
 
     from src.lero.loop import LeroLoop
+
     base_loop = LeroLoop(
         spec=spec,
         lero_config=spec.lero,
@@ -150,6 +157,7 @@ def main(argv=None) -> int:
 
     from src.lero.config import LLMConfig
     from src.lero.llm_client import LLMClient
+
     meta_cfg = LLMConfig(
         model=v6_cfg.meta_model,
         temperature=v6_cfg.meta_temperature,
@@ -163,6 +171,7 @@ def main(argv=None) -> int:
         return 2
 
     from src.lero.v6.outer_loop import run_v6_outer_loop
+
     summary = run_v6_outer_loop(
         spec=spec,
         base_loop=base_loop,

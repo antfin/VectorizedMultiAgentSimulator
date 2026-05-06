@@ -90,6 +90,7 @@ class LLMClient:
         self.cache = cache  # Optional LLMCache (see llm_cache.py)
         try:
             import litellm
+
             self._litellm = litellm
         except ImportError:
             raise ImportError(
@@ -105,7 +106,8 @@ class LLMClient:
         self._context_window = self._resolve_context_window()
         _log.info(
             "LLM: %s (context=%d tokens, max_output=%s tokens)",
-            config.model, self._context_window,
+            config.model,
+            self._context_window,
             config.max_tokens if config.max_tokens is not None else "provider-default",
         )
 
@@ -134,7 +136,7 @@ class LLMClient:
         for i in range(n):
             call_seed = None
             if seed_base is not None:
-                call_seed = (seed_base + i) % (2 ** 31)
+                call_seed = (seed_base + i) % (2**31)
             text = self._call_with_retry(messages, seed=call_seed)
             responses.append(text)
             if n > 1:
@@ -188,7 +190,8 @@ class LLMClient:
             _log.warning(
                 "Structured-output path failed (%s: %s). "
                 "Falling back to regex parser.",
-                type(primary_err).__name__, str(primary_err)[:200],
+                type(primary_err).__name__,
+                str(primary_err)[:200],
             )
             raw = self._call_with_retry(messages, seed=seed)
             parsed = fallback_parser(raw)
@@ -237,7 +240,8 @@ class LLMClient:
             "Could not determine context window for '%s'. "
             "Using conservative default %d tokens. "
             "Set 'context_window' in llm config for accuracy.",
-            self.config.model, _DEFAULT_CONTEXT_WINDOW,
+            self.config.model,
+            _DEFAULT_CONTEXT_WINDOW,
         )
         return _DEFAULT_CONTEXT_WINDOW
 
@@ -264,14 +268,15 @@ class LLMClient:
                     raise
                 wait = self.config.retry_delay * attempt
                 _log.warning(
-                    "LLM call failed (attempt %d/%d): %s. "
-                    "Retrying in %.1fs ...",
-                    attempt, self.config.max_retries, e, wait,
+                    "LLM call failed (attempt %d/%d): %s. " "Retrying in %.1fs ...",
+                    attempt,
+                    self.config.max_retries,
+                    e,
+                    wait,
                 )
                 time.sleep(wait)
         raise RuntimeError(
-            f"LLM call failed after {self.config.max_retries} attempts: "
-            f"{last_err}"
+            f"LLM call failed after {self.config.max_retries} attempts: " f"{last_err}"
         )
 
     def _call(
@@ -291,15 +296,21 @@ class LLMClient:
             _log.warning(
                 "Prompt (~%d tokens) + output (~%d) = ~%d total, "
                 "EXCEEDS context window (%d) by ~%d tokens.",
-                approx_prompt_tokens, max_out,
-                total_needed, self._context_window, -headroom,
+                approx_prompt_tokens,
+                max_out,
+                total_needed,
+                self._context_window,
+                -headroom,
             )
         elif headroom < 2000:
             _log.warning(
                 "Prompt (~%d tokens) + output (~%d) = ~%d total, "
                 "only ~%d tokens headroom in context window (%d).",
-                approx_prompt_tokens, max_out,
-                total_needed, headroom, self._context_window,
+                approx_prompt_tokens,
+                max_out,
+                total_needed,
+                headroom,
+                self._context_window,
             )
 
         kwargs = {
@@ -314,7 +325,7 @@ class LLMClient:
             kwargs["api_base"] = self.config.api_base
 
         if seed is not None:
-            kwargs["seed"] = int(seed) % (2 ** 31)
+            kwargs["seed"] = int(seed) % (2**31)
         if response_format is not None:
             kwargs["response_format"] = response_format
 
@@ -333,7 +344,8 @@ class LLMClient:
             if cached is not None:
                 _log.info(
                     "LLM cache HIT (key=%s…, len=%d)",
-                    cache_key[:10], len(cached),
+                    cache_key[:10],
+                    len(cached),
                 )
                 return cached
 
@@ -347,7 +359,8 @@ class LLMClient:
             ):
                 _log.warning(
                     "system_fingerprint drift: %s → %s",
-                    self.last_system_fingerprint, fp,
+                    self.last_system_fingerprint,
+                    fp,
                 )
             self.last_system_fingerprint = fp
         content = response.choices[0].message.content

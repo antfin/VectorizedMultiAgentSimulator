@@ -105,6 +105,7 @@ multi_scenario/
 │   ├── navigation/{baseline,lero}/{configs,results}/
 │   ├── flocking/{baseline,lero}/{configs,results}/
 │   └── transport/{baseline,lero}/{configs,results}/
+├── docs/                         # architecture, scenarios, run_layout, decision notes (filled across phases)
 └── tests/
     ├── unit/
     ├── integration/
@@ -214,6 +215,19 @@ Each feature lists its **demo command** + **expected output**.
 
 - `tests/{unit,integration,reproducibility}/__init__.py`, shared fixtures in `conftest.py` (tmp results dir, fake config builder).
 - **Demo:** `pytest --collect-only` lists all test directories.
+
+#### F0.5 — Empty `docs/` tree — XS
+
+- Create `docs/` with a `.gitkeep`. Placeholder for files added across later phases: `docs/example_config.yaml` (F1.1), `docs/csv_format_decision.md` (F5.5), `docs/architecture.md` / `docs/scenarios.md` / `docs/run_layout.md` (F10.3).
+- **Demo:** `ls docs/` shows the directory exists.
+
+#### F0.6 — Repo-prep files (`.gitignore` + stub `README.md`) — XS
+
+- Drop the files a standalone repo will need so F10.4 extraction is mostly mechanical:
+  - `.gitignore` — Python caches (`__pycache__/`, `.pytest_cache/`, `.ruff_cache/`), build artifacts (`*.egg-info/`, `dist/`, `build/`), venv (`.venv/`, `venv/`), IDE (`.vscode/`, `.idea/`), OS (`.DS_Store`), and experiment outputs (`experiments/**/results/*` excluding `.gitkeep`).
+  - `README.md` — short stub (title, one-paragraph description, pointers to `plan.md` and `implementation_plan.md`). Already referenced in the §3 folder layout.
+- Skipped on purpose: `.gitattributes` (no cross-platform line-ending pain in sight), `.editorconfig` (ruff covers formatting), `LICENSE` (deliberate choice — see F10.4 cleanup).
+- **Demo:** `cat .gitignore` and `cat README.md` look reasonable; `pre-commit run --all-files` stays green.
 
 ---
 
@@ -513,14 +527,18 @@ Out of scope right now. **Note for future planning** (from deep analysis): rende
 #### F10.4 — Repo extraction — M
 
 - Rename package (`multi_scenario` → final name), pin VMAS to a released version (or commit hash), set up the new git repo, copy-with-history (`git filter-repo`).
+- **Cleanup checklist on extraction:**
+  - Remove the top-level `files: '^multi_scenario/'` line from `.pre-commit-config.yaml` — added in F0.2 to scope hooks while nested inside the VMAS repo; once `multi_scenario/` becomes the repo root, files no longer carry that prefix and the filter would silently make every hook no-op.
+  - In the markdownlint hook, change `args: ["--config", "multi_scenario/.markdownlint.json"]` back to `args: ["--config", ".markdownlint.json"]` — the prefix is needed only while pre-commit runs from the VMAS toplevel.
+  - Add a `LICENSE` file. Deliberately deferred from F0.6 because the choice (GPLv3 like parent VMAS, MIT, Apache-2.0, …) should be made on extraction, not pre-emptively.
 - **Manual demo** — gated on user readiness to extract.
 
 ---
 
 ## 6. Open questions / decisions deferred
 
-| Topic | Decision needed | Latest moment |
-|---|---|---|
+| Topic | Latest moment |
+| --- | --- |
 | Default CSV format (long vs summary) | F5.5 |
 | Per-scenario success metric (nav, flocking, transport) | F4.1–F4.3 |
 | Final package name | before F10.4 |

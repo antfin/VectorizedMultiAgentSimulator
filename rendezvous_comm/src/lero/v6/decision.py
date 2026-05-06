@@ -123,6 +123,7 @@ def _redact_forbidden(text: str) -> tuple[str, list[str]]:
         if tl in low:
             # Case-insensitive replace via regex with the original case
             import re as _re
+
             pattern = _re.compile(_re.escape(tok), _re.IGNORECASE)
             out, n = pattern.subn("<REDACTED>", out)
             if n > 0:
@@ -184,15 +185,15 @@ def enforce_decision(
     # We still guard: if there's no obs evolution AND no reward
     # evolution, that's a no-op — force obs-only.
     if not next_evolve_observation and not next_evolve_reward:
-        notes.append(
-            "both flags False — forcing next_evolve_observation=True"
-        )
+        notes.append("both flags False — forcing next_evolve_observation=True")
         next_evolve_observation = True
 
     # 4. Reward unlock requires obs-only previously tried with
     # classification ∈ {no_signal_simple, partial_signal}.
     if next_evolve_reward and prior_classification not in (
-        "no_signal_simple", "partial_signal", "no_signal_complex",
+        "no_signal_simple",
+        "partial_signal",
+        "no_signal_complex",
     ):
         notes.append(
             f"reward unlock denied: prior classification "
@@ -204,8 +205,7 @@ def enforce_decision(
 
     # 5. Complexity monotone: only allow increases unless reset_simpler.
     complexity_level = max(1, min(4, int(raw.complexity_level)))
-    if (complexity_level < prior_complexity and
-            raw.next_mode != "reset_simpler"):
+    if complexity_level < prior_complexity and raw.next_mode != "reset_simpler":
         notes.append(
             f"complexity decrease without reset_simpler: "
             f"{prior_complexity} → {complexity_level}; clamping to "

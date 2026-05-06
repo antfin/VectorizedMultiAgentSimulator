@@ -13,7 +13,7 @@ from src.lero.meta.behavioral_summary import (
     format_tier1,
     outlier_flags,
 )
-from src.lero.meta.strategy import StrategyCard, parse_strategy_card
+from src.lero.meta.strategy import parse_strategy_card
 
 
 # ── Tier 1 scalars ───────────────────────────────────────────────
@@ -21,9 +21,13 @@ from src.lero.meta.strategy import StrategyCard, parse_strategy_card
 
 def test_format_tier1_covers_all_metrics():
     m = {
-        "M1_success_rate": 0.5, "M2_avg_return": -1.2, "M3_avg_steps": 150,
-        "M4_avg_collisions": 12, "M6_coverage_progress": 0.75,
-        "M8_agent_utilization_cv": 0.33, "M9_spatial_spread": 0.42,
+        "M1_success_rate": 0.5,
+        "M2_avg_return": -1.2,
+        "M3_avg_steps": 150,
+        "M4_avg_collisions": 12,
+        "M6_coverage_progress": 0.75,
+        "M8_agent_utilization_cv": 0.33,
+        "M9_spatial_spread": 0.42,
     }
     line = format_tier1(m)
     for tag in ("M1=", "M2=", "M3=", "M4=", "M6=", "M8=", "M9="):
@@ -41,7 +45,8 @@ def test_outlier_flags_fire_on_thresholds():
 
 def test_outlier_flags_empty_when_in_range():
     normal = {
-        "M4_avg_collisions": 5, "M9_spatial_spread": 0.5,
+        "M4_avg_collisions": 5,
+        "M9_spatial_spread": 0.5,
         "M8_agent_utilization_cv": 0.1,
     }
     assert outlier_flags(normal) == []
@@ -50,14 +55,17 @@ def test_outlier_flags_empty_when_in_range():
 # ── Tier 3 curve shape ───────────────────────────────────────────
 
 
-@pytest.mark.parametrize("traj,tag", [
-    ([0.0, 0.0, 0.01], "flat_zero"),
-    ([0.0, 0.02, 0.04], "flat_nonzero"),
-    ([0.0, 0.1, 0.3, 0.5], "monotonic_rise"),
-    ([0.0, 0.4, 0.4, 0.1], "reward_hack_shape"),
-    ([0.0, 0.4, 0.4, 0.2], "plateau_then_collapse"),
-    ([0.0, 0.3, 0.1, 0.35, 0.1, 0.2], "plateau_then_collapse"),
-])
+@pytest.mark.parametrize(
+    "traj,tag",
+    [
+        ([0.0, 0.0, 0.01], "flat_zero"),
+        ([0.0, 0.02, 0.04], "flat_nonzero"),
+        ([0.0, 0.1, 0.3, 0.5], "monotonic_rise"),
+        ([0.0, 0.4, 0.4, 0.1], "reward_hack_shape"),
+        ([0.0, 0.4, 0.4, 0.2], "plateau_then_collapse"),
+        ([0.0, 0.3, 0.1, 0.35, 0.1, 0.2], "plateau_then_collapse"),
+    ],
+)
 def test_classify_learning_curve(traj, tag):
     assert classify_learning_curve(traj) == tag
 
@@ -76,7 +84,9 @@ def test_format_behavioral_block_scalar_only():
 def test_format_behavioral_block_skips_curve_without_trajectory():
     m = {"M1_success_rate": 0.1}
     out = format_behavioral_block(
-        m, include_signals=["scalar", "curve_shape"], trajectory=None,
+        m,
+        include_signals=["scalar", "curve_shape"],
+        trajectory=None,
     )
     # Without a trajectory or CSV, curve_shape tier is skipped.
     assert "Tier 3" not in out
@@ -86,7 +96,9 @@ def test_format_behavioral_block_with_curve_shape():
     m = {"M1_success_rate": 0.1}
     traj = [0.0, 0.3, 0.3, 0.05]
     out = format_behavioral_block(
-        m, include_signals=["curve_shape"], trajectory=traj,
+        m,
+        include_signals=["curve_shape"],
+        trajectory=traj,
     )
     assert "Tier 3" in out
     assert "reward_hack_shape" in out

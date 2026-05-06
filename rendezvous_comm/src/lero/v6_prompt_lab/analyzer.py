@@ -47,7 +47,8 @@ COORDINATION_SOURCES = ("lidar_targets", "lidar_agents")
 @dataclass
 class CrossSourceOp:
     """A single detected cross-source operation."""
-    op_name: str           # e.g. "BinOp.Mult", "Compare.And"
+
+    op_name: str  # e.g. "BinOp.Mult", "Compare.And"
     line: int
     left_sources: Tuple[str, ...]
     right_sources: Tuple[str, ...]
@@ -63,8 +64,8 @@ class CodeAnalysis:
     n_returned_features: int = 0
     # v7 feature-stack-completeness checks (post deep-analysis 2026-04-30):
     has_directional_encoding: bool = False  # cos/sin of argmin ray index
-    has_role_one_hot: bool = False           # F.one_hot or [:, agent_idx] = 1.0
-    has_motion_feature: bool = False          # norm(agent_vel) or scalar velocity magnitude
+    has_role_one_hot: bool = False  # F.one_hot or [:, agent_idx] = 1.0
+    has_motion_feature: bool = False  # norm(agent_vel) or scalar velocity magnitude
     has_covering_range_threshold: bool = False  # uses covering_range as threshold
     error: str = ""
 
@@ -82,8 +83,9 @@ class CodeAnalysis:
         target = "lidar_targets"
         agent = "lidar_agents"
         for op in self.cross_source_ops:
-            if (target in op.left_sources and agent in op.right_sources) \
-                    or (agent in op.left_sources and target in op.right_sources):
+            if (target in op.left_sources and agent in op.right_sources) or (
+                agent in op.left_sources and target in op.right_sources
+            ):
                 return True
         return False
 
@@ -124,12 +126,14 @@ def _extract_get_call(node: ast.AST) -> str | None:
     """If node is `scenario_state.get("lidar_targets", ...)`, return
     the key. Otherwise None.
     """
-    if not (isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "get"
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-            and isinstance(node.args[0].value, str)):
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ):
         return None
     return node.args[0].value
 
@@ -139,8 +143,14 @@ def _extract_get_call(node: ast.AST) -> str | None:
 # `lidar_t.dtype` is a torch.dtype object, not data; using it does
 # not propagate "lidar_targets" into the result.
 _METADATA_ATTRS = {
-    "dtype", "device", "shape", "ndim", "requires_grad", "size",
-    "is_cuda", "is_floating_point",
+    "dtype",
+    "device",
+    "shape",
+    "ndim",
+    "requires_grad",
+    "size",
+    "is_cuda",
+    "is_floating_point",
 }
 
 
@@ -184,8 +194,7 @@ class _SourceVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _expr_sources(expr: ast.AST,
-                  var_sources: Dict[str, Set[str]]) -> Set[str]:
+def _expr_sources(expr: ast.AST, var_sources: Dict[str, Set[str]]) -> Set[str]:
     v = _SourceVisitor(var_sources)
     v.visit(expr)
     return v.found
@@ -255,8 +264,8 @@ def analyze_inner_code(code: str) -> CodeAnalysis:
     agent = "lidar_agents"
 
     def _is_cross_source(left_src: Set[str], right_src: Set[str]) -> bool:
-        a = (target in left_src and agent in right_src)
-        b = (agent in left_src and target in right_src)
+        a = target in left_src and agent in right_src
+        b = agent in left_src and target in right_src
         return a or b
 
     code_lines = code.splitlines()
@@ -266,14 +275,17 @@ def analyze_inner_code(code: str) -> CodeAnalysis:
             ls = _expr_sources(node.left, var_sources)
             rs = _expr_sources(node.right, var_sources)
             if _is_cross_source(ls, rs):
-                out.cross_source_ops.append(CrossSourceOp(
-                    op_name=f"BinOp.{type(node.op).__name__}",
-                    line=node.lineno,
-                    left_sources=tuple(sorted(ls)),
-                    right_sources=tuple(sorted(rs)),
-                    code_excerpt=code_lines[node.lineno - 1].strip()
-                    if 1 <= node.lineno <= len(code_lines) else "",
-                ))
+                out.cross_source_ops.append(
+                    CrossSourceOp(
+                        op_name=f"BinOp.{type(node.op).__name__}",
+                        line=node.lineno,
+                        left_sources=tuple(sorted(ls)),
+                        right_sources=tuple(sorted(rs)),
+                        code_excerpt=code_lines[node.lineno - 1].strip()
+                        if 1 <= node.lineno <= len(code_lines)
+                        else "",
+                    )
+                )
         elif isinstance(node, ast.Compare):
             # Compare: x < y, treats left and the first comparator as a
             # binary op for our purposes.
@@ -281,26 +293,32 @@ def analyze_inner_code(code: str) -> CodeAnalysis:
                 ls = _expr_sources(node.left, var_sources)
                 rs = _expr_sources(node.comparators[0], var_sources)
                 if _is_cross_source(ls, rs):
-                    out.cross_source_ops.append(CrossSourceOp(
-                        op_name="Compare",
-                        line=node.lineno,
-                        left_sources=tuple(sorted(ls)),
-                        right_sources=tuple(sorted(rs)),
-                        code_excerpt=code_lines[node.lineno - 1].strip()
-                        if 1 <= node.lineno <= len(code_lines) else "",
-                    ))
+                    out.cross_source_ops.append(
+                        CrossSourceOp(
+                            op_name="Compare",
+                            line=node.lineno,
+                            left_sources=tuple(sorted(ls)),
+                            right_sources=tuple(sorted(rs)),
+                            code_excerpt=code_lines[node.lineno - 1].strip()
+                            if 1 <= node.lineno <= len(code_lines)
+                            else "",
+                        )
+                    )
         elif isinstance(node, ast.BoolOp) and len(node.values) >= 2:
             ls = _expr_sources(node.values[0], var_sources)
             rs = _expr_sources(node.values[1], var_sources)
             if _is_cross_source(ls, rs):
-                out.cross_source_ops.append(CrossSourceOp(
-                    op_name=f"BoolOp.{type(node.op).__name__}",
-                    line=node.lineno,
-                    left_sources=tuple(sorted(ls)),
-                    right_sources=tuple(sorted(rs)),
-                    code_excerpt=code_lines[node.lineno - 1].strip()
-                    if 1 <= node.lineno <= len(code_lines) else "",
-                ))
+                out.cross_source_ops.append(
+                    CrossSourceOp(
+                        op_name=f"BoolOp.{type(node.op).__name__}",
+                        line=node.lineno,
+                        left_sources=tuple(sorted(ls)),
+                        right_sources=tuple(sorted(rs)),
+                        code_excerpt=code_lines[node.lineno - 1].strip()
+                        if 1 <= node.lineno <= len(code_lines)
+                        else "",
+                    )
+                )
 
     # Estimate returned-feature count: best-effort from Return /
     # torch.cat with a list literal. Not exact (some candidates use
@@ -325,20 +343,27 @@ def analyze_inner_code(code: str) -> CodeAnalysis:
     )
     out.has_motion_feature = bool(
         "agent_vel" in code
-        and ("torch.linalg.norm" in code or "torch.norm" in code
-             or "agent_vel ** 2" in code or "agent_vel.abs" in code
-             or ".pow(2)" in code or "speed" in code)
+        and (
+            "torch.linalg.norm" in code
+            or "torch.norm" in code
+            or "agent_vel ** 2" in code
+            or "agent_vel.abs" in code
+            or ".pow(2)" in code
+            or "speed" in code
+        )
     )
     # Threshold check: does the code reference covering_range as a
     # comparison threshold? Distinct from just reading the value.
     out.has_covering_range_threshold = bool(
         "covering_range" in code
-        and ("< " + "covering_range" in code.replace("\n", " ")
-             or "covering_range" + " >" in code.replace("\n", " ")
-             or "<= covering_range" in code.replace("\n", " ")
-             or "(lidar_t < cover_r" in code
-             or "(lidar_a < cover_r" in code
-             or "cover_r = " in code)  # local alias for covering_range
+        and (
+            "< " + "covering_range" in code.replace("\n", " ")
+            or "covering_range" + " >" in code.replace("\n", " ")
+            or "<= covering_range" in code.replace("\n", " ")
+            or "(lidar_t < cover_r" in code
+            or "(lidar_a < cover_r" in code
+            or "cover_r = " in code
+        )  # local alias for covering_range
     )
 
     return out
@@ -365,14 +390,19 @@ def count_gated_features(code: str) -> int:
     n = 0
     # Pattern 1: explicit multiplication by a near_x / *_close boolean
     for needle in [
-        "* near_t", "near_t *",
-        "* near_a", "near_a *",
-        "* t_close", "t_close *",
-        "* a_close", "a_close *",
+        "* near_t",
+        "near_t *",
+        "* near_a",
+        "near_a *",
+        "* t_close",
+        "t_close *",
+        "* a_close",
+        "a_close *",
     ]:
         n += code.count(needle)
     # Pattern 2: inline conjunction of (lidar_x < cover_r) factors
     import re as _re
+
     pattern = _re.compile(
         r"\(\s*lidar_[ta][^\)]*<\s*cover_r[^\)]*\)\s*\.?(to|float)?[\s\.\*\(\)]*"
         r"\*\s*\(\s*lidar_[ta][^\)]*<\s*cover_r"
@@ -406,10 +436,12 @@ def _estimate_n_features(fn: ast.FunctionDef) -> int:
     counts = []
     for node in ast.walk(fn):
         if isinstance(node, ast.Call):
-            if (isinstance(node.func, ast.Attribute)
-                    and node.func.attr in ("cat", "stack")
-                    and node.args
-                    and isinstance(node.args[0], ast.List)):
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("cat", "stack")
+                and node.args
+                and isinstance(node.args[0], ast.List)
+            ):
                 counts.append(len(node.args[0].elts))
     # Take the max — likely the actual return concat (others may be
     # intermediate stacks for direction encoding etc.)
@@ -441,9 +473,7 @@ def summarize_batch(analyses: List[CodeAnalysis]) -> BatchSummary:
             1 for a in analyses if a.has_enhance_observation
         ),
         n_with_any_cross_source=sum(1 for a in analyses if a.has_cross_source),
-        n_touches_both_lidars=sum(
-            1 for a in analyses if a.touches_both_lidars
-        ),
+        n_touches_both_lidars=sum(1 for a in analyses if a.touches_both_lidars),
         avg_cross_source_ops=sum(a.n_cross_source for a in analyses) / n,
         avg_returned_features=sum(a.n_returned_features for a in analyses) / n,
     )

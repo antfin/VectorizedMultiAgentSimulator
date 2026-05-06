@@ -50,13 +50,14 @@ class V5Checkpoint:
                                             (next outer's prompt dir ready)
       - after deep-train                   → deep_train_done=True
     """
+
     schema_version: int = 1
     seed: int = 0
-    outer_idx_completed: int = -1     # last outer whose inner finished
-    refine_completed_for: int = -1    # last outer whose meta-refine ran
+    outer_idx_completed: int = -1  # last outer whose inner finished
+    refine_completed_for: int = -1  # last outer whose meta-refine ran
     outer_registry: Registry = field(default_factory=Registry)
     iter_records: List["OuterIterRecord"] = field(default_factory=list)
-    current_prompt_name: str = ""     # metaprompt to use NEXT
+    current_prompt_name: str = ""  # metaprompt to use NEXT
     current_prompt_dir_str: str = ""  # absolute path string
     deep_train_done: bool = False
     final_metrics: Optional[Dict[str, Any]] = None
@@ -118,19 +119,23 @@ def _redirect_prompt_loader(prompts_root: Path) -> None:
     """Same trick as v4: repoint PromptLoader._PROMPTS_DIR at a writable
     location so we can materialize per-outer-iter metaprompts there."""
     from ..prompts import loader as _l
+
     prompts_root.mkdir(parents=True, exist_ok=True)
     _l._PROMPTS_DIR = prompts_root
 
 
-def _outer_registry_entry(iter_idx: int, inner: InnerResult,
-                          metaprompt_dir: Path) -> RegistryEntry:
+def _outer_registry_entry(
+    iter_idx: int, inner: InnerResult, metaprompt_dir: Path
+) -> RegistryEntry:
     """Map an inner result into a single outer-registry entry."""
     if inner.best is None:
         return RegistryEntry(
             iter_idx=iter_idx,
             handle=f"outer_iter_{iter_idx}_dead",
             summary="inner produced zero valid candidates",
-            fitness=-1.0, M1=0.0, shape="flat_zero",
+            fitness=-1.0,
+            M1=0.0,
+            shape="flat_zero",
             code_excerpt="",
         )
     diag_path = metaprompt_dir / "_refiner_diagnosis.md"
@@ -138,9 +143,7 @@ def _outer_registry_entry(iter_idx: int, inner: InnerResult,
     handle_hint = ""
     if diagnosis:
         first_line = diagnosis.splitlines()[0][:60]
-        handle_hint = "_" + "".join(
-            c if c.isalnum() else "_" for c in first_line
-        )[:40]
+        handle_hint = "_" + "".join(c if c.isalnum() else "_" for c in first_line)[:40]
     return RegistryEntry(
         iter_idx=iter_idx,
         handle=f"outer_iter_{iter_idx}{handle_hint}",
@@ -155,9 +158,7 @@ def _outer_registry_entry(iter_idx: int, inner: InnerResult,
         M1=float(inner.best.metrics.get("M1_success_rate", 0.0)),
         shape=inner.best.shape,
         code_excerpt=(
-            inner.best.candidate.obs_source
-            or inner.best.candidate.reward_source
-            or ""
+            inner.best.candidate.obs_source or inner.best.candidate.reward_source or ""
         )[:1500],
     )
 
@@ -190,12 +191,11 @@ def run_v5_outer_loop(
     _redirect_prompt_loader(prompts_root)
 
     from ..prompts import loader as _l_mod
+
     _orig_prompts_dir = Path(_l_mod.__file__).parent
     base_src = _orig_prompts_dir / cfg.base_prompt_version
     if not base_src.exists():
-        raise FileNotFoundError(
-            f"base prompt version not found: {base_src}"
-        )
+        raise FileNotFoundError(f"base prompt version not found: {base_src}")
 
     # Resume-or-init checkpoint state
     ckpt: Optional[V5Checkpoint] = None
@@ -214,9 +214,7 @@ def run_v5_outer_loop(
         )
         _save_checkpoint(output_dir, ckpt)
     else:
-        _log.info(
-            "v5 RESUME — skipping outers ≤ %d", ckpt.outer_idx_completed
-        )
+        _log.info("v5 RESUME — skipping outers ≤ %d", ckpt.outer_idx_completed)
 
     outer_registry = ckpt.outer_registry
     iter_records = ckpt.iter_records
@@ -227,8 +225,11 @@ def run_v5_outer_loop(
 
     for outer_idx in range(cfg.n_outer):
         if outer_idx <= ckpt.outer_idx_completed:
-            _log.info("=== v5 OUTER ITER %d/%d (skipped — already done) ===",
-                       outer_idx + 1, cfg.n_outer)
+            _log.info(
+                "=== v5 OUTER ITER %d/%d (skipped — already done) ===",
+                outer_idx + 1,
+                cfg.n_outer,
+            )
             continue
 
         _log.info("=== v5 OUTER ITER %d/%d ===", outer_idx + 1, cfg.n_outer)
@@ -243,20 +244,24 @@ def run_v5_outer_loop(
             task_overrides=task_overrides,
             algorithm=algorithm,
         )
-        iter_records.append(OuterIterRecord(
-            iter_idx=outer_idx,
-            prompt_dir=current_prompt_dir,
-            inner=inner_result,
-        ))
+        iter_records.append(
+            OuterIterRecord(
+                iter_idx=outer_idx,
+                prompt_dir=current_prompt_dir,
+                inner=inner_result,
+            )
+        )
 
-        entry = _outer_registry_entry(outer_idx, inner_result,
-                                       current_prompt_dir)
+        entry = _outer_registry_entry(outer_idx, inner_result, current_prompt_dir)
         outer_registry.add(entry)
         outer_registry.record_iter_best_fitness(entry.fitness)
 
         _log.info(
             "v5 outer iter %d: best inner M1=%.3f fitness=%+.3f shape=%s",
-            outer_idx, entry.M1, entry.fitness, entry.shape,
+            outer_idx,
+            entry.M1,
+            entry.fitness,
+            entry.shape,
         )
 
         # CHECKPOINT — after inner finishes (the long phase). Resume
@@ -271,8 +276,7 @@ def run_v5_outer_loop(
             break
         next_prompt_name = f"v5_outer_{outer_idx + 1}_seed{seed}"
         next_prompt_dir = prompts_root / next_prompt_name
-        outer_pivot = outer_registry.stagnated(window=2,
-                                                eps=cfg.pivot_eps)
+        outer_pivot = outer_registry.stagnated(window=2, eps=cfg.pivot_eps)
         refine_metaprompt(
             prev_prompt_dir=current_prompt_dir,
             next_prompt_dir=next_prompt_dir,
@@ -293,8 +297,10 @@ def run_v5_outer_loop(
 
     # If a previous run already finished deep-train, return cached.
     if ckpt.deep_train_done and ckpt.final_metrics is not None:
-        _log.info("v5 RESUME — deep-train already complete, returning cached "
-                  "final metrics.")
+        _log.info(
+            "v5 RESUME — deep-train already complete, returning cached "
+            "final metrics."
+        )
         return ckpt.final_metrics
 
     # Pick global best across all outer iters
@@ -310,8 +316,10 @@ def run_v5_outer_loop(
 
     _log.info(
         "v5: global best from outer_iter=%d fitness=%+.3f M1=%.3f shape=%s",
-        global_best_outer_idx, global_best.fitness,
-        global_best.metrics.get("M1_success_rate", 0), global_best.shape,
+        global_best_outer_idx,
+        global_best.fitness,
+        global_best.metrics.get("M1_success_rate", 0),
+        global_best.shape,
     )
 
     # Deep-train the winner at full_frames
@@ -321,7 +329,10 @@ def run_v5_outer_loop(
     base_loop.lero = copy.copy(base_loop.lero)
     base_loop.lero.full_frames = cfg.full_frames
     final_metrics = base_loop._full_training(
-        global_best.candidate, task_overrides, algorithm, seed,
+        global_best.candidate,
+        task_overrides,
+        algorithm,
+        seed,
     )
 
     elapsed = time.monotonic() - t_start

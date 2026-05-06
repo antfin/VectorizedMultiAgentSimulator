@@ -23,20 +23,21 @@ import re
 # negatives (treating a reasoning model as non-reasoning) are
 # recoverable; false positives may strip needed scaffolding.
 _REASONING_MODEL_PATTERNS = [
-    r"^o[1-9]",                      # OpenAI o-series: o1, o3, o4, o5...
-    r"o[1-9]-",                       # o3-mini, o4-mini, etc.
-    r"gpt-oss",                       # OpenAI open-weights reasoning
-    r"deepseek-r1",                   # DeepSeek-R1
-    r"deepseek.*reasoner",            # DeepSeek reasoner variants
-    r"qwen3.*think",                  # Qwen3 thinking mode
-    r"qwq-",                          # Qwen QwQ reasoning
-    r"claude.*opus.*think",           # Anthropic extended-thinking
-    r"claude.*sonnet.*think",         # ditto
-    r"-r1\b",                          # generic R1 suffix
+    r"^o[1-9]",  # OpenAI o-series: o1, o3, o4, o5...
+    r"o[1-9]-",  # o3-mini, o4-mini, etc.
+    r"gpt-oss",  # OpenAI open-weights reasoning
+    r"deepseek-r1",  # DeepSeek-R1
+    r"deepseek.*reasoner",  # DeepSeek reasoner variants
+    r"qwen3.*think",  # Qwen3 thinking mode
+    r"qwq-",  # Qwen QwQ reasoning
+    r"claude.*opus.*think",  # Anthropic extended-thinking
+    r"claude.*sonnet.*think",  # ditto
+    r"-r1\b",  # generic R1 suffix
 ]
 
 _REASONING_RE = re.compile(
-    "|".join(_REASONING_MODEL_PATTERNS), re.IGNORECASE,
+    "|".join(_REASONING_MODEL_PATTERNS),
+    re.IGNORECASE,
 )
 
 

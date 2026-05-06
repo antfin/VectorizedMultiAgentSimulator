@@ -21,13 +21,13 @@ from typing import Dict
 
 
 SHAPE_BONUS: Dict[str, float] = {
-    "monotonic_rise":  0.10,
-    "late_ramp":       0.05,
-    "plateau":         0.00,
-    "oscillating":    -0.05,
-    "peak_collapse":  -0.10,
-    "flat_nonzero":    0.00,
-    "flat_zero":       0.00,
+    "monotonic_rise": 0.10,
+    "late_ramp": 0.05,
+    "plateau": 0.00,
+    "oscillating": -0.05,
+    "peak_collapse": -0.10,
+    "flat_nonzero": 0.00,
+    "flat_zero": 0.00,
 }
 
 
@@ -40,11 +40,11 @@ def weighted_fitness(
     m6 = float(metrics.get("M6_coverage_progress", 0.0))
     m4 = float(metrics.get("M4_avg_collisions", 0.0))
     return (
-        1.0  * m1
-      + 0.5  * m6
-      + 0.2  * float(m6_slope)
-      - 0.05 * (m4 / 10.0)
-      + SHAPE_BONUS.get(shape_tag, 0.0)
+        1.0 * m1
+        + 0.5 * m6
+        + 0.2 * float(m6_slope)
+        - 0.05 * (m4 / 10.0)
+        + SHAPE_BONUS.get(shape_tag, 0.0)
     )
 
 
@@ -52,8 +52,9 @@ def m6_slope(metrics_history) -> float:
     """Last-third minus first-third mean M6 — a coarse trend signal."""
     if not metrics_history or len(metrics_history) < 3:
         return 0.0
-    pts = [float(p.get("M6", p.get("M6_coverage_progress", 0.0)))
-           for p in metrics_history]
+    pts = [
+        float(p.get("M6", p.get("M6_coverage_progress", 0.0))) for p in metrics_history
+    ]
     n = len(pts)
     third = max(1, n // 3)
     early = sum(pts[:third]) / third

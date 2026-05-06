@@ -1,9 +1,7 @@
 """Tests for CSV consolidation and loading."""
-import csv
-import json
+
 from pathlib import Path
 
-import pytest
 
 from src.consolidate import (
     consolidate_csvs,
@@ -38,16 +36,17 @@ def _make_run(es, run_id, metrics, config=None, scalars=None):
 
 
 class TestConsolidateCsvs:
-
     def test_produces_three_csvs(self, tmp_path):
-        import pandas as pd
         es = ExperimentStorage("er1", results_root=tmp_path)
-        _make_run(es, "er1_mappo_n4_t3_k1_l035_s0",
-                  {"M1_success_rate": 0.8},
-                  scalars={
-                      "train_agents_entropy": [(i, 1.0 + i) for i in range(50)],
-                      "eval_reward_episode_reward_mean": [(0, -1.0), (15, 0.5)],
-                  })
+        _make_run(
+            es,
+            "er1_mappo_n4_t3_k1_l035_s0",
+            {"M1_success_rate": 0.8},
+            scalars={
+                "train_agents_entropy": [(i, 1.0 + i) for i in range(50)],
+                "eval_reward_episode_reward_mean": [(0, -1.0), (15, 0.5)],
+            },
+        )
 
         result = consolidate_csvs("er1", results_root=tmp_path)
 
@@ -60,6 +59,7 @@ class TestConsolidateCsvs:
 
     def test_sweep_csv_has_run_id_first(self, tmp_path):
         import pandas as pd
+
         es = ExperimentStorage("er1", results_root=tmp_path)
         _make_run(es, "run1", {"M1_success_rate": 0.5, "n_agents": 4})
 
@@ -69,9 +69,11 @@ class TestConsolidateCsvs:
 
     def test_sweep_csv_backfills_from_config(self, tmp_path):
         import pandas as pd
+
         es = ExperimentStorage("er1", results_root=tmp_path)
         _make_run(
-            es, "er1_mappo_n6_t4_k1_l035_s0",
+            es,
+            "er1_mappo_n6_t4_k1_l035_s0",
             {"M1_success_rate": 0.7},
             config={
                 "task": {"n_agents": 4, "n_targets": 4},
@@ -88,11 +90,17 @@ class TestConsolidateCsvs:
 
     def test_iter_csv_no_nans(self, tmp_path):
         import pandas as pd
+
         es = ExperimentStorage("er1", results_root=tmp_path)
-        _make_run(es, "run1", {"M1_success_rate": 0.5}, scalars={
-            "train_agents_entropy": [(i, float(i)) for i in range(50)],
-            "train_agents_loss": [(i, float(i) * 0.1) for i in range(50)],
-        })
+        _make_run(
+            es,
+            "run1",
+            {"M1_success_rate": 0.5},
+            scalars={
+                "train_agents_entropy": [(i, float(i)) for i in range(50)],
+                "train_agents_loss": [(i, float(i) * 0.1) for i in range(50)],
+            },
+        )
 
         result = consolidate_csvs("er1", results_root=tmp_path)
         df = pd.read_csv(result["iter"])
@@ -101,17 +109,27 @@ class TestConsolidateCsvs:
     def test_eval_csv_aligns_steps(self, tmp_path):
         """Custom eval metrics (off-by-one steps) are aligned to native."""
         import pandas as pd
+
         es = ExperimentStorage("er1", results_root=tmp_path)
         # Native eval at steps 0, 15, 31
         # Custom M1 at steps 1, 16, 32 (off by one)
-        _make_run(es, "run1", {"M1_success_rate": 0.5}, scalars={
-            "eval_reward_episode_reward_mean": [
-                (0, -1.0), (15, 0.5), (31, 1.0),
-            ],
-            "eval_M1_success_rate": [
-                (1, 0.1), (16, 0.3), (32, 0.8),
-            ],
-        })
+        _make_run(
+            es,
+            "run1",
+            {"M1_success_rate": 0.5},
+            scalars={
+                "eval_reward_episode_reward_mean": [
+                    (0, -1.0),
+                    (15, 0.5),
+                    (31, 1.0),
+                ],
+                "eval_M1_success_rate": [
+                    (1, 0.1),
+                    (16, 0.3),
+                    (32, 0.8),
+                ],
+            },
+        )
 
         result = consolidate_csvs("er1", results_root=tmp_path)
         df = pd.read_csv(result["eval"])
@@ -126,13 +144,24 @@ class TestConsolidateCsvs:
 
     def test_multiple_runs_merged(self, tmp_path):
         import pandas as pd
+
         es = ExperimentStorage("er1", results_root=tmp_path)
-        _make_run(es, "run1", {"M1_success_rate": 0.5}, scalars={
-            "train_agents_entropy": [(i, float(i)) for i in range(30)],
-        })
-        _make_run(es, "run2", {"M1_success_rate": 0.9}, scalars={
-            "train_agents_entropy": [(i, float(i) * 2) for i in range(30)],
-        })
+        _make_run(
+            es,
+            "run1",
+            {"M1_success_rate": 0.5},
+            scalars={
+                "train_agents_entropy": [(i, float(i)) for i in range(30)],
+            },
+        )
+        _make_run(
+            es,
+            "run2",
+            {"M1_success_rate": 0.9},
+            scalars={
+                "train_agents_entropy": [(i, float(i) * 2) for i in range(30)],
+            },
+        )
 
         result = consolidate_csvs("er1", results_root=tmp_path)
         sweep_df = pd.read_csv(result["sweep"])
@@ -146,9 +175,7 @@ class TestConsolidateCsvs:
 
 
 class TestLoadLatestCsv:
-
     def test_loads_most_recent(self, tmp_path):
-        import pandas as pd
         # Write two files with different timestamps
         (tmp_path / "sweep_results_20260315_1000.csv").write_text(
             "run_id,M1\nold,0.1\n"
@@ -161,7 +188,6 @@ class TestLoadLatestCsv:
         assert df.iloc[0]["run_id"] == "new"
 
     def test_loads_from_runs_subdir(self, tmp_path):
-        import pandas as pd
         runs_dir = tmp_path / "runs"
         runs_dir.mkdir()
         (runs_dir / "sweep_results_20260325_1000.csv").write_text(
@@ -172,7 +198,6 @@ class TestLoadLatestCsv:
         assert df.iloc[0]["run_id"] == "fromruns"
 
     def test_prefers_runs_subdir_if_newer(self, tmp_path):
-        import pandas as pd
         # Older CSV at root level
         (tmp_path / "sweep_results_20260315_1000.csv").write_text(
             "run_id,M1\nold,0.1\n"
@@ -198,7 +223,6 @@ class TestLoadLatestCsv:
 
 
 class TestListExperimentsWithData:
-
     def test_finds_experiment_with_csv(self, tmp_path):
         exp_dir = tmp_path / "er1"
         exp_dir.mkdir()
@@ -237,7 +261,6 @@ class TestListExperimentsWithData:
 
 
 class TestClassifyScalars:
-
     def test_splits_by_row_count(self):
         scalars = {
             "train_metric": [(i, float(i)) for i in range(50)],
@@ -262,9 +285,7 @@ class TestClassifyScalars:
 
 
 class TestScalarsToWideDf:
-
     def test_creates_wide_format(self):
-        import pandas as pd
         scalars = {
             "metric_a": [(0, 1.0), (1, 2.0)],
             "metric_b": [(0, 10.0), (1, 20.0)],
@@ -296,7 +317,6 @@ class TestScalarsToWideDf:
 
 
 class TestBuildSweepRow:
-
     def test_basic_row(self, tmp_path):
         rs = RunStorage(tmp_path / "run", "test_run")
         rs.save_metrics({"M1_success_rate": 0.8, "n_agents": 4})
@@ -308,10 +328,12 @@ class TestBuildSweepRow:
     def test_backfills_from_config_overrides(self, tmp_path):
         rs = RunStorage(tmp_path / "run", "er1_mappo_n6_t3_k1_l035_s0")
         rs.save_metrics({"M1_success_rate": 0.7})
-        rs.save_config({
-            "task": {"n_agents": 4, "n_targets": 7},
-            "task_overrides": {"n_agents": 6, "n_targets": 3},
-        })
+        rs.save_config(
+            {
+                "task": {"n_agents": 4, "n_targets": 7},
+                "task_overrides": {"n_agents": 6, "n_targets": 3},
+            }
+        )
 
         row = _build_sweep_row(tmp_path / "run", "er1_mappo_n6_t3_k1_l035_s0")
         assert row["n_agents"] == 6
@@ -327,7 +349,6 @@ class TestBuildSweepRow:
 
 
 class TestSaveVideo:
-
     def test_saves_mp4(self, tmp_path):
         import numpy as np
         from src.runner import _save_video

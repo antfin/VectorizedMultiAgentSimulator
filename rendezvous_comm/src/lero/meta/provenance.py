@@ -43,7 +43,8 @@ def sha256_text(text: str) -> str:
 
 
 def load_meta(
-    version: str, prompts_dir: Optional[Path] = None,
+    version: str,
+    prompts_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Parse meta.yaml for a given template version. Empty dict if none."""
     if yaml is None:
@@ -56,7 +57,8 @@ def load_meta(
 
 
 def recompute_frozen_hashes(
-    version: str, prompts_dir: Optional[Path] = None,
+    version: str,
+    prompts_dir: Optional[Path] = None,
 ) -> Dict[str, str]:
     """Return the sha256 of every slot flagged ``frozen: true``.
 
@@ -185,14 +187,13 @@ def materialize_mutation(
     # will raise at render time via the loader's FrozenSlotMismatch.
     new_meta["frozen_hashes"] = recompute_frozen_hashes(new_version, root)
 
-    (new_dir / "meta.yaml").write_text(
-        yaml.safe_dump(new_meta, sort_keys=False)
-    )
+    (new_dir / "meta.yaml").write_text(yaml.safe_dump(new_meta, sort_keys=False))
     return new_dir
 
 
 def lineage(
-    version: str, prompts_dir: Optional[Path] = None,
+    version: str,
+    prompts_dir: Optional[Path] = None,
 ) -> List[str]:
     """Return the chain of ancestors back to the root, most-recent first.
 

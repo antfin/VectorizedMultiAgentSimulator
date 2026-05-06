@@ -9,12 +9,10 @@ import pytest
 
 from src.lero.config import LLMConfig
 from src.lero.meta.v4_bootstrap import (
-    _build_bootstrap_prompt,
     _cache_key,
     _parse_response,
     bootstrap_from_description,
 )
-from src.lero.meta.v4_schemas import BootstrapCard
 
 
 # ── Fixtures ────────────────────────────────────────────────────
@@ -42,11 +40,9 @@ def base_prompt_dir():
 
 def _stub_response(card_data: dict, thoughts: str = "Some reasoning") -> str:
     return (
-        "### THOUGHTS\n"
-        + thoughts + "\n\n"
+        "### THOUGHTS\n" + thoughts + "\n\n"
         "### BOOTSTRAP_CARD\n"
-        "```json\n"
-        + json.dumps(card_data, indent=2) + "\n"
+        "```json\n" + json.dumps(card_data, indent=2) + "\n"
         "```\n"
     )
 
@@ -81,7 +77,8 @@ class _StubLLM:
     def __init__(self, responses: list[str]):
         self._responses = list(responses)
         self.config = LLMConfig(
-            model="gpt-5.4-mini", temperature=1.0,
+            model="gpt-5.4-mini",
+            temperature=1.0,
         )
         self.calls = 0
 
@@ -175,8 +172,10 @@ def test_bootstrap_cache_hit_skips_llm(tmp_path, description_md, base_prompt_dir
 
     # First call → cache miss → 1 LLM call
     bootstrap_from_description(
-        description_path=description_md, meta_llm=llm,
-        output_dir=tmp_path, base_prompt_dir=base_prompt_dir,
+        description_path=description_md,
+        meta_llm=llm,
+        output_dir=tmp_path,
+        base_prompt_dir=base_prompt_dir,
         cache_dir=cache_dir,
     )
     assert llm.calls == 1
@@ -184,8 +183,10 @@ def test_bootstrap_cache_hit_skips_llm(tmp_path, description_md, base_prompt_dir
     # Second call (same description) → cache hit → no new call
     llm2 = _StubLLM([])  # no responses; would fail if invoked
     result = bootstrap_from_description(
-        description_path=description_md, meta_llm=llm2,
-        output_dir=tmp_path / "run2", base_prompt_dir=base_prompt_dir,
+        description_path=description_md,
+        meta_llm=llm2,
+        output_dir=tmp_path / "run2",
+        base_prompt_dir=base_prompt_dir,
         cache_dir=cache_dir,
     )
     assert result.cache_hit is True
@@ -193,14 +194,18 @@ def test_bootstrap_cache_hit_skips_llm(tmp_path, description_md, base_prompt_dir
 
 
 def test_bootstrap_cache_miss_on_changed_description(
-    tmp_path, description_md, base_prompt_dir,
+    tmp_path,
+    description_md,
+    base_prompt_dir,
 ):
     cache_dir = tmp_path / "cache"
     llm = _StubLLM([_stub_response(_VALID_CARD), _stub_response(_VALID_CARD)])
 
     bootstrap_from_description(
-        description_path=description_md, meta_llm=llm,
-        output_dir=tmp_path, base_prompt_dir=base_prompt_dir,
+        description_path=description_md,
+        meta_llm=llm,
+        output_dir=tmp_path,
+        base_prompt_dir=base_prompt_dir,
         cache_dir=cache_dir,
     )
 
@@ -208,8 +213,10 @@ def test_bootstrap_cache_miss_on_changed_description(
     description_md.write_text(description_md.read_text() + "\n\n## Extra section")
 
     bootstrap_from_description(
-        description_path=description_md, meta_llm=llm,
-        output_dir=tmp_path / "run2", base_prompt_dir=base_prompt_dir,
+        description_path=description_md,
+        meta_llm=llm,
+        output_dir=tmp_path / "run2",
+        base_prompt_dir=base_prompt_dir,
         cache_dir=cache_dir,
     )
     # Both calls hit the LLM (different cache keys)
@@ -217,7 +224,9 @@ def test_bootstrap_cache_miss_on_changed_description(
 
 
 def test_bootstrap_prompt_materialization_skips_empty_components(
-    tmp_path, description_md, base_prompt_dir,
+    tmp_path,
+    description_md,
+    base_prompt_dir,
 ):
     """When the LLM proposes no reward components, guidance_reward.txt
     should be empty (LERO uses hand-crafted reward by default)."""
@@ -225,20 +234,26 @@ def test_bootstrap_prompt_materialization_skips_empty_components(
     card_data["proposed_initial_reward_components"] = []
     llm = _StubLLM([_stub_response(card_data)])
     result = bootstrap_from_description(
-        description_path=description_md, meta_llm=llm,
-        output_dir=tmp_path, base_prompt_dir=base_prompt_dir,
+        description_path=description_md,
+        meta_llm=llm,
+        output_dir=tmp_path,
+        base_prompt_dir=base_prompt_dir,
     )
     rew = (result.bootstrap_dir / "guidance_reward.txt").read_text()
     assert rew.strip() == ""
 
 
 def test_bootstrap_prompt_includes_failure_modes_in_shared(
-    tmp_path, description_md, base_prompt_dir,
+    tmp_path,
+    description_md,
+    base_prompt_dir,
 ):
     llm = _StubLLM([_stub_response(_VALID_CARD)])
     result = bootstrap_from_description(
-        description_path=description_md, meta_llm=llm,
-        output_dir=tmp_path, base_prompt_dir=base_prompt_dir,
+        description_path=description_md,
+        meta_llm=llm,
+        output_dir=tmp_path,
+        base_prompt_dir=base_prompt_dir,
     )
     sh = (result.bootstrap_dir / "guidance_shared.txt").read_text()
     assert "STABLE end-of-training" in sh

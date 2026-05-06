@@ -1,6 +1,7 @@
 """Statistical analysis utilities for experiment comparison."""
+
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 
 def compare_experiments(
@@ -61,10 +62,12 @@ def bootstrap_ci(
         return (m, m)
 
     rng = np.random.default_rng(42)
-    boot_means = np.array([
-        rng.choice(arr, size=len(arr), replace=True).mean()
-        for _ in range(n_bootstrap)
-    ])
+    boot_means = np.array(
+        [
+            rng.choice(arr, size=len(arr), replace=True).mean()
+            for _ in range(n_bootstrap)
+        ]
+    )
     lower = float(np.percentile(boot_means, 100 * alpha / 2))
     upper = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
     return (lower, upper)

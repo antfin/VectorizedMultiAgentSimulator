@@ -4,9 +4,9 @@ Simulates a complete run lifecycle (config save, logging, provenance,
 metrics, report) and checks every file is in the expected location
 within the results/<exp_id>/YYYYMMDD_HHMM__<run_id>/ tree.
 """
+
 import json
 import re
-from pathlib import Path
 
 import pytest
 import yaml
@@ -26,14 +26,18 @@ def spec(tmp_path):
     """Minimal ExperimentSpec with source_path pointing to a temp YAML."""
     yaml_path = tmp_path / "configs" / "er1" / "test.yaml"
     yaml_path.parent.mkdir(parents=True)
-    yaml_path.write_text(yaml.dump({
-        "exp_id": "er1",
-        "name": "Test Experiment",
-        "description": "Integration test",
-        "task": {"n_agents": 4, "n_targets": 3},
-        "train": {"algorithm": "mappo", "max_n_frames": 100_000},
-        "sweep": {"seeds": [0], "algorithms": ["mappo"]},
-    }))
+    yaml_path.write_text(
+        yaml.dump(
+            {
+                "exp_id": "er1",
+                "name": "Test Experiment",
+                "description": "Integration test",
+                "task": {"n_agents": 4, "n_targets": 3},
+                "train": {"algorithm": "mappo", "max_n_frames": 100_000},
+                "sweep": {"seeds": [0], "algorithms": ["mappo"]},
+            }
+        )
+    )
     return ExperimentSpec(
         exp_id="er1",
         name="Test Experiment",
@@ -98,7 +102,11 @@ class TestRunFolderStructure:
 
     def test_provenance_in_input_dir(self, tmp_path, spec):
         rs = RunStorage(tmp_path / "run1", "run1")
-        save_provenance(rs.run_dir, spec.task.to_dict(), {k: v for k, v in spec.train.__dict__.items()})
+        save_provenance(
+            rs.run_dir,
+            spec.task.to_dict(),
+            {k: v for k, v in spec.train.__dict__.items()},
+        )
 
         prov_path = rs.run_dir / "input" / "provenance.json"
         assert prov_path.exists()
@@ -156,7 +164,11 @@ class TestRunFolderStructure:
     def test_report_at_run_root(self, tmp_path, spec, sample_metrics):
         rs = RunStorage(tmp_path / "run1", "run1")
         generate_run_report(
-            rs.run_dir, "run1", spec, sample_metrics, elapsed_seconds=60,
+            rs.run_dir,
+            "run1",
+            spec,
+            sample_metrics,
+            elapsed_seconds=60,
         )
 
         report_path = rs.run_dir / "report.md"
@@ -167,7 +179,10 @@ class TestRunFolderStructure:
     def test_report_not_in_output_dir(self, tmp_path, spec, sample_metrics):
         rs = RunStorage(tmp_path / "run1", "run1")
         generate_run_report(
-            rs.run_dir, "run1", spec, sample_metrics,
+            rs.run_dir,
+            "run1",
+            spec,
+            sample_metrics,
         )
         assert not (rs.output_dir / "report.md").exists()
 
@@ -189,7 +204,9 @@ class TestSweepFolderStructure:
 
         all_metrics = {"run_s0": sample_metrics}
         generate_sweep_report(
-            spec, all_metrics, results_dir=results_dir,
+            spec,
+            all_metrics,
+            results_dir=results_dir,
         )
 
         report_files = list(results_dir.glob("sweep_report_*.md"))
@@ -204,7 +221,8 @@ class TestSweepFolderStructure:
         rs.save_metrics(sample_metrics)
 
         generate_sweep_report(
-            spec, {"er1_mappo_n4_t3_k2_l035_s0": sample_metrics},
+            spec,
+            {"er1_mappo_n4_t3_k2_l035_s0": sample_metrics},
             results_dir=storage.results_dir,
         )
 
@@ -241,7 +259,10 @@ class TestFullRunLifecycle:
     """Simulate a complete run and verify every artifact location."""
 
     def test_complete_run_produces_expected_tree(
-        self, tmp_path, spec, sample_metrics,
+        self,
+        tmp_path,
+        spec,
+        sample_metrics,
     ):
         """Simulate all steps of run_single() and verify the folder tree."""
         storage = ExperimentStorage("er1", results_root=tmp_path)
@@ -249,20 +270,27 @@ class TestFullRunLifecycle:
         rs = storage.get_run(run_id)
 
         # 1. Save config (like run_single does)
-        rs.save_config({
-            "exp_id": "er1",
-            "run_id": run_id,
-            "algorithm": "mappo",
-            "seed": 0,
-            "task": spec.task.to_dict(),
-        })
+        rs.save_config(
+            {
+                "exp_id": "er1",
+                "run_id": run_id,
+                "algorithm": "mappo",
+                "seed": 0,
+                "task": spec.task.to_dict(),
+            }
+        )
 
         # 2. Save provenance
-        save_provenance(rs.run_dir, spec.task.to_dict(), {k: v for k, v in spec.train.__dict__.items()})
+        save_provenance(
+            rs.run_dir,
+            spec.task.to_dict(),
+            {k: v for k, v in spec.train.__dict__.items()},
+        )
 
         # 3. Setup logger
         logger = setup_run_logger(
-            rs.run_dir, name="test_lifecycle_log",
+            rs.run_dir,
+            name="test_lifecycle_log",
         )
         logger.info("Training started")
 
@@ -281,7 +309,10 @@ class TestFullRunLifecycle:
 
         # 8. Generate report
         generate_run_report(
-            rs.run_dir, run_id, spec, sample_metrics,
+            rs.run_dir,
+            run_id,
+            spec,
+            sample_metrics,
             elapsed_seconds=120,
         )
 
@@ -316,7 +347,10 @@ class TestFullRunLifecycle:
         assert not (run_dir / "metrics.json").exists()
 
     def test_complete_sweep_produces_expected_tree(
-        self, tmp_path, spec, sample_metrics,
+        self,
+        tmp_path,
+        spec,
+        sample_metrics,
     ):
         """Simulate a 2-run sweep and verify sweep + run artifacts."""
         storage = ExperimentStorage("er1", results_root=tmp_path)
@@ -332,13 +366,18 @@ class TestFullRunLifecycle:
             rs.save_config({"run_id": run_id})
             rs.save_metrics(sample_metrics)
             generate_run_report(
-                rs.run_dir, run_id, spec, sample_metrics,
+                rs.run_dir,
+                run_id,
+                spec,
+                sample_metrics,
             )
             all_metrics[run_id] = sample_metrics
 
         # Generate sweep report
         generate_sweep_report(
-            spec, all_metrics, results_dir=storage.results_dir,
+            spec,
+            all_metrics,
+            results_dir=storage.results_dir,
         )
 
         # ── Verify sweep-level artifacts ──
@@ -384,7 +423,11 @@ class TestCrossModulePathConsistency:
 
     def test_provenance_and_storage_share_input_dir(self, tmp_path, spec):
         rs = RunStorage(tmp_path / "run1", "run1")
-        save_provenance(rs.run_dir, spec.task.to_dict(), {k: v for k, v in spec.train.__dict__.items()})
+        save_provenance(
+            rs.run_dir,
+            spec.task.to_dict(),
+            {k: v for k, v in spec.train.__dict__.items()},
+        )
 
         # provenance.py writes to run_dir/input/provenance.json
         # storage.py defines input_dir as run_dir/input/
@@ -395,7 +438,8 @@ class TestCrossModulePathConsistency:
     def test_logging_and_storage_share_logs_dir(self, tmp_path):
         rs = RunStorage(tmp_path / "run1", "run1")
         logger = setup_run_logger(
-            rs.run_dir, name="test_path_consistency",
+            rs.run_dir,
+            name="test_path_consistency",
         )
         logger.info("hello")
         teardown_run_logger(logger)
@@ -407,7 +451,10 @@ class TestCrossModulePathConsistency:
     def test_report_uses_run_dir_root(self, tmp_path, spec, sample_metrics):
         rs = RunStorage(tmp_path / "run1", "run1")
         report_text = generate_run_report(
-            rs.run_dir, "run1", spec, sample_metrics,
+            rs.run_dir,
+            "run1",
+            spec,
+            sample_metrics,
         )
 
         # report.py writes to run_dir/report.md
@@ -416,7 +463,10 @@ class TestCrossModulePathConsistency:
         assert report_path.read_text() == report_text
 
     def test_experiment_storage_finds_run_after_full_lifecycle(
-        self, tmp_path, spec, sample_metrics,
+        self,
+        tmp_path,
+        spec,
+        sample_metrics,
     ):
         """ExperimentStorage.list_runs() finds runs created by RunStorage."""
         storage = ExperimentStorage("er1", results_root=tmp_path)

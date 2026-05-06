@@ -109,9 +109,7 @@ def check_critic_revision(run_dir: Path) -> Dict:
     log_hits = 0
     for log_file in run_dir.rglob("*.log"):
         txt = log_file.read_text(errors="ignore")
-        log_hits += len(
-            re.findall(r"Editor critique:\s+revisions=([1-9])", txt)
-        )
+        log_hits += len(re.findall(r"Editor critique:\s+revisions=([1-9])", txt))
     return {
         "name": "critic_revision",
         "log_revisions": log_hits,
@@ -167,9 +165,10 @@ def check_cache_replay(run_dir: Path) -> Dict:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "run_dir", type=str,
+        "run_dir",
+        type=str,
         help="Path to the LERO-MP run directory "
-             "(e.g. results/lero_mp/<exp>/<timestamp_sN>)",
+        "(e.g. results/lero_mp/<exp>/<timestamp_sN>)",
     )
     args = parser.parse_args(argv)
     run_dir = Path(args.run_dir)

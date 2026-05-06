@@ -94,7 +94,6 @@ class Scenario(BaseScenario):
         )
 
     def extra_render(self, env_index: int = 0) -> "List[Geom]":
-
         geoms: List[Geom] = []
 
         # Agent rotation

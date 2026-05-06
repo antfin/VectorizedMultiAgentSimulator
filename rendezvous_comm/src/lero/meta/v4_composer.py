@@ -58,9 +58,7 @@ def compose_prompt_for_strategy(
     base_prompt_dir = Path(base_prompt_dir)
     output_root = Path(output_root)
     if not base_prompt_dir.exists():
-        raise FileNotFoundError(
-            f"base_prompt_dir does not exist: {base_prompt_dir}"
-        )
+        raise FileNotFoundError(f"base_prompt_dir does not exist: {base_prompt_dir}")
 
     target = output_root / candidate_id
     if target.exists():
@@ -82,8 +80,7 @@ def compose_prompt_for_strategy(
         # Force-empty regardless of whether slot_edits also touched it.
         (target / "guidance_reward.txt").write_text("")
         _log.info(
-            "Strategy %s reverted to baseline reward "
-            "(guidance_reward.txt cleared).",
+            "Strategy %s reverted to baseline reward " "(guidance_reward.txt cleared).",
             strategy.strategy_id,
         )
 
@@ -100,14 +97,15 @@ def compose_prompt_for_strategy(
         )
         shared_path.write_text(appended)
         _log.info(
-            "Strategy %s prompt augmented with prior-round winner code "
-            "(%d chars).",
-            strategy.strategy_id, len(prior_winner_code),
+            "Strategy %s prompt augmented with prior-round winner code " "(%d chars).",
+            strategy.strategy_id,
+            len(prior_winner_code),
         )
 
     _log.info(
         "Composed prompt for %s at %s (%d slot edits, revert_reward=%s)",
-        strategy.strategy_id, target,
+        strategy.strategy_id,
+        target,
         len(strategy.slot_edits or {}),
         strategy.revert_to_baseline_reward,
     )

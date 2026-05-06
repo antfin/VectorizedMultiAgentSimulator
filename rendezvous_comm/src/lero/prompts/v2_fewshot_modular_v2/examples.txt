@@ -29,4 +29,3 @@ def compute_reward(scenario_state: dict) -> torch.Tensor:
     reward = reward + scenario_state["time_penalty"]
     return reward
 ```
-

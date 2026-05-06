@@ -25,7 +25,7 @@ class TestTransport:
             device="cpu",
             continuous_actions=self.continuous_actions,
             # Environment specific variables
-            **kwargs
+            **kwargs,
         )
         self.env.seed(0)
 

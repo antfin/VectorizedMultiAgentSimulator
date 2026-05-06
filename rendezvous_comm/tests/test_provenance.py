@@ -4,12 +4,10 @@ Config freshness is based on non-sweep parameters (task + train dicts),
 NOT on the source YAML file. Two different YAML files that produce the
 same task+train params are treated as equivalent.
 """
+
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-import yaml
 
 from src.provenance import (
     Freshness,
@@ -27,16 +25,21 @@ from src.provenance import (
 
 def _sample_task_dict():
     return {
-        "n_agents": 4, "n_targets": 7, "agents_per_target": 2,
-        "lidar_range": 0.35, "covering_range": 0.25,
+        "n_agents": 4,
+        "n_targets": 7,
+        "agents_per_target": 2,
+        "lidar_range": 0.35,
+        "covering_range": 0.25,
         "max_steps": 200,
     }
 
 
 def _sample_train_dict():
     return {
-        "algorithm": "mappo", "max_n_frames": 6_000_000,
-        "gamma": 0.99, "lr": 5e-5,
+        "algorithm": "mappo",
+        "max_n_frames": 6_000_000,
+        "gamma": 0.99,
+        "lr": 5e-5,
     }
 
 
@@ -72,12 +75,14 @@ class TestComputeConfigHash:
 
     def test_different_content_different_hash(self):
         h1 = compute_config_hash(
-            _sample_task_dict(), _sample_train_dict(),
+            _sample_task_dict(),
+            _sample_train_dict(),
         )
         different_train = _sample_train_dict()
         different_train["lr"] = 1e-3
         h2 = compute_config_hash(
-            _sample_task_dict(), different_train,
+            _sample_task_dict(),
+            different_train,
         )
         assert h1 != h2
 
@@ -87,7 +92,8 @@ class TestComputeConfigHash:
         task_b = {"a_key": 2, "z_key": 1}
         train = {"x": 1}
         assert compute_config_hash(task_a, train) == compute_config_hash(
-            task_b, train,
+            task_b,
+            train,
         )
 
     def test_deterministic(self):
@@ -206,7 +212,9 @@ class TestCheckFreshness:
         run_dir.mkdir()
 
         save_provenance(
-            run_dir, _sample_task_dict(), _sample_train_dict(),
+            run_dir,
+            _sample_task_dict(),
+            _sample_train_dict(),
         )
 
         # Check with different task params
@@ -236,7 +244,9 @@ class TestCheckFreshness:
         run_dir.mkdir()
 
         save_provenance(
-            run_dir, _sample_task_dict(), _sample_train_dict(),
+            run_dir,
+            _sample_task_dict(),
+            _sample_train_dict(),
         )
 
         # Different task params
@@ -269,7 +279,9 @@ class TestCheckFreshness:
         run_dir.mkdir()
 
         save_provenance(
-            run_dir, _sample_task_dict(), _sample_train_dict(),
+            run_dir,
+            _sample_task_dict(),
+            _sample_train_dict(),
         )
 
         different_train = _sample_train_dict()

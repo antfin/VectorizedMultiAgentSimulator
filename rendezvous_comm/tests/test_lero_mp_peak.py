@@ -4,8 +4,7 @@ Uses a stub _BenchMARLCallback base so BenchMARL doesn't need to be
 fully initialized — we're testing our tracking logic, not TorchRL.
 """
 
-from pathlib import Path
-from typing import Any, List
+from typing import List
 
 import pytest
 import torch
@@ -18,6 +17,7 @@ from src.lero.meta.peak_checkpoint import (
 
 
 # ── PeakM1Tracker: pure data ────────────────────────────────────
+
 
 class TestPeakM1Tracker:
     def test_initial_state(self):
@@ -44,10 +44,10 @@ class TestPeakM1Tracker:
             calls.append(1)
             return {"w": torch.zeros(3)}
 
-        t.record(0, 100, 0.2, state_dict_factory=factory)   # new peak
+        t.record(0, 100, 0.2, state_dict_factory=factory)  # new peak
         t.record(1, 200, 0.15, state_dict_factory=factory)  # lower, no snap
-        t.record(2, 300, 0.5, state_dict_factory=factory)   # new peak
-        t.record(3, 400, 0.3, state_dict_factory=factory)   # lower, no snap
+        t.record(2, 300, 0.5, state_dict_factory=factory)  # new peak
+        t.record(3, 400, 0.3, state_dict_factory=factory)  # lower, no snap
 
         assert len(calls) == 2  # factory only called on new peaks
         assert t.peak_M1 == pytest.approx(0.5)
@@ -67,12 +67,12 @@ class TestPeakM1Tracker:
 
     def test_save_peak_policy_writes_file(self, tmp_path):
         t = PeakM1Tracker()
-        t.record(0, 100, 0.5, state_dict_factory=lambda: {"w": torch.arange(3.)})
+        t.record(0, 100, 0.5, state_dict_factory=lambda: {"w": torch.arange(3.0)})
         path = tmp_path / "peak.pt"
         assert t.save_peak_policy(path) is True
         assert path.exists()
         reloaded = torch.load(path, weights_only=False)
-        assert torch.equal(reloaded["w"], torch.arange(3.))
+        assert torch.equal(reloaded["w"], torch.arange(3.0))
 
     def test_save_peak_policy_no_snapshot_returns_false(self, tmp_path):
         t = PeakM1Tracker()
@@ -98,10 +98,12 @@ class TestPeakM1Tracker:
         assert len(s["peak_m1_trajectory"]) == 2
         # Serializable as JSON (no torch / numpy)
         import json
+
         assert json.loads(json.dumps(s))["peak_M1"] == pytest.approx(0.6)
 
 
 # ── PeakM1Callback: hook behavior ───────────────────────────────
+
 
 class _FakeEvalCb:
     """Minimal stand-in for _EvalMetricsCallback."""
@@ -134,7 +136,9 @@ class TestPeakM1Callback:
 
         tracker = PeakM1Tracker()
         cb = PeakM1Callback(
-            tracker=tracker, eval_source=eval_cb, frames_per_iteration=100,
+            tracker=tracker,
+            eval_source=eval_cb,
+            frames_per_iteration=100,
         )
         cb.experiment = _FakeExperiment(_FakePolicy(1.0))
         cb.on_evaluation_end(rollouts=None)
@@ -144,7 +148,8 @@ class TestPeakM1Callback:
         assert tracker.peak_at_frame == 100
         assert tracker.peak_state_dict is not None
         assert torch.equal(
-            tracker.peak_state_dict["weight"], torch.tensor([1.0, 1.0]),
+            tracker.peak_state_dict["weight"],
+            torch.tensor([1.0, 1.0]),
         )
 
     def test_no_history_is_no_op(self):
@@ -171,7 +176,8 @@ class TestPeakM1Callback:
         policy._v = 999.0
         # Snapshot should still reflect the original value.
         assert torch.equal(
-            tracker.peak_state_dict["weight"], torch.tensor([1.0, 1.0]),
+            tracker.peak_state_dict["weight"],
+            torch.tensor([1.0, 1.0]),
         )
 
     def test_on_batch_collected_tracks_iter(self):
@@ -187,13 +193,14 @@ class TestPeakM1Callback:
         ``'torch.Size' object has no attribute 'detach'`` killed full
         training.
         """
+
         class MixedPolicy:
             def state_dict(self):
                 return {
                     "weight": torch.tensor([1.0, 2.0]),
                     "bias": torch.tensor([0.5]),
-                    "input_shape": torch.Size([4, 2]),   # non-tensor
-                    "metadata_str": "relu",               # non-tensor
+                    "input_shape": torch.Size([4, 2]),  # non-tensor
+                    "metadata_str": "relu",  # non-tensor
                 }
 
         eval_cb = _FakeEvalCb()
@@ -213,6 +220,7 @@ class TestPeakM1Callback:
 
 # ── make_peak_m1_callback factory ───────────────────────────────
 
+
 class _StubBench:
     """Stand-in for runner._BenchMARLCallback — just needs to be a class
     with a no-arg __init__."""
@@ -226,8 +234,10 @@ class TestMakePeakM1Callback:
         tracker = PeakM1Tracker()
         eval_cb = _FakeEvalCb()
         bound = make_peak_m1_callback(
-            tracker=tracker, eval_source=eval_cb,
-            frames_per_iteration=100, bench_callback_base=_StubBench,
+            tracker=tracker,
+            eval_source=eval_cb,
+            frames_per_iteration=100,
+            bench_callback_base=_StubBench,
         )
         assert isinstance(bound, _StubBench)
 
@@ -240,7 +250,10 @@ class TestMakePeakM1Callback:
         """
         tracker = PeakM1Tracker()
         bound = make_peak_m1_callback(
-            tracker, _FakeEvalCb(), 100, _StubBench,
+            tracker,
+            _FakeEvalCb(),
+            100,
+            _StubBench,
         )
         assert bound.__getstate__() == {"_dummy": True}
         # __setstate__ must not crash when given the dummy back.
@@ -253,7 +266,10 @@ class TestMakePeakM1Callback:
         eval_cb.record(0, 0.42)
 
         bound = make_peak_m1_callback(
-            tracker, eval_cb, 50, _StubBench,
+            tracker,
+            eval_cb,
+            50,
+            _StubBench,
         )
         bound.experiment = _FakeExperiment(_FakePolicy(2.0))
         bound.on_evaluation_end(rollouts=None)

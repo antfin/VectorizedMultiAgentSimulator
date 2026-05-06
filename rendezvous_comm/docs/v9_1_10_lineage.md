@@ -1,8 +1,8 @@
 # v9.1.10 lineage — prompts, observations, evolution, S3b-local comparison
 
-**Date:** 2026-05-04  
-**v9.1.10 run:** `results/lero_v9/lero_v9_rendezvous_k2_2x3/20260504_1151_s0`  
-**S3b-local reference prompt:** `src/lero/prompts/v2_fewshot_k2_local/`  
+**Date:** 2026-05-04
+**v9.1.10 run:** `results/lero_v9/lero_v9_rendezvous_k2_2x3/20260504_1151_s0`
+**S3b-local reference prompt:** `src/lero/prompts/v2_fewshot_k2_local/`
 **S3b-local results:** `results/s3b_local_replicate/lero_s3b_local_{s0,s1,s2}/`
 
 This doc walks the FULL prompt + observation evolution of v9.1.10:
@@ -116,8 +116,8 @@ def enhance_observation(scenario_state: dict) -> torch.Tensor:
 
 **End-of-outer reflection CoT:**
 
-- **label:** `partial`  
-- **action:** `refine_current`  
+- **label:** `partial`
+- **action:** `refine_current`
 
 **memory_recall:** "outer 0: predicted M1=0.08, actual M1=0.0; predicted M6=0.42, actual M6=0.18714285714285708". This is the first attempt for this strategy, so the falsification rule does not force a switch yet.
 
@@ -161,8 +161,8 @@ def enhance_observation(scenario_state: dict) -> torch.Tensor:
 
 **End-of-outer reflection CoT:**
 
-- **label:** `partial`  
-- **action:** `switch_to_next`  
+- **label:** `partial`
+- **action:** `switch_to_next`
 
 **memory_recall:** "outer 0: predicted M1=0.08, actual M1=0.0; predicted M6=0.42, actual M6=0.18714285714285708"; "current outer: predicted M1=0.08, actual M1=0.0; predicted M6=0.42, actual M6=0.16714285714285712". The same strategy has now been attempted 2 times, and both actual M1 values are below 0.5× expected_M1 (0.04), so the falsification rule forces switching away from it.
 
@@ -204,8 +204,8 @@ def enhance_observation(scenario_state: dict) -> torch.Tensor:
 
 **End-of-outer reflection CoT:**
 
-- **label:** `partial`  
-- **action:** `switch_to_next`  
+- **label:** `partial`
+- **action:** `switch_to_next`
 
 **memory_recall:** "outer 0: predicted M1=0.08, actual M1=0.0; outer 1: predicted M1=0.08, actual M1=0.0; this outer: predicted M1=0.07, actual M1=0.0". Two prior attempts on the same strategy both produced actual M1 far below 0.5× expected_M1_at_1M (0.035), and the current inner still has M1=0.0 despite cross-source ops and role one-hot being present.
 
@@ -247,8 +247,8 @@ def enhance_observation(scenario_state: dict) -> torch.Tensor:
 
 **End-of-outer reflection CoT:**
 
-- **label:** `partial`  
-- **action:** `switch_to_next`  
+- **label:** `partial`
+- **action:** `switch_to_next`
 
 **memory_recall:** "outer 0: predicted M1=0.08, actual M1=0.0; outer 1: predicted M1=0.08, actual M1=0.0; outer 2: predicted M1=0.07, actual M1=0.0". Across the last three related attempts, the strategy family stayed below half of expected M1 each time, and the current outer again underperformed with M1=0.01 versus expected_M1_at_1M=0.06. Because this is the same role-splitting/pairing lineage and the falsification rule is triggered, the current soft-commit variant should not be refined further.
 
@@ -290,8 +290,8 @@ def enhance_observation(scenario_state: dict) -> torch.Tensor:
 
 **End-of-outer reflection CoT:**
 
-- **label:** `partial`  
-- **action:** `switch_to_next`  
+- **label:** `partial`
+- **action:** `switch_to_next`
 
 **memory_recall:** "outer 1: predicted M1=0.08, actual M1=0.0; outer 2: predicted M1=0.07, actual M1=0.0; outer 3: predicted M1=0.06, actual M1=0.01". The same strategy family has now been attempted multiple times, and every actual M1 is below half of its expected threshold (0.03 for the current strategy, 0.03–0.04 for prior related ones), so the falsification rule forces moving on.
 

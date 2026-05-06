@@ -38,11 +38,13 @@ def main(argv=None) -> int:
 
     if os.environ.get("LERO_ENCRYPTED"):
         from src.secrets_util import decrypt_and_load_env
+
         decrypt_and_load_env()
 
     import random as _random
     import numpy as _np
     import torch as _torch
+
     _random.seed(args.seed)
     _np.random.seed(args.seed)
     _torch.manual_seed(args.seed)
@@ -58,6 +60,7 @@ def main(argv=None) -> int:
         return 2
 
     from src.config import load_experiment
+
     spec = load_experiment(cfg_path)
     if spec.lero is None or spec.llm is None:
         log.error("Config missing 'lero:' or 'llm:' block")
@@ -65,19 +68,16 @@ def main(argv=None) -> int:
 
     v9_raw = raw["v9"]
     from src.lero.v9.outer_loop import V9OuterConfig
+
     v9_cfg = V9OuterConfig(
         n_inner_iter=int(v9_raw.get("n_inner_iter", 3)),
-        n_inner_candidates_per_iter=int(
-            v9_raw.get("n_inner_candidates_per_iter", 3)
-        ),
+        n_inner_candidates_per_iter=int(v9_raw.get("n_inner_candidates_per_iter", 3)),
         eval_frames=int(v9_raw.get("eval_frames", 1_000_000)),
         base_prompt_version=str(
             v9_raw.get("base_prompt_version", "v3_modular_taskdomain")
         ),
         meta_model=str(v9_raw.get("meta_model", spec.llm.model)),
-        meta_temperature=float(
-            v9_raw.get("meta_temperature", spec.llm.temperature)
-        ),
+        meta_temperature=float(v9_raw.get("meta_temperature", spec.llm.temperature)),
         task_summary=str(v9_raw.get("task_summary", spec.description or "")),
         memory_lookback_n=int(v9_raw.get("memory_lookback_n", 3)),
         max_outer_override=(
@@ -92,16 +92,25 @@ def main(argv=None) -> int:
         run_id = f"{time.strftime('%Y%m%d_%H%M')}_s{args.seed}"
         output_root = base / "lero_v9" / spec.exp_id.lower() / run_id
     output_root.mkdir(parents=True, exist_ok=True)
-    (output_root / "run_manifest.json").write_text(json.dumps({
-        "exp_id": spec.exp_id, "name": spec.name,
-        "config_source": str(cfg_path),
-        "seed": args.seed, "algorithm": args.algorithm,
-        "v9_config": v9_raw,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }, indent=2))
+    (output_root / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "exp_id": spec.exp_id,
+                "name": spec.name,
+                "config_source": str(cfg_path),
+                "seed": args.seed,
+                "algorithm": args.algorithm,
+                "v9_config": v9_raw,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            indent=2,
+        )
+    )
     log.info(
         "v9 ready: exp=%s out=%s memory_lookback_n=%d",
-        spec.exp_id, output_root, v9_cfg.memory_lookback_n,
+        spec.exp_id,
+        output_root,
+        v9_cfg.memory_lookback_n,
     )
 
     if args.dry_run:
@@ -110,14 +119,19 @@ def main(argv=None) -> int:
     spec.lero.eval_frames = v9_cfg.eval_frames
 
     from src.lero.loop import LeroLoop
+
     base_loop = LeroLoop(
-        spec=spec, lero_config=spec.lero, llm_config=spec.llm,
+        spec=spec,
+        lero_config=spec.lero,
+        llm_config=spec.llm,
         output_dir=output_root / "_inner_legacy_outdir",
     )
     from src.lero.config import LLMConfig
     from src.lero.llm_client import LLMClient
+
     meta_cfg = LLMConfig(
-        model=v9_cfg.meta_model, temperature=v9_cfg.meta_temperature,
+        model=v9_cfg.meta_model,
+        temperature=v9_cfg.meta_temperature,
         max_retries=spec.llm.max_retries,
         prompt_version=v9_cfg.base_prompt_version,
     )
@@ -128,9 +142,15 @@ def main(argv=None) -> int:
         return 2
 
     from src.lero.v9.outer_loop import run_v9_outer_loop
+
     summary = run_v9_outer_loop(
-        spec=spec, base_loop=base_loop, cfg=v9_cfg, meta_llm=meta_llm,
-        output_dir=output_root, seed=args.seed, algorithm=args.algorithm,
+        spec=spec,
+        base_loop=base_loop,
+        cfg=v9_cfg,
+        meta_llm=meta_llm,
+        output_dir=output_root,
+        seed=args.seed,
+        algorithm=args.algorithm,
         resume=args.resume,
     )
     log.info(

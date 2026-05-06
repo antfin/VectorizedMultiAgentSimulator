@@ -15,12 +15,12 @@ from typing import List, Optional
 
 @dataclass
 class RegistryEntry:
-    iter_idx: int                # which iter this came from
-    handle: str                  # short identifier (e.g. "lidar_dump_28d")
-    summary: str                 # 1-line description of what was tried
-    fitness: float               # weighted_fitness score
-    M1: float                    # raw M1 for sorting / filtering
-    shape: str                   # shape_tag
+    iter_idx: int  # which iter this came from
+    handle: str  # short identifier (e.g. "lidar_dump_28d")
+    summary: str  # 1-line description of what was tried
+    fitness: float  # weighted_fitness score
+    M1: float  # raw M1 for sorting / filtering
+    shape: str  # shape_tag
     code_excerpt: Optional[str] = None  # first ~30 lines for context
 
     def is_failure(self, threshold: float = 0.05) -> bool:
@@ -41,7 +41,8 @@ class Registry:
     def successes(self, k: int = 3) -> List[RegistryEntry]:
         return sorted(
             [e for e in self.entries if not e.is_failure()],
-            key=lambda e: e.fitness, reverse=True,
+            key=lambda e: e.fitness,
+            reverse=True,
         )[:k]
 
     def failures(self) -> List[RegistryEntry]:

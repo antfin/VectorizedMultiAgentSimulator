@@ -1,19 +1,35 @@
 """Tests for ER2 emergent communication (dim_c) in Discovery scenario."""
-import pytest
+
 import torch
 from vmas import make_env
 
 
 # ── Scenario creation ──
 
-def _make_env(dim_c=0, comm_proximity=True, n_agents=4, n_targets=4,
-              use_agent_lidar=True, num_envs=3, **kwargs):
+
+def _make_env(
+    dim_c=0,
+    comm_proximity=True,
+    n_agents=4,
+    n_targets=4,
+    use_agent_lidar=True,
+    num_envs=3,
+    **kwargs,
+):
     return make_env(
-        scenario="discovery", num_envs=num_envs, device="cpu",
-        continuous_actions=True, n_agents=n_agents, n_targets=n_targets,
-        agents_per_target=2, lidar_range=0.35, covering_range=0.25,
-        use_agent_lidar=use_agent_lidar, dim_c=dim_c,
-        comm_proximity=comm_proximity, **kwargs,
+        scenario="discovery",
+        num_envs=num_envs,
+        device="cpu",
+        continuous_actions=True,
+        n_agents=n_agents,
+        n_targets=n_targets,
+        agents_per_target=2,
+        lidar_range=0.35,
+        covering_range=0.25,
+        use_agent_lidar=use_agent_lidar,
+        dim_c=dim_c,
+        comm_proximity=comm_proximity,
+        **kwargs,
     )
 
 
@@ -96,9 +112,10 @@ class TestCommunicationEnabled:
         # Agent 1's obs should contain agent 0's message (0.7)
         # obs layout: pos(2) + vel(2) + target_lidar(15) + agent_lidar(12) + msgs(4)
         msg_start = 31  # with agent lidar
-        msg_from_agent0 = obs[1][:, msg_start:msg_start + 4]
-        assert torch.allclose(msg_from_agent0, torch.full_like(msg_from_agent0, 0.7),
-                              atol=0.01)
+        msg_from_agent0 = obs[1][:, msg_start : msg_start + 4]
+        assert torch.allclose(
+            msg_from_agent0, torch.full_like(msg_from_agent0, 0.7), atol=0.01
+        )
 
     def test_dim_c_varies(self):
         """Different dim_c values produce correct shapes."""
@@ -107,7 +124,9 @@ class TestCommunicationEnabled:
             obs = env.reset()
             # 31 (base+agent_lidar) + 2*dc (msgs from 2 other agents)
             expected = 31 + 2 * dc
-            assert obs[0].shape[-1] == expected, f"dim_c={dc}: got {obs[0].shape[-1]}, expected {expected}"
+            assert (
+                obs[0].shape[-1] == expected
+            ), f"dim_c={dc}: got {obs[0].shape[-1]}, expected {expected}"
 
 
 class TestProximityGating:
@@ -115,8 +134,7 @@ class TestProximityGating:
 
     def test_proximity_masks_distant(self):
         """Agents far apart should receive zero messages."""
-        env = _make_env(dim_c=4, n_agents=2, comm_proximity=True,
-                        num_envs=1)
+        env = _make_env(dim_c=4, n_agents=2, comm_proximity=True, num_envs=1)
         env.reset()
         # Move agents far apart (beyond lidar_range=0.35)
         env.agents[0].set_pos(torch.tensor([[0.8, 0.0]]), batch_index=None)
@@ -129,14 +147,14 @@ class TestProximityGating:
         obs, _, _, _ = env.step([a0, a1])
         # Agent 1 should see zeros (agent 0 is out of range)
         msg_start = 31
-        msg_from_agent0 = obs[1][:, msg_start:msg_start + 4]
-        assert torch.allclose(msg_from_agent0, torch.zeros_like(msg_from_agent0),
-                              atol=0.01)
+        msg_from_agent0 = obs[1][:, msg_start : msg_start + 4]
+        assert torch.allclose(
+            msg_from_agent0, torch.zeros_like(msg_from_agent0), atol=0.01
+        )
 
     def test_proximity_allows_close(self):
         """Agents close together should receive messages."""
-        env = _make_env(dim_c=4, n_agents=2, comm_proximity=True,
-                        num_envs=1)
+        env = _make_env(dim_c=4, n_agents=2, comm_proximity=True, num_envs=1)
         env.reset()
         # Move agents close together (within lidar_range=0.35)
         env.agents[0].set_pos(torch.tensor([[0.0, 0.0]]), batch_index=None)
@@ -148,14 +166,14 @@ class TestProximityGating:
         a1 = torch.zeros(1, action_size)
         obs, _, _, _ = env.step([a0, a1])
         msg_start = 31
-        msg_from_agent0 = obs[1][:, msg_start:msg_start + 4]
-        assert torch.allclose(msg_from_agent0, torch.full_like(msg_from_agent0, 0.9),
-                              atol=0.01)
+        msg_from_agent0 = obs[1][:, msg_start : msg_start + 4]
+        assert torch.allclose(
+            msg_from_agent0, torch.full_like(msg_from_agent0, 0.9), atol=0.01
+        )
 
     def test_no_proximity_always_receives(self):
         """comm_proximity=False: messages arrive regardless of distance."""
-        env = _make_env(dim_c=4, n_agents=2, comm_proximity=False,
-                        num_envs=1)
+        env = _make_env(dim_c=4, n_agents=2, comm_proximity=False, num_envs=1)
         env.reset()
         # Far apart
         env.agents[0].set_pos(torch.tensor([[0.8, 0.0]]), batch_index=None)
@@ -166,9 +184,10 @@ class TestProximityGating:
         a1 = torch.zeros(1, action_size)
         obs, _, _, _ = env.step([a0, a1])
         msg_start = 31
-        msg_from_agent0 = obs[1][:, msg_start:msg_start + 4]
-        assert torch.allclose(msg_from_agent0, torch.full_like(msg_from_agent0, 0.9),
-                              atol=0.01)
+        msg_from_agent0 = obs[1][:, msg_start : msg_start + 4]
+        assert torch.allclose(
+            msg_from_agent0, torch.full_like(msg_from_agent0, 0.9), atol=0.01
+        )
 
 
 class TestRewardUnchanged:

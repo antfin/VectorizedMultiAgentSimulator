@@ -48,9 +48,9 @@ except Exception:  # pragma: no cover — only hit when BenchMARL is absent
 class PeakM1Tracker:
     """Append-only record of per-eval M1 with best-so-far state cached."""
 
-    peak_M1: float = -1.0                      # start below any real M1
-    peak_at_frame: int = -1                    # -1 = no eval seen yet
-    peak_iter: int = -1                        # BenchMARL iteration index
+    peak_M1: float = -1.0  # start below any real M1
+    peak_at_frame: int = -1  # -1 = no eval seen yet
+    peak_iter: int = -1  # BenchMARL iteration index
     peak_state_dict: Optional[Dict[str, Any]] = None
     # Full trajectory — helpful for post-hoc analysis + regression tests.
     m1_over_time: List[Dict[str, float]] = field(default_factory=list)
@@ -73,9 +73,13 @@ class PeakM1Tracker:
                 checkpoint). Only called when we beat the current peak,
                 so cheap M1 updates don't pay the copy cost.
         """
-        self.m1_over_time.append({
-            "iteration": iteration, "frame": frame, "M1": m1,
-        })
+        self.m1_over_time.append(
+            {
+                "iteration": iteration,
+                "frame": frame,
+                "M1": m1,
+            }
+        )
         if m1 > self.peak_M1:
             self.peak_M1 = float(m1)
             self.peak_at_frame = int(frame)
@@ -119,7 +123,7 @@ class PeakM1Callback:
     def __init__(
         self,
         tracker: PeakM1Tracker,
-        eval_source: Any,                 # _EvalMetricsCallback-ish
+        eval_source: Any,  # _EvalMetricsCallback-ish
         frames_per_iteration: int = 1,
     ) -> None:
         self.tracker = tracker
@@ -143,6 +147,7 @@ class PeakM1Callback:
         exp = getattr(self, "experiment", None)
         policy = getattr(exp, "policy", None) if exp is not None else None
         if policy is not None and torch is not None:
+
             def state_factory():  # noqa: F811 — intentional shadow
                 # BenchMARL policy state_dicts can contain non-tensor
                 # values (e.g. torch.Size for shape metadata). Only
@@ -155,6 +160,7 @@ class PeakM1Callback:
                     else:
                         out[k] = v
                 return out
+
         self.tracker.record(
             iteration=latest_iter,
             frame=latest_iter * self.frames_per_iteration,

@@ -1,4 +1,5 @@
 """Unit tests for runner helper functions."""
+
 import pytest
 
 from src.runner import _in_notebook, _fmt_elapsed, make_heuristic_policy_fn
@@ -7,6 +8,7 @@ from src.runner import _in_notebook, _fmt_elapsed, make_heuristic_policy_fn
 def _has_benchmarl():
     try:
         import benchmarl  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -86,49 +88,56 @@ class TestHeuristicOutperformsRandom:
         from src.runner import evaluate_with_vmas
 
         tc = TaskConfig(
-            n_agents=3, n_targets=3, agents_per_target=1,
+            n_agents=3,
+            n_targets=3,
+            agents_per_target=1,
             max_steps=20,
         )
         heur = evaluate_with_vmas(
-            tc, policy_fn=make_heuristic_policy_fn(),
-            n_eval_episodes=4, n_envs=4,
+            tc,
+            policy_fn=make_heuristic_policy_fn(),
+            n_eval_episodes=4,
+            n_envs=4,
         )
         rand = evaluate_with_vmas(
-            tc, policy_fn=None,
-            n_eval_episodes=4, n_envs=4,
+            tc,
+            policy_fn=None,
+            n_eval_episodes=4,
+            n_envs=4,
         )
-        assert heur["M6_coverage_progress"] >= (
-            rand["M6_coverage_progress"] * 0.5
-        )
+        assert heur["M6_coverage_progress"] >= (rand["M6_coverage_progress"] * 0.5)
 
 
-@pytest.mark.skipif(
-    not _has_benchmarl(), reason="BenchMARL not installed"
-)
+@pytest.mark.skipif(not _has_benchmarl(), reason="BenchMARL not installed")
 class TestGetAlgorithmConfig:
     """Test get_algorithm_config with BenchMARL present."""
 
     def test_mappo(self):
         from src.runner import get_algorithm_config
+
         cfg = get_algorithm_config("mappo")
         assert cfg is not None
 
     def test_ippo(self):
         from src.runner import get_algorithm_config
+
         cfg = get_algorithm_config("ippo")
         assert cfg is not None
 
     def test_qmix(self):
         from src.runner import get_algorithm_config
+
         cfg = get_algorithm_config("qmix")
         assert cfg is not None
 
     def test_maddpg(self):
         from src.runner import get_algorithm_config
+
         cfg = get_algorithm_config("maddpg")
         assert cfg is not None
 
     def test_unknown_algorithm_raises(self):
         from src.runner import get_algorithm_config
+
         with pytest.raises(ValueError, match="Unknown algorithm"):
             get_algorithm_config("nonexistent_algo")

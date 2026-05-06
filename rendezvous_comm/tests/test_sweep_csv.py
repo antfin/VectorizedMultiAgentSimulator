@@ -1,6 +1,6 @@
 """Tests for sweep CSV export and enriched metrics."""
+
 import csv
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -203,27 +203,33 @@ class TestExtractTrainingDynamics:
         scalars_dir = rs.benchmarl_dir / "hash1" / "scalars"
         scalars_dir.mkdir(parents=True)
         for name, rows in scalars_data.items():
-            csv_content = "\n".join(
-                f"{step},{val}" for step, val in rows
-            )
+            csv_content = "\n".join(f"{step},{val}" for step, val in rows)
             (scalars_dir / f"{name}.csv").write_text(csv_content)
         return rs
 
     def test_extracts_entropy_and_reward(self, tmp_path):
-        rs = self._make_run_with_scalars(tmp_path, {
-            "train_agents_entropy": [(0, 2.5), (10, 1.8), (20, 1.2)],
-            "eval_reward_episode_reward_mean": [
-                (0, -5.0), (10, 0.5), (20, 2.3),
-            ],
-        })
+        rs = self._make_run_with_scalars(
+            tmp_path,
+            {
+                "train_agents_entropy": [(0, 2.5), (10, 1.8), (20, 1.2)],
+                "eval_reward_episode_reward_mean": [
+                    (0, -5.0),
+                    (10, 0.5),
+                    (20, 2.3),
+                ],
+            },
+        )
         result = _extract_training_dynamics(rs)
         assert result["final_entropy"] == pytest.approx(1.2)
         assert result["final_eval_reward"] == pytest.approx(2.3)
 
     def test_missing_entropy(self, tmp_path):
-        rs = self._make_run_with_scalars(tmp_path, {
-            "eval_reward_episode_reward_mean": [(0, 1.0)],
-        })
+        rs = self._make_run_with_scalars(
+            tmp_path,
+            {
+                "eval_reward_episode_reward_mean": [(0, 1.0)],
+            },
+        )
         result = _extract_training_dynamics(rs)
         assert "final_entropy" not in result
         assert result["final_eval_reward"] == pytest.approx(1.0)
@@ -244,14 +250,16 @@ class TestToDataFrameFlatFields:
         pd = pytest.importorskip("pandas")
         es = ExperimentStorage("er1", results_root=tmp_path)
         rs = es.get_run("er1_mappo_n4_t7_k2_l035_s0")
-        rs.save_metrics({
-            "M1_success_rate": 0.85,
-            "n_agents": 4,
-            "algorithm": "mappo",
-            "seed": 0,
-            "training_seconds": 120.5,
-            "device": "cuda",
-        })
+        rs.save_metrics(
+            {
+                "M1_success_rate": 0.85,
+                "n_agents": 4,
+                "algorithm": "mappo",
+                "seed": 0,
+                "training_seconds": 120.5,
+                "device": "cuda",
+            }
+        )
         df = es.to_dataframe()
         assert df.iloc[0]["training_seconds"] == 120.5
         assert df.iloc[0]["device"] == "cuda"
@@ -274,10 +282,12 @@ class TestToDataFrameFlatFields:
         es = ExperimentStorage("er1", results_root=tmp_path)
         # run_id says n4, but metrics says n6
         rs = es.get_run("er1_mappo_n4_t7_k2_l035_s0")
-        rs.save_metrics({
-            "M1_success_rate": 0.85,
-            "n_agents": 6,  # overrides regex parse of n4
-        })
+        rs.save_metrics(
+            {
+                "M1_success_rate": 0.85,
+                "n_agents": 6,  # overrides regex parse of n4
+            }
+        )
         df = es.to_dataframe()
         assert df.iloc[0]["n_agents"] == 6
 
@@ -292,16 +302,18 @@ class TestToDataFrameFlatFields:
 
         # New format
         rs2 = es.get_run("er1_ippo_n6_t3_k1_l045_s1")
-        rs2.save_metrics({
-            "M1_success_rate": 0.9,
-            "algorithm": "ippo",
-            "n_agents": 6,
-            "training_seconds": 200.0,
-        })
+        rs2.save_metrics(
+            {
+                "M1_success_rate": 0.9,
+                "algorithm": "ippo",
+                "n_agents": 6,
+                "training_seconds": 200.0,
+            }
+        )
 
         df = es.to_dataframe()
         assert len(df) == 2
         # Both should have algorithm
         algos = set(df["algorithm"])
         assert "mappo" in algos  # from regex
-        assert "ippo" in algos   # from flat field
+        assert "ippo" in algos  # from flat field

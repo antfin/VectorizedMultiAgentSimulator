@@ -1,0 +1,35 @@
+# Python bytecode and packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiment outputs — keep the directory tree (.gitkeep markers) but not the runs
+experiments/**/results/*
+!experiments/**/results/.gitkeep

@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -66,8 +64,8 @@ Are the features informative or are there redundant near-duplicates? Score:
 
 @dataclass
 class JudgeResult:
-    score_total: int                    # 0-10
-    score_breakdown: Dict[str, int]     # per-criterion 0-2
+    score_total: int  # 0-10
+    score_breakdown: Dict[str, int]  # per-criterion 0-2
     rationale: str
     raw_text: str = ""
 
@@ -103,7 +101,7 @@ def _parse_judge_response(raw: str) -> JudgeResult:
     je = raw.rfind("}")
     if js < 0 or je < js:
         raise ValueError("no JSON in judge response")
-    blob = raw[js:je + 1]
+    blob = raw[js : je + 1]
     data = json.loads(blob)
     scores = data.get("scores", {}) or {}
     breakdown = {
@@ -160,11 +158,16 @@ def judge_batch(
             _log.warning("judge candidate %d failed: %s", i, e)
             r = JudgeResult(
                 score_total=0,
-                score_breakdown={k: 0 for k in (
-                    "cross_source_ops", "decision_oriented",
-                    "structural_diversity", "implementation_quality",
-                    "signal_density",
-                )},
+                score_breakdown={
+                    k: 0
+                    for k in (
+                        "cross_source_ops",
+                        "decision_oriented",
+                        "structural_diversity",
+                        "implementation_quality",
+                        "signal_density",
+                    )
+                },
                 rationale=f"judge error: {e}",
             )
         results.append(r)

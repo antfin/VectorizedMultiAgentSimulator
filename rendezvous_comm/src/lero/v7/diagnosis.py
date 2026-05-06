@@ -76,10 +76,8 @@ def diagnose_inner_result(
     sig = strategy.success_signature
     m1_match = m1 >= sig.expected_M1_at_1M
     m6_match = m6 >= sig.expected_M6_at_1M_min
-    m3_match = (sig.expected_M3_at_1M_max is None
-                or m3 <= sig.expected_M3_at_1M_max)
-    m4_match = (sig.expected_M4_at_1M_max is None
-                or m4 <= sig.expected_M4_at_1M_max)
+    m3_match = sig.expected_M3_at_1M_max is None or m3 <= sig.expected_M3_at_1M_max
+    m4_match = sig.expected_M4_at_1M_max is None or m4 <= sig.expected_M4_at_1M_max
     metrics_signature_match = m1_match and m6_match and m3_match and m4_match
 
     # Decision tree.

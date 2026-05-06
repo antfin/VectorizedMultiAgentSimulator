@@ -1,8 +1,6 @@
 """Tests for the config module — TaskConfig, TrainConfig, SweepConfig,
 ExperimentSpec, load_experiment, find_configs."""
-from pathlib import Path
 
-import pytest
 import yaml
 
 from src.config import (
@@ -69,12 +67,26 @@ class TestTaskConfig:
         assert isinstance(d, dict)
         # Every dataclass field should be present
         expected_keys = {
-            "n_agents", "n_targets", "agents_per_target", "lidar_range",
-            "covering_range", "use_agent_lidar", "n_lidar_rays_entities",
-            "n_lidar_rays_agents", "targets_respawn", "shared_reward",
-            "agent_collision_penalty", "covering_rew_coeff", "time_penalty",
-            "x_semidim", "y_semidim", "min_dist_between_entities",
-            "max_steps", "dim_c", "comm_proximity", "dict_obs",
+            "n_agents",
+            "n_targets",
+            "agents_per_target",
+            "lidar_range",
+            "covering_range",
+            "use_agent_lidar",
+            "n_lidar_rays_entities",
+            "n_lidar_rays_agents",
+            "targets_respawn",
+            "shared_reward",
+            "agent_collision_penalty",
+            "covering_rew_coeff",
+            "time_penalty",
+            "x_semidim",
+            "y_semidim",
+            "min_dist_between_entities",
+            "max_steps",
+            "dim_c",
+            "comm_proximity",
+            "dict_obs",
         }
         assert set(d.keys()) == expected_keys
 
@@ -145,9 +157,7 @@ class TestExperimentSpecProperties:
         import src.config as config_mod
 
         monkeypatch.setattr(config_mod, "RESULTS_DIR", tmp_path / "results")
-        monkeypatch.setattr(
-            config_mod, "CHECKPOINTS_DIR", tmp_path / "checkpoints"
-        )
+        monkeypatch.setattr(config_mod, "CHECKPOINTS_DIR", tmp_path / "checkpoints")
 
         spec = ExperimentSpec(exp_id="er1", name="T", description="")
         spec.ensure_dirs()
@@ -161,10 +171,14 @@ class TestExperimentSpecConfigTag:
 
     def test_single_run_tag(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0], algorithms=["mappo"],
-                n_agents=[4], lidar_range=[0.35],
+                seeds=[0],
+                algorithms=["mappo"],
+                n_agents=[4],
+                lidar_range=[0.35],
             ),
         )
         tag = spec.config_tag()
@@ -175,10 +189,14 @@ class TestExperimentSpecConfigTag:
 
     def test_sweep_prefix_for_multiple_runs(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0, 1], algorithms=["mappo"],
-                n_agents=[4], lidar_range=[0.35],
+                seeds=[0, 1],
+                algorithms=["mappo"],
+                n_agents=[4],
+                lidar_range=[0.35],
             ),
         )
         tag = spec.config_tag()
@@ -186,10 +204,14 @@ class TestExperimentSpecConfigTag:
 
     def test_multiple_algorithms(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0], algorithms=["mappo", "ippo"],
-                n_agents=[4], lidar_range=[0.35],
+                seeds=[0],
+                algorithms=["mappo", "ippo"],
+                n_agents=[4],
+                lidar_range=[0.35],
             ),
         )
         tag = spec.config_tag()
@@ -198,10 +220,14 @@ class TestExperimentSpecConfigTag:
 
     def test_range_formatting(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0], algorithms=["mappo"],
-                n_agents=[2, 4, 6], lidar_range=[0.25, 0.45],
+                seeds=[0],
+                algorithms=["mappo"],
+                n_agents=[2, 4, 6],
+                lidar_range=[0.25, 0.45],
             ),
         )
         tag = spec.config_tag()
@@ -214,11 +240,16 @@ class TestExperimentSpecIterRuns:
 
     def test_single_run_yields_one(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0], algorithms=["mappo"],
-                n_agents=[4], n_targets=[7],
-                agents_per_target=[2], lidar_range=[0.35],
+                seeds=[0],
+                algorithms=["mappo"],
+                n_agents=[4],
+                n_targets=[7],
+                agents_per_target=[2],
+                lidar_range=[0.35],
             ),
         )
         runs = list(spec.iter_runs())
@@ -226,11 +257,16 @@ class TestExperimentSpecIterRuns:
 
     def test_correct_number_of_combinations(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0, 1], algorithms=["mappo", "ippo"],
-                n_agents=[4, 6], n_targets=[7],
-                agents_per_target=[2], lidar_range=[0.25, 0.35],
+                seeds=[0, 1],
+                algorithms=["mappo", "ippo"],
+                n_agents=[4, 6],
+                n_targets=[7],
+                agents_per_target=[2],
+                lidar_range=[0.25, 0.35],
             ),
         )
         runs = list(spec.iter_runs())
@@ -239,11 +275,16 @@ class TestExperimentSpecIterRuns:
 
     def test_run_id_format(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0], algorithms=["mappo"],
-                n_agents=[4], n_targets=[7],
-                agents_per_target=[2], lidar_range=[0.35],
+                seeds=[0],
+                algorithms=["mappo"],
+                n_agents=[4],
+                n_targets=[7],
+                agents_per_target=[2],
+                lidar_range=[0.35],
             ),
         )
         run_id, overrides, algo, seed = list(spec.iter_runs())[0]
@@ -251,11 +292,16 @@ class TestExperimentSpecIterRuns:
 
     def test_yield_tuple_structure(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[42], algorithms=["ippo"],
-                n_agents=[6], n_targets=[3],
-                agents_per_target=[1], lidar_range=[0.5],
+                seeds=[42],
+                algorithms=["ippo"],
+                n_agents=[6],
+                n_targets=[3],
+                agents_per_target=[1],
+                lidar_range=[0.5],
             ),
         )
         run_id, overrides, algo, seed = list(spec.iter_runs())[0]
@@ -270,16 +316,24 @@ class TestExperimentSpecIterRuns:
 
     def test_overrides_keys(self):
         spec = ExperimentSpec(
-            exp_id="er1", name="T", description="",
+            exp_id="er1",
+            name="T",
+            description="",
             sweep=SweepConfig(
-                seeds=[0], algorithms=["mappo"],
-                n_agents=[4], n_targets=[7],
-                agents_per_target=[2], lidar_range=[0.35],
+                seeds=[0],
+                algorithms=["mappo"],
+                n_agents=[4],
+                n_targets=[7],
+                agents_per_target=[2],
+                lidar_range=[0.35],
             ),
         )
         _, overrides, _, _ = list(spec.iter_runs())[0]
         assert set(overrides.keys()) == {
-            "n_agents", "n_targets", "agents_per_target", "lidar_range",
+            "n_agents",
+            "n_targets",
+            "agents_per_target",
+            "lidar_range",
         }
 
 

@@ -59,10 +59,16 @@ _TASK_SUMMARY = (
 )
 
 _TASK_OVERRIDES = {
-    "n_agents": 4, "n_targets": 4, "agents_per_target": 2,
-    "covering_range": 0.25, "lidar_range": 0.35, "max_steps": 400,
-    "n_lidar_rays_entities": 15, "n_lidar_rays_agents": 12,
-    "collision_penalty": -0.01, "time_penalty": -0.01,
+    "n_agents": 4,
+    "n_targets": 4,
+    "agents_per_target": 2,
+    "covering_range": 0.25,
+    "lidar_range": 0.35,
+    "max_steps": 400,
+    "n_lidar_rays_entities": 15,
+    "n_lidar_rays_agents": 12,
+    "collision_penalty": -0.01,
+    "time_penalty": -0.01,
 }
 
 # Default v8 caps (matching configs/lero_v8/rendezvous_k2_2x3.yaml).
@@ -74,24 +80,34 @@ _GATED_CAP = 2
 # S3b-local winning handles — must NOT appear verbatim in v8 fewshot
 # (anti-cheat boundary).
 _FORBIDDEN_HANDLES = [
-    "hold_signal", "approach_signal", "settle_signal",
+    "hold_signal",
+    "approach_signal",
+    "settle_signal",
     "rendezvous_pressure",
-    "t_close_mean", "t_dispersion",
+    "t_close_mean",
+    "t_dispersion",
 ]
 
 
 def _make_inner(
-    obs_code: str, M1: float, M6: float,
-    M3: float = 400.0, M4: float = 5.0,
+    obs_code: str,
+    M1: float,
+    M6: float,
+    M3: float = 400.0,
+    M4: float = 5.0,
 ) -> InnerResult:
     cand = CandidateCode(
-        obs_source=obs_code, reward_source=None, raw_response="<synth>",
+        obs_source=obs_code,
+        reward_source=None,
+        raw_response="<synth>",
     )
     out = CandidateOutcome(
         candidate=cand,
         metrics={
-            "M1_success_rate": M1, "M6_coverage_progress": M6,
-            "M3_avg_steps": M3, "M4_avg_collisions": M4,
+            "M1_success_rate": M1,
+            "M6_coverage_progress": M6,
+            "M3_avg_steps": M3,
+            "M4_avg_collisions": M4,
             "M2_avg_return": -3.0,
         },
         fitness=M1 + 0.5 * M6,
@@ -101,8 +117,12 @@ def _make_inner(
     reg = Registry()
     reg.fitness_trajectory = [0.05, 0.06, 0.07]
     return InnerResult(
-        best=out, worst=out, all_outcomes=[out],
-        registry=reg, did_stagnate=False, n_iters_run=3,
+        best=out,
+        worst=out,
+        all_outcomes=[out],
+        registry=reg,
+        did_stagnate=False,
+        n_iters_run=3,
     )
 
 
@@ -193,13 +213,8 @@ def _check_fewshot_quality(hint_text: str) -> dict:
     fewshot_ana = analyze_inner_code(fewshot) if fewshot.strip() else None
     fewshot_n_features = fewshot_ana.n_returned_features if fewshot_ana else 0
     fewshot_n_gated = count_gated_features(fewshot)
-    fewshot_n_dense = (
-        count_dense_features(fewshot_ana, fewshot)
-        if fewshot_ana else 0
-    )
-    forbidden_hits = [
-        h for h in _FORBIDDEN_HANDLES if h in hint_text
-    ]
+    fewshot_n_dense = count_dense_features(fewshot_ana, fewshot) if fewshot_ana else 0
+    forbidden_hits = [h for h in _FORBIDDEN_HANDLES if h in hint_text]
     return {
         "has_fenced_python_block": has_fenced,
         "fewshot_n_features": fewshot_n_features,
@@ -219,24 +234,37 @@ def main() -> int:
     )
     log = logging.getLogger("rendezvous.lero.v8.phase1_5")
 
-    meta_llm = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v2_fewshot_modular_v2_local",
-    ))
-    inner_client = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v2_fewshot_modular_v2_local",
-    ))
+    meta_llm = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v2_fewshot_modular_v2_local",
+        )
+    )
+    inner_client = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v2_fewshot_modular_v2_local",
+        )
+    )
 
     t0 = time.monotonic()
 
     # === Phase A: bundle enumeration with v8 caps ===
-    log.info("=== Phase A: v8 bundle enumeration "
-              "(target=%d-%d, cap=%d, gated_cap=%d) ===",
-              _FEATURE_TARGET_MIN, _FEATURE_TARGET_MAX,
-              _FEATURE_CAP, _GATED_CAP)
+    log.info(
+        "=== Phase A: v8 bundle enumeration "
+        "(target=%d-%d, cap=%d, gated_cap=%d) ===",
+        _FEATURE_TARGET_MIN,
+        _FEATURE_TARGET_MAX,
+        _FEATURE_CAP,
+        _GATED_CAP,
+    )
     bundle, bundle_raw = enumerate_bundle_v8(
-        meta_llm, _TASK_SUMMARY,
+        meta_llm,
+        _TASK_SUMMARY,
         feature_target_min=_FEATURE_TARGET_MIN,
         feature_target_max=_FEATURE_TARGET_MAX,
         feature_cap=_FEATURE_CAP,
@@ -259,8 +287,10 @@ def main() -> int:
     new_slots["guidance_observation"] = chosen.lero_translation_hint
 
     inner_llm = InnerLLM(
-        inner_client, evolve_reward=False,
-        evolve_observation=True, use_structured=False,
+        inner_client,
+        evolve_reward=False,
+        evolve_observation=True,
+        use_structured=False,
     )
     messages = _build_inner_messages_with_slots(
         prompt_version="v2_fewshot_modular_v2_local",
@@ -301,9 +331,7 @@ def main() -> int:
         "all_under_gated_cap": all(r["gated_under_cap"] for r in valid),
         "all_dense_meets_min": all(r["dense_meets_min"] for r in valid),
         "all_cross_source": all(r["touches_both_lidars"] for r in valid),
-        "avg_n_features": (
-            sum(r["n_features"] for r in valid) / max(1, len(valid))
-        ),
+        "avg_n_features": (sum(r["n_features"] for r in valid) / max(1, len(valid))),
         "avg_n_gated": sum(r["n_gated"] for r in valid) / max(1, len(valid)),
         "avg_n_dense": sum(r["n_dense"] for r in valid) / max(1, len(valid)),
     }
@@ -314,26 +342,47 @@ def main() -> int:
     # === Phase C: 4 v8 reflection scenarios ===
     log.info("=== Phase C: v8 reflection scenario tests ===")
     scenarios = [
-        ("too_many_features", _CODE_TOO_MANY,    0.000, 0.080,
-         "too_many_features", "trim_features"),
-        ("over_gated",         _CODE_OVER_GATED, 0.000, 0.100,
-         "over_gated",         "replace_gated_with_dense"),
-        ("rl_too_hard",        _CODE_RL_HARD,    0.000, 0.100,
-         "rl_too_hard",        "switch_to_next_strategy"),
-        ("achieved",           _CODE_ACHIEVED,   0.080, 0.350,
-         "achieved",           "stop"),
+        (
+            "too_many_features",
+            _CODE_TOO_MANY,
+            0.000,
+            0.080,
+            "too_many_features",
+            "trim_features",
+        ),
+        (
+            "over_gated",
+            _CODE_OVER_GATED,
+            0.000,
+            0.100,
+            "over_gated",
+            "replace_gated_with_dense",
+        ),
+        (
+            "rl_too_hard",
+            _CODE_RL_HARD,
+            0.000,
+            0.100,
+            "rl_too_hard",
+            "switch_to_next_strategy",
+        ),
+        ("achieved", _CODE_ACHIEVED, 0.080, 0.350, "achieved", "stop"),
     ]
     results = []
     for name, code, M1, M6, expected_label, expected_action in scenarios:
         synth = _make_inner(code, M1=M1, M6=M6)
         diag = diagnose_inner_result_v8(
-            synth, chosen,
+            synth,
+            chosen,
             feature_count_cap=_FEATURE_CAP,
             gated_feature_cap=_GATED_CAP,
         )
         try:
             decision, _ = reflect_and_decide_v8(
-                meta_llm, bundle, synth, diag,
+                meta_llm,
+                bundle,
+                synth,
+                diag,
                 feature_target_min=_FEATURE_TARGET_MIN,
                 feature_target_max=_FEATURE_TARGET_MAX,
                 feature_cap=_FEATURE_CAP,
@@ -346,59 +395,71 @@ def main() -> int:
             actual_action = f"<error: {e}>"
             rationale = ""
 
-        ok_label = (diag.label == expected_label)
-        ok_action = (actual_action == expected_action)
-        results.append({
-            "scenario": name,
-            "expected_label": expected_label,
-            "actual_label": diag.label,
-            "label_match": ok_label,
-            "n_features": diag.n_features,
-            "n_gated": diag.n_gated,
-            "n_dense": diag.n_dense,
-            "expected_action": expected_action,
-            "actual_action": actual_action,
-            "action_match": ok_action,
-            "rationale": rationale,
-        })
+        ok_label = diag.label == expected_label
+        ok_action = actual_action == expected_action
+        results.append(
+            {
+                "scenario": name,
+                "expected_label": expected_label,
+                "actual_label": diag.label,
+                "label_match": ok_label,
+                "n_features": diag.n_features,
+                "n_gated": diag.n_gated,
+                "n_dense": diag.n_dense,
+                "expected_action": expected_action,
+                "actual_action": actual_action,
+                "action_match": ok_action,
+                "rationale": rationale,
+            }
+        )
         log.info(
             "  %s: label=%s (exp %s) action=%s (exp %s) ok=%s "
             "[n_feat=%d n_gated=%d n_dense=%d]",
-            name, diag.label, expected_label,
-            actual_action, expected_action,
+            name,
+            diag.label,
+            expected_label,
+            actual_action,
+            expected_action,
             ok_label and ok_action,
-            diag.n_features, diag.n_gated, diag.n_dense,
+            diag.n_features,
+            diag.n_gated,
+            diag.n_dense,
         )
 
     # === Save report ===
-    out = Path(
-        f"results/v8_prompt_lab/phase1_5_{time.strftime('%Y%m%d_%H%M')}.json"
-    )
+    out = Path(f"results/v8_prompt_lab/phase1_5_{time.strftime('%Y%m%d_%H%M')}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({
-        "elapsed_s": time.monotonic() - t0,
-        "caps": {
-            "feature_target_min": _FEATURE_TARGET_MIN,
-            "feature_target_max": _FEATURE_TARGET_MAX,
-            "feature_cap": _FEATURE_CAP,
-            "gated_cap": _GATED_CAP,
-        },
-        "phase_a_bundle": [
+    out.write_text(
+        json.dumps(
             {
-                "name": s.name, "score": s.combined_score,
-                "lero_codability": s.lero_codability,
-                "rl_trainability": s.rl_trainability,
-                "full_solution": s.full_solution,
-            }
-            for s in bundle.strategies
-        ],
-        "phase_a_chosen_idx": bundle.chosen_idx,
-        "phase_a_chosen_translation_hint": chosen.lero_translation_hint,
-        "phase_a_fewshot_check": fewshot_check,
-        "phase_b_inner_reports": inner_reports,
-        "phase_b_summary": summary_b,
-        "phase_c_scenarios": results,
-    }, indent=2, default=str))
+                "elapsed_s": time.monotonic() - t0,
+                "caps": {
+                    "feature_target_min": _FEATURE_TARGET_MIN,
+                    "feature_target_max": _FEATURE_TARGET_MAX,
+                    "feature_cap": _FEATURE_CAP,
+                    "gated_cap": _GATED_CAP,
+                },
+                "phase_a_bundle": [
+                    {
+                        "name": s.name,
+                        "score": s.combined_score,
+                        "lero_codability": s.lero_codability,
+                        "rl_trainability": s.rl_trainability,
+                        "full_solution": s.full_solution,
+                    }
+                    for s in bundle.strategies
+                ],
+                "phase_a_chosen_idx": bundle.chosen_idx,
+                "phase_a_chosen_translation_hint": chosen.lero_translation_hint,
+                "phase_a_fewshot_check": fewshot_check,
+                "phase_b_inner_reports": inner_reports,
+                "phase_b_summary": summary_b,
+                "phase_c_scenarios": results,
+            },
+            indent=2,
+            default=str,
+        )
+    )
     log.info("saved %s", out)
 
     # Print summary table
@@ -410,12 +471,13 @@ def main() -> int:
         ok = r["label_match"] and r["action_match"]
         all_pass = all_pass and ok
         mark = "PASS" if ok else "FAIL"
-        print(f"{r['scenario']:<25} {r['actual_label']:<24} "
-              f"{r['actual_action']:<35} {mark}")
+        print(
+            f"{r['scenario']:<25} {r['actual_label']:<24} "
+            f"{r['actual_action']:<35} {mark}"
+        )
 
     phase_a_pass = (
-        fewshot_check["has_fenced_python_block"]
-        and fewshot_check["anti_cheat_clean"]
+        fewshot_check["has_fenced_python_block"] and fewshot_check["anti_cheat_clean"]
     )
     phase_b_pass = (
         summary_b["all_under_feat_cap"]
@@ -424,16 +486,20 @@ def main() -> int:
         and summary_b["n_valid"] >= 1
     )
     print()
-    print(f"Phase A (fewshot quality + anti-cheat): "
-          f"{'PASS' if phase_a_pass else 'FAIL'}")
-    print(f"Phase B (inner caps respected, cross-source present): "
-          f"{'PASS' if phase_b_pass else 'FAIL'}")
-    print(f"Phase C (reflection actions correct): "
-          f"{'PASS' if all_pass else 'FAIL'}")
+    print(
+        f"Phase A (fewshot quality + anti-cheat): "
+        f"{'PASS' if phase_a_pass else 'FAIL'}"
+    )
+    print(
+        f"Phase B (inner caps respected, cross-source present): "
+        f"{'PASS' if phase_b_pass else 'FAIL'}"
+    )
+    print(f"Phase C (reflection actions correct): " f"{'PASS' if all_pass else 'FAIL'}")
     print(f"\nelapsed: {time.monotonic() - t0:.1f}s, output: {out}")
     return 0 if (phase_a_pass and phase_b_pass and all_pass) else 1
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

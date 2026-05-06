@@ -26,9 +26,7 @@ from typing import Dict, List
 # ── Helpers for production replay ───────────────────────────────
 
 
-_PROD_RUN_DIR = Path(
-    "results/lero_v9/lero_v9_rendezvous_k2_2x3/20260502_1912_s0"
-)
+_PROD_RUN_DIR = Path("results/lero_v9/lero_v9_rendezvous_k2_2x3/20260502_1912_s0")
 
 
 def _load_prod_memory() -> List[Dict]:
@@ -53,6 +51,7 @@ class TestDetectPathologicalRefine(unittest.TestCase):
 
     def setUp(self):
         from src.lero.v9.outer_loop import detect_pathological_refine
+
         self.fn = detect_pathological_refine
 
     def _row(self, strategy: str, m6: float) -> Dict:
@@ -141,12 +140,14 @@ class TestProductionReplayFailsafe(unittest.TestCase):
 
     def setUp(self):
         from src.lero.v9.outer_loop import detect_pathological_refine
+
         self.fn = detect_pathological_refine
         self.rows = _load_prod_memory()
 
     def test_production_memory_loaded(self):
         self.assertGreaterEqual(
-            len(self.rows), 5,
+            len(self.rows),
+            5,
             "expected ≥5 production memory rows from Phase 6",
         )
 
@@ -194,6 +195,7 @@ class TestProductionReplayFailsafe(unittest.TestCase):
 class TestExtractJSON(unittest.TestCase):
     def setUp(self):
         from src.lero.v9.meta_strategist import _extract_json
+
         self.fn = _extract_json
 
     def test_clean_json(self):
@@ -212,12 +214,12 @@ class TestExtractJSON(unittest.TestCase):
         )
 
     def test_fenced_json_block(self):
-        raw = "prose before\n```json\n{\"x\": 1}\n```\nprose after"
+        raw = 'prose before\n```json\n{"x": 1}\n```\nprose after'
         self.assertEqual(self.fn(raw), {"x": 1})
 
     def test_prose_around_object(self):
         self.assertEqual(
-            self.fn("Here is the answer: {\"k\": \"v\"}. Done."),
+            self.fn('Here is the answer: {"k": "v"}. Done.'),
             {"k": "v"},
         )
 
@@ -235,7 +237,7 @@ class TestExtractJSON(unittest.TestCase):
     def test_truly_malformed_inside_braces(self):
         # Has braces, but content is invalid JSON
         with self.assertRaises(json.JSONDecodeError):
-            self.fn('{this is not json}')
+            self.fn("{this is not json}")
 
 
 # ── Tests: _redact_forbidden ────────────────────────────────────
@@ -244,6 +246,7 @@ class TestExtractJSON(unittest.TestCase):
 class TestRedactForbidden(unittest.TestCase):
     def setUp(self):
         from src.lero.v9.meta_strategist import _redact_forbidden
+
         self.fn = _redact_forbidden
 
     def test_empty_text_passthrough(self):
@@ -283,12 +286,16 @@ class TestMemoryStore(unittest.TestCase):
 
     def _new(self):
         from src.lero.v9.memory import MemoryStore
+
         return MemoryStore(self.path)
 
     def _row(self, idx: int, name: str = "foo"):
         from src.lero.v9.memory import MemoryRow
+
         return MemoryRow(
-            outer_idx=idx, ts="2026-01-01", strategy_name=name,
+            outer_idx=idx,
+            ts="2026-01-01",
+            strategy_name=name,
         )
 
     def test_initial_empty(self):
@@ -354,6 +361,7 @@ class TestBundleNextPendingIdx(unittest.TestCase):
             V9SuccessSignature,
             V9ChainOfThought,
         )
+
         return V9Strategy(
             name=name,
             full_solution="x",
@@ -361,7 +369,9 @@ class TestBundleNextPendingIdx(unittest.TestCase):
                 ast_pattern_description="p",
             ),
             chain_of_thought=V9ChainOfThought(
-                why_it_works="w", what_is_needed=[], failure_modes=[],
+                why_it_works="w",
+                what_is_needed=[],
+                failure_modes=[],
             ),
             lero_codability=score,
             rl_trainability=score,
@@ -371,38 +381,47 @@ class TestBundleNextPendingIdx(unittest.TestCase):
 
     def _bundle(self, strategies):
         from src.lero.v9.strategy import V9Bundle
+
         return V9Bundle(strategies=strategies)
 
     def test_picks_highest_score_first(self):
-        b = self._bundle([
-            self._strat("low", 5),
-            self._strat("hi", 9),
-            self._strat("mid", 7),
-        ])
+        b = self._bundle(
+            [
+                self._strat("low", 5),
+                self._strat("hi", 9),
+                self._strat("mid", 7),
+            ]
+        )
         idx = b.next_pending_idx()
         self.assertEqual(b.strategies[idx].name, "hi")
 
     def test_skips_excluded(self):
-        b = self._bundle([
-            self._strat("hi", 9, excluded=True),
-            self._strat("mid", 7),
-        ])
+        b = self._bundle(
+            [
+                self._strat("hi", 9, excluded=True),
+                self._strat("mid", 7),
+            ]
+        )
         idx = b.next_pending_idx()
         self.assertEqual(b.strategies[idx].name, "mid")
 
     def test_skips_attempted(self):
-        b = self._bundle([
-            self._strat("hi", 9, attempts=1),
-            self._strat("mid", 7),
-        ])
+        b = self._bundle(
+            [
+                self._strat("hi", 9, attempts=1),
+                self._strat("mid", 7),
+            ]
+        )
         idx = b.next_pending_idx()
         self.assertEqual(b.strategies[idx].name, "mid")
 
     def test_returns_None_when_all_done(self):
-        b = self._bundle([
-            self._strat("hi", 9, attempts=1),
-            self._strat("mid", 7, excluded=True),
-        ])
+        b = self._bundle(
+            [
+                self._strat("hi", 9, attempts=1),
+                self._strat("mid", 7, excluded=True),
+            ]
+        )
         self.assertIsNone(b.next_pending_idx())
 
 
@@ -412,6 +431,7 @@ class TestBundleNextPendingIdx(unittest.TestCase):
 class TestComputeFacts(unittest.TestCase):
     def setUp(self):
         from src.lero.v9.outer_loop import _compute_facts
+
         self.fn = _compute_facts
 
     def test_none_inner_returns_zeros(self):
@@ -424,6 +444,7 @@ class TestComputeFacts(unittest.TestCase):
         from src.lero.codegen import CandidateCode
         from src.lero.v5.inner_loop import CandidateOutcome, InnerResult
         from src.lero.v5.registry import Registry
+
         code = """
 import torch
 import torch.nn.functional as F
@@ -439,16 +460,24 @@ def enhance_observation(s):
     return torch.cat([nt.unsqueeze(-1), one_hot, diff.unsqueeze(-1)], dim=-1)
 """
         cand = CandidateCode(
-            obs_source=code, reward_source=None, raw_response="",
+            obs_source=code,
+            reward_source=None,
+            raw_response="",
         )
         out = CandidateOutcome(
             candidate=cand,
             metrics={"M1_success_rate": 0.05, "M6_coverage_progress": 0.4},
-            fitness=0.25, shape="monotonic_rise", iter_idx=0,
+            fitness=0.25,
+            shape="monotonic_rise",
+            iter_idx=0,
         )
         ir = InnerResult(
-            best=out, worst=out, all_outcomes=[out],
-            registry=Registry(), did_stagnate=False, n_iters_run=1,
+            best=out,
+            worst=out,
+            all_outcomes=[out],
+            registry=Registry(),
+            did_stagnate=False,
+            n_iters_run=1,
         )
         f = self.fn(ir)
         self.assertTrue(f["inner_present"])
@@ -464,6 +493,7 @@ def enhance_observation(s):
         from src.lero.codegen import CandidateCode
         from src.lero.v5.inner_loop import CandidateOutcome, InnerResult
         from src.lero.v5.registry import Registry
+
         code = """
 import torch
 def enhance_observation(s):
@@ -471,16 +501,24 @@ def enhance_observation(s):
     return lt.min(dim=-1).values.unsqueeze(-1)
 """
         cand = CandidateCode(
-            obs_source=code, reward_source=None, raw_response="",
+            obs_source=code,
+            reward_source=None,
+            raw_response="",
         )
         out = CandidateOutcome(
             candidate=cand,
             metrics={"M1_success_rate": 0.0, "M6_coverage_progress": 0.1},
-            fitness=0.0, shape="flat_zero", iter_idx=0,
+            fitness=0.0,
+            shape="flat_zero",
+            iter_idx=0,
         )
         ir = InnerResult(
-            best=out, worst=out, all_outcomes=[out],
-            registry=Registry(), did_stagnate=False, n_iters_run=1,
+            best=out,
+            worst=out,
+            all_outcomes=[out],
+            registry=Registry(),
+            did_stagnate=False,
+            n_iters_run=1,
         )
         f = self.fn(ir)
         self.assertFalse(f["role_one_hot_present"])
@@ -493,6 +531,7 @@ def enhance_observation(s):
 class TestPromptLoaderTaskDomain(unittest.TestCase):
     def test_task_domain_loads(self):
         from src.lero.prompts.loader import PromptLoader
+
         loader = PromptLoader("v3_modular_taskdomain")
         td = loader.task_domain()
         self.assertIsNotNone(td)
@@ -501,19 +540,22 @@ class TestPromptLoaderTaskDomain(unittest.TestCase):
         self.assertEqual(len(td["inferable_concepts"]), 8)
         # Verify soft_proximity is in the list
         self.assertTrue(
-            any("Soft proximity" in c["concept"]
-                for c in td["inferable_concepts"]),
+            any("Soft proximity" in c["concept"] for c in td["inferable_concepts"]),
             "soft_proximity should be in inferable_concepts after §2.11",
         )
         self.assertEqual(len(td["mandatory_features"]), 2)
 
     def test_task_framing_substituted_into_system(self):
         from src.lero.prompts.loader import PromptLoader
+
         loader = PromptLoader("v3_modular_taskdomain")
         sys_text = loader.render(
             "system.txt",
-            n_agents=4, n_targets=4, agents_per_target=2,
-            covering_range=0.25, max_steps=400,
+            n_agents=4,
+            n_targets=4,
+            agents_per_target=2,
+            covering_range=0.25,
+            max_steps=400,
         )
         self.assertIn("RENDEZVOUS task", sys_text)
         self.assertIn("4 agents", sys_text)
@@ -531,23 +573,32 @@ class TestSlotValidator(unittest.TestCase):
 
     def setUp(self):
         from src.lero.v9.slot_validator import validate_slot_edits
+
         self.fn = validate_slot_edits
         self.td = {
             "inferable_concepts": [
-                {"concept": "Direction to nearest target",
-                 "idiom": "argmin lidar_targets cos sin"},
-                {"concept": "Distance to nearest target",
-                 "idiom": "lidar_targets.min"},
-                {"concept": "Number of nearby targets",
-                 "idiom": "(lidar_targets < threshold).sum"},
-                {"concept": "Local agent crowdedness",
-                 "idiom": "(lidar_agents < threshold).sum"},
-                {"concept": "Agent role under shared-policy MAPPO",
-                 "idiom": "torch.zeros n_agents agent_idx one_hot"},
-                {"concept": "Self-motion state",
-                 "idiom": "agent_vel.norm"},
-                {"concept": "Boundary distance from arena edge",
-                 "idiom": "1 - agent_pos.abs().max"},
+                {
+                    "concept": "Direction to nearest target",
+                    "idiom": "argmin lidar_targets cos sin",
+                },
+                {"concept": "Distance to nearest target", "idiom": "lidar_targets.min"},
+                {
+                    "concept": "Number of nearby targets",
+                    "idiom": "(lidar_targets < threshold).sum",
+                },
+                {
+                    "concept": "Local agent crowdedness",
+                    "idiom": "(lidar_agents < threshold).sum",
+                },
+                {
+                    "concept": "Agent role under shared-policy MAPPO",
+                    "idiom": "torch.zeros n_agents agent_idx one_hot",
+                },
+                {"concept": "Self-motion state", "idiom": "agent_vel.norm"},
+                {
+                    "concept": "Boundary distance from arena edge",
+                    "idiom": "1 - agent_pos.abs().max",
+                },
             ],
         }
 
@@ -585,9 +636,7 @@ class TestSlotValidator(unittest.TestCase):
         results = self.fn(edits, self.td)
         self.assertFalse(results["examples"].passed)
         # Should mention 0 python blocks
-        self.assertTrue(
-            any("0 fenced" in i for i in results["examples"].issues)
-        )
+        self.assertTrue(any("0 fenced" in i for i in results["examples"].issues))
 
     def test_one_python_block_no_role_rejected(self):
         edits = {
@@ -606,16 +655,11 @@ class TestSlotValidator(unittest.TestCase):
 
     def test_two_blocks_but_no_role_rejected(self):
         edits = {
-            "examples": (
-                "```python\nreturn x\n```\n\n"
-                "```python\nreturn y\n```\n"
-            ),
+            "examples": ("```python\nreturn x\n```\n\n" "```python\nreturn y\n```\n"),
         }
         results = self.fn(edits, self.td)
         self.assertFalse(results["examples"].passed)
-        self.assertTrue(
-            any("role_one_hot" in i for i in results["examples"].issues)
-        )
+        self.assertTrue(any("role_one_hot" in i for i in results["examples"].issues))
 
     def test_inferable_hints_with_concepts_passes(self):
         # Mention all 7 concepts via idiom keywords
@@ -658,16 +702,13 @@ class TestSlotValidator(unittest.TestCase):
         prev = {"examples": "x" * 100}
         edits = {
             "examples": (
-                "```python\nreturn one_hot\n```\n"
-                "```python\nreturn x\n```\n"
-            ) + "y" * 500,  # 5x prev length
+                "```python\nreturn one_hot\n```\n" "```python\nreturn x\n```\n"
+            )
+            + "y" * 500,  # 5x prev length
         }
-        results = self.fn(edits, self.td, prev_slots=prev,
-                          max_growth_factor=2.0)
+        results = self.fn(edits, self.td, prev_slots=prev, max_growth_factor=2.0)
         self.assertFalse(results["examples"].passed)
-        self.assertTrue(
-            any("growth" in i for i in results["examples"].issues)
-        )
+        self.assertTrue(any("growth" in i for i in results["examples"].issues))
 
 
 class TestPreEvalValidator(unittest.TestCase):
@@ -676,6 +717,7 @@ class TestPreEvalValidator(unittest.TestCase):
     def setUp(self):
         from src.lero.v9.outer_loop import make_pre_eval_validator
         from src.lero.codegen import CandidateCode
+
         self.CandidateCode = CandidateCode
         self.td = {
             "mandatory_features": [
@@ -687,7 +729,9 @@ class TestPreEvalValidator(unittest.TestCase):
 
     def _cand(self, code: str):
         return self.CandidateCode(
-            obs_source=code, reward_source=None, raw_response="",
+            obs_source=code,
+            reward_source=None,
+            raw_response="",
         )
 
     def test_good_candidate_passes(self):
@@ -730,13 +774,16 @@ class TestPreEvalValidator(unittest.TestCase):
 
     def test_empty_code_rejected(self):
         cand = self.CandidateCode(
-            obs_source="", reward_source=None, raw_response="",
+            obs_source="",
+            reward_source=None,
+            raw_response="",
         )
         issues = self.fn(cand)
         self.assertTrue(any("empty" in i for i in issues))
 
     def test_feature_budget_overshoot_rejected(self):
         from src.lero.v9.outer_loop import make_pre_eval_validator
+
         td = {
             "mandatory_features": [
                 {"name": "role_one_hot", "reason": "..."},
@@ -746,7 +793,7 @@ class TestPreEvalValidator(unittest.TestCase):
         }
         fn = make_pre_eval_validator(td)
         # Build 25-feature literal cat
-        items = [f'lt[:, {i}:{i+1}]' for i in range(25)]
+        items = [f"lt[:, {i}:{i+1}]" for i in range(25)]
         code = (
             "import torch\nimport torch.nn.functional as F\n"
             "def enhance_observation(s):\n"
@@ -758,11 +805,14 @@ class TestPreEvalValidator(unittest.TestCase):
             "    one_hot[:, agent_idx] = 1.0\n"
             "    diff = (lt < 0.25).float().sum(-1) - "
             "(la < 0.25).float().sum(-1)\n"
-            "    return torch.cat([" + ", ".join(items)
+            "    return torch.cat(["
+            + ", ".join(items)
             + ", diff.unsqueeze(-1), one_hot], dim=-1)\n"
         )
         cand = self.CandidateCode(
-            obs_source=code, reward_source=None, raw_response="",
+            obs_source=code,
+            reward_source=None,
+            raw_response="",
         )
         issues = fn(cand)
         self.assertTrue(
@@ -774,6 +824,7 @@ class TestPreEvalValidator(unittest.TestCase):
         """If AST estimator returns 0 (couldn't measure), do NOT reject
         on feature_budget. Soft rejection only when reliably measured."""
         from src.lero.v9.outer_loop import make_pre_eval_validator
+
         td = {
             "mandatory_features": [
                 {"name": "role_one_hot", "reason": "..."},
@@ -798,7 +849,9 @@ class TestPreEvalValidator(unittest.TestCase):
             "    return torch.cat([one_hot, diff, *feats], dim=-1)\n"
         )
         cand = self.CandidateCode(
-            obs_source=code, reward_source=None, raw_response="",
+            obs_source=code,
+            reward_source=None,
+            raw_response="",
         )
         issues = fn(cand)
         # Should NOT have feature_budget issue (estimator returns 0)
@@ -816,6 +869,7 @@ class TestProductionReplayPreEvalValidator(unittest.TestCase):
         from src.lero.v9.outer_loop import make_pre_eval_validator
         from src.lero.prompts.loader import PromptLoader
         from src.lero.codegen import CandidateCode
+
         self.CandidateCode = CandidateCode
         loader = PromptLoader("v3_modular_taskdomain")
         self.fn = make_pre_eval_validator(loader.task_domain() or {})
@@ -823,24 +877,30 @@ class TestProductionReplayPreEvalValidator(unittest.TestCase):
     def test_outer_4_candidates_rejected(self):
         """Outer 4 had role_one_hot=False on 7+ candidates."""
         import glob
-        files = sorted(glob.glob(
-            "results/lero_v9/lero_v9_rendezvous_k2_2x3/"
-            "20260502_1912_s0/outer_04/inner/iter_*/candidate_*_obs.py"
-        ))
+
+        files = sorted(
+            glob.glob(
+                "results/lero_v9/lero_v9_rendezvous_k2_2x3/"
+                "20260502_1912_s0/outer_04/inner/iter_*/candidate_*_obs.py"
+            )
+        )
         if not files:
             self.skipTest("production outer 04 dir missing")
         rejected = 0
         for f in files:
             code = open(f).read()
             cand = self.CandidateCode(
-                obs_source=code, reward_source=None, raw_response="",
+                obs_source=code,
+                reward_source=None,
+                raw_response="",
             )
             issues = self.fn(cand)
             if issues:
                 rejected += 1
         # At least 7 of the 9 outer-4 candidates lacked role_one_hot
         self.assertGreaterEqual(
-            rejected, 5,
+            rejected,
+            5,
             f"expected ≥5 outer-4 candidates rejected; got {rejected}/{len(files)}",
         )
 
@@ -850,6 +910,7 @@ class TestDetectFalsificationFailure(unittest.TestCase):
 
     def setUp(self):
         from src.lero.v9.outer_loop import detect_falsification_failure
+
         self.fn = detect_falsification_failure
 
     def _row(self, strategy: str, m1: float):
@@ -879,8 +940,9 @@ class TestDetectFalsificationFailure(unittest.TestCase):
     def test_threshold_factor_loose(self):
         # threshold_factor=0.1 → must be below 0.018, 0.02 is just above
         rows = [self._row("foo", 0.02), self._row("foo", 0.02)]
-        self.assertFalse(self.fn(rows, "foo", expected_M1=0.18,
-                                 n_attempts=2, threshold_factor=0.1))
+        self.assertFalse(
+            self.fn(rows, "foo", expected_M1=0.18, n_attempts=2, threshold_factor=0.1)
+        )
 
     def test_zero_expected_M1_no_fire(self):
         # Avoid divide-by-zero / nonsensical comparisons
@@ -904,6 +966,7 @@ class TestProductionReplayFalsificationGate(unittest.TestCase):
 
     def setUp(self):
         from src.lero.v9.outer_loop import detect_falsification_failure
+
         self.fn = detect_falsification_failure
         self.rows = _load_prod_memory()
 
@@ -915,10 +978,12 @@ class TestProductionReplayFalsificationGate(unittest.TestCase):
         # Memory at start-of-outer-2 = first 2 rows
         # PLUS the current outer's facts (would be outer 2 itself)
         # The production code does memory_rows + [current_facts]
-        rows_at_outer_2 = self.rows[:2] + [{
-            "strategy_name": "pair_and_split",
-            "actual": {"M1": 0.0},
-        }]
+        rows_at_outer_2 = self.rows[:2] + [
+            {
+                "strategy_name": "pair_and_split",
+                "actual": {"M1": 0.0},
+            }
+        ]
         result = self.fn(
             rows_at_outer_2,
             "pair_and_split",
@@ -937,10 +1002,12 @@ class TestProductionReplayFalsificationGate(unittest.TestCase):
         attempt (outer 3, M1=0.0) and the current outer 4 (M1=0.0).
         Both well below 0.5×0.14=0.07."""
         # Memory rows for outer 0,1,2,3 + facts for outer 4
-        rows_at_outer_4 = self.rows[:4] + [{
-            "strategy_name": "leader_follower_pairing",
-            "actual": {"M1": 0.0},
-        }]
+        rows_at_outer_4 = self.rows[:4] + [
+            {
+                "strategy_name": "leader_follower_pairing",
+                "actual": {"M1": 0.0},
+            }
+        ]
         result = self.fn(
             rows_at_outer_4,
             "leader_follower_pairing",
@@ -957,10 +1024,12 @@ class TestProductionReplayFalsificationGate(unittest.TestCase):
     def test_outer_1_falsification_does_NOT_fire(self):
         """At start of outer 1, only outer 0 has been attempted on
         pair_and_split. Need n_attempts=2 → not enough data to fire."""
-        rows_at_outer_1 = self.rows[:1] + [{
-            "strategy_name": "pair_and_split",
-            "actual": {"M1": 0.0},
-        }]
+        rows_at_outer_1 = self.rows[:1] + [
+            {
+                "strategy_name": "pair_and_split",
+                "actual": {"M1": 0.0},
+            }
+        ]
         # Now we have 2 attempts (outer 0 M1=0.01 and outer 1 M1=0.0)
         # both below 0.09 → fires! Actually this WOULD fire.
         result = self.fn(
@@ -989,21 +1058,24 @@ class TestLazyArtifactAuthoring(unittest.TestCase):
 
     def test_author_artifacts_system_includes_concepts_and_mandatory(self):
         from src.lero.v9.meta_strategist import _author_artifacts_system
+
         td = {
             "inferable_concepts": [
-                {"concept": "Direction to nearest target",
-                 "idiom": "argmin"},
-                {"concept": "Soft proximity",
-                 "idiom": "torch.exp(-α * d)"},
+                {"concept": "Direction to nearest target", "idiom": "argmin"},
+                {"concept": "Soft proximity", "idiom": "torch.exp(-α * d)"},
             ],
             "mandatory_features": [
-                {"name": "role_one_hot",
-                 "idiom": "torch.zeros + agent_idx",
-                 "reason": "shared policy needs role"},
+                {
+                    "name": "role_one_hot",
+                    "idiom": "torch.zeros + agent_idx",
+                    "reason": "shared policy needs role",
+                },
             ],
             "forbidden_tokens": ["hold_signal", "settle_signal"],
             "feature_budget": {
-                "target_min": 12, "target_max": 17, "hard_cap": 20,
+                "target_min": 12,
+                "target_max": 17,
+                "hard_cap": 20,
             },
         }
         sys_msg = _author_artifacts_system(td)
@@ -1032,14 +1104,14 @@ class TestProductionReplaySlotValidator(unittest.TestCase):
     def setUp(self):
         from src.lero.v9.slot_validator import validate_slot_edits
         from src.lero.prompts.loader import PromptLoader
+
         self.fn = validate_slot_edits
         loader = PromptLoader("v3_modular_taskdomain")
         self.td = loader.task_domain() or {}
 
     def _load_outer_slots(self, outer_idx: int) -> Dict[str, str]:
         run_dir = Path(
-            "results/lero_v9/lero_v9_rendezvous_k2_2x3/"
-            "20260502_1912_s0/prompts"
+            "results/lero_v9/lero_v9_rendezvous_k2_2x3/" "20260502_1912_s0/prompts"
         )
         # Production: prompts/v9_outer_<idx>_seed0/
         d = run_dir / f"v9_outer_{outer_idx}_seed0"

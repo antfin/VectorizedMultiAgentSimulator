@@ -64,7 +64,6 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..llm_client import LLMClient
@@ -94,9 +93,7 @@ def _bundle_system(td: Dict[str, Any]) -> str:
     hard_cap = budget.get("hard_cap", 20)
     gated_max = budget.get("gated_max", 3)
 
-    inferable_lines = "\n".join(
-        f"  - {c['concept']} → {c['idiom']}" for c in inferable
-    )
+    inferable_lines = "\n".join(f"  - {c['concept']} → {c['idiom']}" for c in inferable)
     mandatory_lines = "\n".join(
         f"  - **{m['name']}** ({m.get('idiom','')}): {m['reason'].strip()}"
         for m in mandatory
@@ -401,9 +398,7 @@ def enumerate_bundle_v9(
         )[0]
         try:
             data = _extract_json(raw)
-            strategies = [
-                _parse_strategy_v9(s, forbidden) for s in data["strategies"]
-            ]
+            strategies = [_parse_strategy_v9(s, forbidden) for s in data["strategies"]]
             # Resolve chosen index: either chosen_idx (int) or
             # chosen_strategy (name string) — LLM uses both shapes.
             chosen = data.get("chosen_idx")
@@ -422,7 +417,8 @@ def enumerate_bundle_v9(
             # asking for nesting). Accept both.
             arts_blob = data.get("chosen_strategy_artifacts") or {}
             if not arts_blob and any(
-                k in data for k in (
+                k in data
+                for k in (
                     "inferable_hints_text",
                     "examples_text",
                     "feedback_template",
@@ -473,12 +469,9 @@ def _author_artifacts_system(td: Dict[str, Any]) -> str:
     target_max = budget.get("target_max", 17)
     hard_cap = budget.get("hard_cap", 20)
 
-    inferable_lines = "\n".join(
-        f"  - {c['concept']} → {c['idiom']}" for c in inferable
-    )
+    inferable_lines = "\n".join(f"  - {c['concept']} → {c['idiom']}" for c in inferable)
     mandatory_lines = "\n".join(
-        f"  - **{m['name']}** ({m.get('idiom','')}): "
-        f"{(m['reason'] or '').strip()}"
+        f"  - **{m['name']}** ({m.get('idiom','')}): " f"{(m['reason'] or '').strip()}"
         for m in mandatory
     )
     forbidden_line = ", ".join(f"`{t}`" for t in forbidden)
@@ -600,13 +593,16 @@ def author_artifacts_for_strategy(
             data = _extract_json(raw)
             arts = V9Artifacts(
                 inferable_hints_text=_redact_forbidden(
-                    data.get("inferable_hints_text", ""), forbidden,
+                    data.get("inferable_hints_text", ""),
+                    forbidden,
                 ),
                 examples_text=_redact_forbidden(
-                    data.get("examples_text", ""), forbidden,
+                    data.get("examples_text", ""),
+                    forbidden,
                 ),
                 feedback_template=_redact_forbidden(
-                    data.get("feedback_template", ""), forbidden,
+                    data.get("feedback_template", ""),
+                    forbidden,
                 ),
             )
             _log.info(
@@ -622,11 +618,10 @@ def author_artifacts_for_strategy(
             last_err = e
             _log.warning(
                 "v9.1 §2.10 artifact parse fail attempt %d: %s",
-                attempt, e,
+                attempt,
+                e,
             )
-    raise ValueError(
-        f"v9.1 §2.10 artifact authoring failed: {last_err}"
-    )
+    raise ValueError(f"v9.1 §2.10 artifact authoring failed: {last_err}")
 
 
 def reflect_decide_v9(
@@ -681,10 +676,7 @@ def reflect_decide_v9(
                         str(data.get("memory_recall", "")), forbidden
                     ),
                     reflection_cot={
-                        k: [
-                            _redact_forbidden(s, forbidden)
-                            for s in (cot.get(k) or [])
-                        ]
+                        k: [_redact_forbidden(s, forbidden) for s in (cot.get(k) or [])]
                         for k in (
                             "what_went_right",
                             "what_went_wrong",

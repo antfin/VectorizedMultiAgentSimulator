@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 class V9SuccessSignature:
     """Predicted metrics + structural pattern at 1M frames if the
     strategy works."""
+
     ast_pattern_description: str
     expected_M1_at_1M: float = 0.05
     expected_M6_at_1M_min: float = 0.20
@@ -28,6 +29,7 @@ class V9SuccessSignature:
 @dataclass
 class V9ChainOfThought:
     """Reasoning block authored by the meta-LLM before any prompt text."""
+
     why_it_works: str
     what_is_needed: List[str] = field(default_factory=list)
     failure_modes: List[str] = field(default_factory=list)
@@ -48,6 +50,7 @@ class V9Artifacts:
     feedback_template is appended to feedback.txt between iters of the
     inner loop — strategy-specific reminder that lives across iters.
     """
+
     inferable_hints_text: str = ""
     examples_text: str = ""
     feedback_template: str = ""
@@ -86,10 +89,7 @@ class V9Bundle:
 
     def pending(self) -> List[V9Strategy]:
         """Strategies not yet attempted, in score-rank order."""
-        return [
-            s for s in self.strategies
-            if not s.excluded and s.attempts == 0
-        ]
+        return [s for s in self.strategies if not s.excluded and s.attempts == 0]
 
     def next_pending_idx(self) -> Optional[int]:
         ranked = sorted(
@@ -110,9 +110,7 @@ class V9Bundle:
         )
         for rank, i in enumerate(ranked):
             s = self.strategies[i]
-            marker = "→" if i == self.chosen_idx else (
-                "✗" if s.excluded else " "
-            )
+            marker = "→" if i == self.chosen_idx else ("✗" if s.excluded else " ")
             lines.append(
                 f"  {marker} #{rank} {s.name} "
                 f"(cod={s.lero_codability} train={s.rl_trainability} "

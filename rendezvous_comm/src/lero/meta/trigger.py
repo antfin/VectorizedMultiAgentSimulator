@@ -8,9 +8,8 @@ PURE module — no I/O, no side effects. All state lives in the
 ``TemplateRecord`` objects the caller passes in.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from statistics import pstdev
 from typing import List, Optional, Sequence, Tuple
 
 from .failmode import FailMode
@@ -19,16 +18,16 @@ from .failmode import FailMode
 class TriggerReason(str, Enum):
     """Why the outer loop is (or isn't) firing another mutation."""
 
-    PLATEAU = "plateau"                               # keep going, plateau
-    SEED_INSTABILITY = "seed_instability"             # keep going, high σ
-    REWARD_HACK = "reward_hack"                       # keep going, peak-vs-final
-    FAIL_MODE_CLUSTER = "fail_mode_cluster"           # keep going, same bug repeating
-    COOLDOWN = "cooldown"                             # HOLD, too soon
-    BUDGET_EXCEEDED = "budget_exceeded"               # STOP
-    CYCLE_DETECTED = "cycle_detected"                 # STOP
-    FAIRNESS_REPEATED = "fairness_repeated"           # STOP (teaching-to-cheat)
-    CONVERGED = "converged"                           # STOP, we're done
-    INITIAL = "initial"                               # first run, no history yet
+    PLATEAU = "plateau"  # keep going, plateau
+    SEED_INSTABILITY = "seed_instability"  # keep going, high σ
+    REWARD_HACK = "reward_hack"  # keep going, peak-vs-final
+    FAIL_MODE_CLUSTER = "fail_mode_cluster"  # keep going, same bug repeating
+    COOLDOWN = "cooldown"  # HOLD, too soon
+    BUDGET_EXCEEDED = "budget_exceeded"  # STOP
+    CYCLE_DETECTED = "cycle_detected"  # STOP
+    FAIRNESS_REPEATED = "fairness_repeated"  # STOP (teaching-to-cheat)
+    CONVERGED = "converged"  # STOP, we're done
+    INITIAL = "initial"  # first run, no history yet
 
 
 @dataclass
@@ -36,14 +35,16 @@ class TemplateRecord:
     """Summary of one outer-loop iteration under one prompt template."""
 
     template_version: str
-    inner_iter_count: int                     # how many inner iters used
-    best_peak_M1: float                        # Tier-2 peak or Tier-1 best
-    best_final_M1: Optional[float] = None      # None if not Tier-2'd
+    inner_iter_count: int  # how many inner iters used
+    best_peak_M1: float  # Tier-2 peak or Tier-1 best
+    best_final_M1: Optional[float] = None  # None if not Tier-2'd
     best_M6: float = 0.0
     best_M2: float = 0.0
-    seed_M1_std: float = 0.0                   # σ of M1 across seeds, at best cand
+    seed_M1_std: float = 0.0  # σ of M1 across seeds, at best cand
     fail_mode: FailMode = FailMode.HEALTHY
-    mutation_target_slot: Optional[str] = None # which slot was edited to MAKE this version
+    mutation_target_slot: Optional[str] = (
+        None  # which slot was edited to MAKE this version
+    )
     mutation_rationale: Optional[str] = None
 
 
@@ -51,8 +52,8 @@ class TemplateRecord:
 class TriggerDecision:
     """Outcome of ``should_meta_iterate``."""
 
-    should_iterate: bool                       # emit a new template?
-    should_stop: bool                          # stop the outer loop entirely?
+    should_iterate: bool  # emit a new template?
+    should_stop: bool  # stop the outer loop entirely?
     reason: TriggerReason
     detail: str = ""
 
@@ -74,10 +75,10 @@ class TriggerConfig:
     cooldown_inner_iters: int = 3
     max_outer_iters: int = 3
     max_total_inner_candidates: int = 200
-    fail_mode_cluster_count: int = 3           # ≥N of last 5 share fail_mode
+    fail_mode_cluster_count: int = 3  # ≥N of last 5 share fail_mode
     fail_mode_cluster_window: int = 5
-    fairness_abort_count: int = 2              # ≥N fairness violations → abort
-    converged_delta: float = 0.02              # best improved < this for N outer iters → done
+    fairness_abort_count: int = 2  # ≥N fairness violations → abort
+    converged_delta: float = 0.02  # best improved < this for N outer iters → done
     converged_iters: int = 3
 
 
@@ -101,7 +102,7 @@ def _plateau(history: Sequence[TemplateRecord], cfg: TriggerConfig) -> bool:
     """
     if len(history) < cfg.plateau_iters + 1:
         return False
-    window = history[-(cfg.plateau_iters + 1):]
+    window = history[-(cfg.plateau_iters + 1) :]
     improvements = [
         window[i + 1].best_peak_M1 - window[i].best_peak_M1
         for i in range(len(window) - 1)
@@ -115,7 +116,7 @@ def _converged(history: Sequence[TemplateRecord], cfg: TriggerConfig) -> bool:
     """
     if len(history) < cfg.converged_iters + 1:
         return False
-    window = history[-(cfg.converged_iters + 1):]
+    window = history[-(cfg.converged_iters + 1) :]
     improvements = [
         window[i + 1].best_peak_M1 - window[i].best_peak_M1
         for i in range(len(window) - 1)
@@ -140,7 +141,8 @@ def should_meta_iterate(
 
     if not history:
         return TriggerDecision(
-            should_iterate=True, should_stop=False,
+            should_iterate=True,
+            should_stop=False,
             reason=TriggerReason.INITIAL,
             detail="No history yet — run the inner loop on the seed template first.",
         )
@@ -149,13 +151,17 @@ def should_meta_iterate(
 
     if len(history) >= cfg.max_outer_iters:
         return TriggerDecision(
-            False, True, TriggerReason.BUDGET_EXCEEDED,
+            False,
+            True,
+            TriggerReason.BUDGET_EXCEEDED,
             f"Reached max_outer_iters={cfg.max_outer_iters}.",
         )
 
     if total_candidates_so_far >= cfg.max_total_inner_candidates:
         return TriggerDecision(
-            False, True, TriggerReason.BUDGET_EXCEEDED,
+            False,
+            True,
+            TriggerReason.BUDGET_EXCEEDED,
             f"Spent {total_candidates_so_far} candidates "
             f"(cap {cfg.max_total_inner_candidates}).",
         )
@@ -165,21 +171,27 @@ def should_meta_iterate(
     )
     if fairness_count >= cfg.fairness_abort_count:
         return TriggerDecision(
-            False, True, TriggerReason.FAIRNESS_REPEATED,
+            False,
+            True,
+            TriggerReason.FAIRNESS_REPEATED,
             f"{fairness_count} fairness violations — template is "
             f"teaching the LLM to cheat; abort for human review.",
         )
 
     if _cycle_detected(history):
         return TriggerDecision(
-            False, True, TriggerReason.CYCLE_DETECTED,
+            False,
+            True,
+            TriggerReason.CYCLE_DETECTED,
             "Same (slot, rationale) edit appearing multiple times "
             "in the last 5 mutations — stop to avoid oscillation.",
         )
 
     if _converged(history, cfg):
         return TriggerDecision(
-            False, True, TriggerReason.CONVERGED,
+            False,
+            True,
+            TriggerReason.CONVERGED,
             f"best_peak_M1 improved < {cfg.converged_delta} for "
             f"{cfg.converged_iters} outer iters — done.",
         )
@@ -188,7 +200,9 @@ def should_meta_iterate(
 
     if inner_iters_since_last_mutation < cfg.cooldown_inner_iters:
         return TriggerDecision(
-            False, False, TriggerReason.COOLDOWN,
+            False,
+            False,
+            TriggerReason.COOLDOWN,
             f"Only {inner_iters_since_last_mutation}/"
             f"{cfg.cooldown_inner_iters} inner iters since last mutation.",
         )
@@ -204,7 +218,9 @@ def should_meta_iterate(
         and (last.best_peak_M1 - last.best_final_M1) >= cfg.peak_vs_final_gap_max
     ):
         return TriggerDecision(
-            True, False, TriggerReason.REWARD_HACK,
+            True,
+            False,
+            TriggerReason.REWARD_HACK,
             f"peak-M1={last.best_peak_M1:.3f} vs final-M1="
             f"{last.best_final_M1:.3f}: gap ≥ "
             f"{cfg.peak_vs_final_gap_max}.",
@@ -212,15 +228,18 @@ def should_meta_iterate(
 
     if last.seed_M1_std > cfg.variance_threshold:
         return TriggerDecision(
-            True, False, TriggerReason.SEED_INSTABILITY,
+            True,
+            False,
+            TriggerReason.SEED_INSTABILITY,
             f"σ(M1 across seeds)={last.seed_M1_std:.3f} > "
             f"{cfg.variance_threshold}.",
         )
 
     # Fail-mode clustering: last K records share a non-healthy fail_mode.
-    window = list(history[-cfg.fail_mode_cluster_window:])
+    window = list(history[-cfg.fail_mode_cluster_window :])
     bad = [
-        r for r in window
+        r
+        for r in window
         if r.fail_mode != FailMode.HEALTHY
         and r.fail_mode != FailMode.FAIRNESS_VIOLATION  # handled above
     ]
@@ -230,20 +249,26 @@ def should_meta_iterate(
             mode_counts[r.fail_mode] = mode_counts.get(r.fail_mode, 0) + 1
         dominant = max(mode_counts, key=mode_counts.get)
         return TriggerDecision(
-            True, False, TriggerReason.FAIL_MODE_CLUSTER,
+            True,
+            False,
+            TriggerReason.FAIL_MODE_CLUSTER,
             f"{mode_counts[dominant]} of last {len(window)} records "
             f"share fail_mode={dominant.value}.",
         )
 
     if _plateau(history, cfg):
         return TriggerDecision(
-            True, False, TriggerReason.PLATEAU,
+            True,
+            False,
+            TriggerReason.PLATEAU,
             f"best_peak_M1 improved < {cfg.plateau_delta} for "
             f"{cfg.plateau_iters} consecutive outer iters.",
         )
 
     # No trigger fired — continue the inner loop on the same template.
     return TriggerDecision(
-        False, False, TriggerReason.COOLDOWN,
+        False,
+        False,
+        TriggerReason.COOLDOWN,
         "No trigger fired; keep the current template.",
     )

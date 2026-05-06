@@ -9,12 +9,11 @@ Verifies:
   6. _TqdmProgressCallback pickle support and iteration counting
   7. _suppress_noise context manager behavior
 """
+
 import csv
 import pickle
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 import torch
 from tensordict import TensorDict
 
@@ -30,7 +29,10 @@ from src.storage import RunStorage
 
 
 def _make_rollout(
-    n_targets_covered=0, n_collisions=0, n_steps=10, n_targets=7,
+    n_targets_covered=0,
+    n_collisions=0,
+    n_steps=10,
+    n_targets=7,
     n_agents=4,
 ):
     """Create a mock per-env evaluation rollout TensorDict.
@@ -55,9 +57,16 @@ def _make_rollout(
     for i in range(min(n_targets_covered, n_steps)):
         tc_1d[i] = 1.0  # 1 new target covered at step i
     # Broadcast to [T, n_agents, 1]
-    tc = tc_1d.unsqueeze(-1).unsqueeze(-1).expand(
-        n_steps, n_agents, 1,
-    ).clone()
+    tc = (
+        tc_1d.unsqueeze(-1)
+        .unsqueeze(-1)
+        .expand(
+            n_steps,
+            n_agents,
+            1,
+        )
+        .clone()
+    )
     data[("next", "agents", "info", "targets_covered")] = tc
 
     # Collision reward: [T, n_agents, 1]
@@ -71,7 +80,8 @@ def _make_rollout(
 
 
 def _make_callback_with_experiment(
-    group_name="agents", n_targets=7,
+    group_name="agents",
+    n_targets=7,
 ):
     """Create an _EvalMetricsCallback with a mock experiment."""
     cb = _EvalMetricsCallback(n_targets=n_targets)
@@ -123,10 +133,7 @@ class TestEvalMetricsCallbackM1:
         cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 10
         # 5 episodes, all cover all 7 targets
-        rollouts = [
-            _make_rollout(n_targets_covered=7, n_targets=7)
-            for _ in range(5)
-        ]
+        rollouts = [_make_rollout(n_targets_covered=7, n_targets=7) for _ in range(5)]
         cb.on_evaluation_end(rollouts)
         assert len(cb.m1_history) == 1
         assert cb.m1_history[0] == (10, 1.0)
@@ -135,10 +142,7 @@ class TestEvalMetricsCallbackM1:
         cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 5
         # 4 episodes, none cover any targets
-        rollouts = [
-            _make_rollout(n_targets_covered=0, n_targets=7)
-            for _ in range(4)
-        ]
+        rollouts = [_make_rollout(n_targets_covered=0, n_targets=7) for _ in range(4)]
         cb.on_evaluation_end(rollouts)
         assert cb.m1_history[0] == (5, 0.0)
 
@@ -157,27 +161,33 @@ class TestEvalMetricsCallbackM1:
     def test_single_episode(self):
         cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 1
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=7, n_targets=7),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=7, n_targets=7),
+            ]
+        )
         assert cb.m1_history[0] == (1, 1.0)
 
     def test_partial_coverage_not_success(self):
         """Covering 6 of 7 targets is NOT success."""
         cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 1
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=6, n_targets=7),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=6, n_targets=7),
+            ]
+        )
         assert cb.m1_history[0] == (1, 0.0)
 
     def test_small_n_targets(self):
         """Test with fewer targets."""
         cb = _make_callback_with_experiment(n_targets=2)
         cb._iter = 1
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=2, n_targets=2),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=2, n_targets=2),
+            ]
+        )
         assert cb.m1_history[0] == (1, 1.0)
 
 
@@ -216,17 +226,23 @@ class TestEvalMetricsCallbackMultipleEvals:
         cb = _make_callback_with_experiment(n_targets=7)
 
         cb._iter = 10
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=7, n_collisions=2),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=7, n_collisions=2),
+            ]
+        )
         cb._iter = 20
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=3, n_collisions=5),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=3, n_collisions=5),
+            ]
+        )
         cb._iter = 30
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=7, n_collisions=0),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=7, n_collisions=0),
+            ]
+        )
 
         assert len(cb.m1_history) == 3
         assert len(cb.m4_history) == 3
@@ -237,9 +253,11 @@ class TestEvalMetricsCallbackMultipleEvals:
     def test_m1_and_m4_recorded_together(self):
         cb = _make_callback_with_experiment(n_targets=7)
         cb._iter = 42
-        cb.on_evaluation_end([
-            _make_rollout(n_targets_covered=7, n_collisions=3),
-        ])
+        cb.on_evaluation_end(
+            [
+                _make_rollout(n_targets_covered=7, n_collisions=3),
+            ]
+        )
         assert len(cb.m1_history) == 1
         assert len(cb.m4_history) == 1
         assert cb.m1_history[0][0] == cb.m4_history[0][0] == 42
@@ -320,10 +338,14 @@ class TestEvalMetricsCallbackSaveCsvs:
         assert "eval_M1_success_rate" in loaded
         assert "eval_M4_avg_collisions" in loaded
         assert loaded["eval_M1_success_rate"] == [
-            (10, 0.3), (20, 0.6), (30, 0.9),
+            (10, 0.3),
+            (20, 0.6),
+            (30, 0.9),
         ]
         assert loaded["eval_M4_avg_collisions"] == [
-            (10, 5.0), (20, 2.0), (30, 1.0),
+            (10, 5.0),
+            (20, 2.0),
+            (30, 1.0),
         ]
 
     def test_csvs_in_correct_experiment_folder(self, tmp_path):
@@ -391,14 +413,12 @@ class TestSuppressNoise:
     """Test that _suppress_noise redirects stdout."""
 
     def test_suppresses_stdout(self, capsys):
-        import sys
         with _suppress_noise():
             print("this should be suppressed")
         captured = capsys.readouterr()
         assert "suppressed" not in captured.out
 
     def test_restores_stdout(self, capsys):
-        import sys
         with _suppress_noise():
             pass
         print("visible")
@@ -407,6 +427,7 @@ class TestSuppressNoise:
 
     def test_suppresses_warnings(self):
         import warnings
+
         caught = []
         old_showwarning = warnings.showwarning
 

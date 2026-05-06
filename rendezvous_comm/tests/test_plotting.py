@@ -1,9 +1,10 @@
 """Tests for the plotting module."""
+
 import matplotlib
+
 matplotlib.use("Agg")  # non-interactive backend for testing
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -88,20 +89,24 @@ class TestPlotSweepHeatmap:
     """Verify plot_sweep_heatmap returns a Figure."""
 
     def test_returns_figure(self):
-        df = pd.DataFrame({
-            "n_agents": [4, 4, 6, 6],
-            "n_targets": [3, 5, 3, 5],
-            "M1_success_rate": [0.1, 0.2, 0.3, 0.4],
-        })
+        df = pd.DataFrame(
+            {
+                "n_agents": [4, 4, 6, 6],
+                "n_targets": [3, 5, 3, 5],
+                "M1_success_rate": [0.1, 0.2, 0.3, 0.4],
+            }
+        )
         fig = plot_sweep_heatmap(df)
         assert isinstance(fig, plt.Figure)
 
     def test_custom_title(self):
-        df = pd.DataFrame({
-            "n_agents": [4, 4, 6, 6],
-            "n_targets": [3, 5, 3, 5],
-            "M1_success_rate": [0.1, 0.2, 0.3, 0.4],
-        })
+        df = pd.DataFrame(
+            {
+                "n_agents": [4, 4, 6, 6],
+                "n_targets": [3, 5, 3, 5],
+                "M1_success_rate": [0.1, 0.2, 0.3, 0.4],
+            }
+        )
         fig = plot_sweep_heatmap(df, title="Custom Title")
         assert isinstance(fig, plt.Figure)
 
@@ -114,24 +119,30 @@ class TestPlotTrainingCurves:
 
     def test_returns_figure(self):
         training_logs = {
-            "run1": pd.DataFrame({
-                "step": [0, 100, 200],
-                "episode_reward_mean": [0.1, 0.5, 0.8],
-            }),
+            "run1": pd.DataFrame(
+                {
+                    "step": [0, 100, 200],
+                    "episode_reward_mean": [0.1, 0.5, 0.8],
+                }
+            ),
         }
         fig = plot_training_curves(training_logs)
         assert isinstance(fig, plt.Figure)
 
     def test_multiple_runs(self):
         training_logs = {
-            "er1_run1": pd.DataFrame({
-                "step": [0, 100, 200],
-                "episode_reward_mean": [0.1, 0.5, 0.8],
-            }),
-            "er2_run2": pd.DataFrame({
-                "step": [0, 100, 200],
-                "episode_reward_mean": [0.2, 0.4, 0.9],
-            }),
+            "er1_run1": pd.DataFrame(
+                {
+                    "step": [0, 100, 200],
+                    "episode_reward_mean": [0.1, 0.5, 0.8],
+                }
+            ),
+            "er2_run2": pd.DataFrame(
+                {
+                    "step": [0, 100, 200],
+                    "episode_reward_mean": [0.2, 0.4, 0.9],
+                }
+            ),
         }
         fig = plot_training_curves(training_logs)
         assert isinstance(fig, plt.Figure)
@@ -144,10 +155,12 @@ class TestPlotSeedVariance:
     """Verify plot_seed_variance returns a Figure."""
 
     def test_returns_figure(self):
-        df = pd.DataFrame({
-            "algorithm": ["mappo", "mappo", "ippo", "ippo"],
-            "M1_success_rate": [0.8, 0.85, 0.6, 0.65],
-        })
+        df = pd.DataFrame(
+            {
+                "algorithm": ["mappo", "mappo", "ippo", "ippo"],
+                "M1_success_rate": [0.8, 0.85, 0.6, 0.65],
+            }
+        )
         fig = plot_seed_variance(df)
         assert isinstance(fig, plt.Figure)
 
@@ -159,10 +172,12 @@ class TestPlotBaselineComparison:
     """Verify plot_baseline_comparison returns a Figure."""
 
     def test_returns_figure(self):
-        cross_df = pd.DataFrame({
-            "experiment": ["er1", "er1", "er2", "er2"],
-            "M1_success_rate": [0.5, 0.55, 0.7, 0.75],
-        })
+        cross_df = pd.DataFrame(
+            {
+                "experiment": ["er1", "er1", "er2", "er2"],
+                "M1_success_rate": [0.5, 0.55, 0.7, 0.75],
+            }
+        )
         fig = plot_baseline_comparison(cross_df)
         assert isinstance(fig, plt.Figure)
 
@@ -241,22 +256,34 @@ class TestPlotTrainingDashboard:
     def test_returns_figure(self):
         scalars = {
             "eval_reward_episode_reward_mean": [
-                (0, 1.0), (100, 5.0), (200, 8.0),
+                (0, 1.0),
+                (100, 5.0),
+                (200, 8.0),
             ],
             "collection_agents_info_targets_covered": [
-                (0, 0.0), (100, 1.0), (200, 2.0),
+                (0, 0.0),
+                (100, 1.0),
+                (200, 2.0),
             ],
             "collection_agents_info_covering_reward": [
-                (0, 0.0), (100, 0.5), (200, 1.0),
+                (0, 0.0),
+                (100, 0.5),
+                (200, 1.0),
             ],
             "collection_agents_info_collision_rew": [
-                (0, -0.5), (100, -0.3), (200, -0.1),
+                (0, -0.5),
+                (100, -0.3),
+                (200, -0.1),
             ],
             "eval_reward_episode_len_mean": [
-                (0, 100.0), (100, 80.0), (200, 60.0),
+                (0, 100.0),
+                (100, 80.0),
+                (200, 60.0),
             ],
             "train_agents_entropy": [
-                (0, 2.0), (100, 1.5), (200, 1.0),
+                (0, 2.0),
+                (100, 1.5),
+                (200, 1.0),
             ],
         }
         fig = plot_training_dashboard(scalars)
@@ -265,11 +292,13 @@ class TestPlotTrainingDashboard:
     def test_with_heuristic_reward(self):
         scalars = {
             "eval_reward_episode_reward_mean": [
-                (0, 1.0), (100, 5.0),
+                (0, 1.0),
+                (100, 5.0),
             ],
         }
         fig = plot_training_dashboard(
-            scalars, heuristic_reward=3.5,
+            scalars,
+            heuristic_reward=3.5,
         )
         assert isinstance(fig, plt.Figure)
 
@@ -299,7 +328,8 @@ class TestPlotBaselineComparisonBars:
             "Trained": {"M2_avg_return": 12.0},
         }
         fig = plot_baseline_comparison_bars(
-            metrics_dict, metric_key="M2_avg_return",
+            metrics_dict,
+            metric_key="M2_avg_return",
         )
         assert isinstance(fig, plt.Figure)
 
@@ -356,11 +386,15 @@ class TestPlotResultsComparison:
 
     def test_custom_colors(self):
         comparison = {
-            "A": {"M1_success_rate": 0.5, "M2_avg_return": 1.0,
-                   "M6_coverage_progress": 0.6},
+            "A": {
+                "M1_success_rate": 0.5,
+                "M2_avg_return": 1.0,
+                "M6_coverage_progress": 0.6,
+            },
         }
         fig = plot_results_comparison(
-            comparison, colors={"A": "#ff0000"},
+            comparison,
+            colors={"A": "#ff0000"},
         )
         assert isinstance(fig, plt.Figure)
 
@@ -372,27 +406,31 @@ class TestPlotSweepOverview:
     """Verify plot_sweep_overview returns a Figure."""
 
     def test_returns_figure_with_n_agents(self):
-        df = pd.DataFrame({
-            "M1_success_rate": [0.3, 0.5, 0.7, 0.9],
-            "M3_avg_steps": [200, 150, 100, 80],
-            "M4_avg_collisions": [5, 3, 2, 1],
-            "M6_coverage_progress": [0.4, 0.6, 0.8, 0.95],
-            "M8_agent_utilization": [0.5, 0.3, 0.2, 0.1],
-            "M9_spatial_spread": [2.0, 1.5, 1.2, 0.8],
-            "n_agents": [2, 4, 6, 8],
-        })
+        df = pd.DataFrame(
+            {
+                "M1_success_rate": [0.3, 0.5, 0.7, 0.9],
+                "M3_avg_steps": [200, 150, 100, 80],
+                "M4_avg_collisions": [5, 3, 2, 1],
+                "M6_coverage_progress": [0.4, 0.6, 0.8, 0.95],
+                "M8_agent_utilization": [0.5, 0.3, 0.2, 0.1],
+                "M9_spatial_spread": [2.0, 1.5, 1.2, 0.8],
+                "n_agents": [2, 4, 6, 8],
+            }
+        )
         fig = plot_sweep_overview(df)
         assert isinstance(fig, plt.Figure)
 
     def test_returns_figure_without_n_agents(self):
-        df = pd.DataFrame({
-            "M1_success_rate": [0.3, 0.5, 0.7],
-            "M3_avg_steps": [200, 150, 100],
-            "M4_avg_collisions": [5, 3, 2],
-            "M6_coverage_progress": [0.4, 0.6, 0.8],
-            "M8_agent_utilization": [0.5, 0.3, 0.2],
-            "M9_spatial_spread": [2.0, 1.5, 1.2],
-        })
+        df = pd.DataFrame(
+            {
+                "M1_success_rate": [0.3, 0.5, 0.7],
+                "M3_avg_steps": [200, 150, 100],
+                "M4_avg_collisions": [5, 3, 2],
+                "M6_coverage_progress": [0.4, 0.6, 0.8],
+                "M8_agent_utilization": [0.5, 0.3, 0.2],
+                "M9_spatial_spread": [2.0, 1.5, 1.2],
+            }
+        )
         fig = plot_sweep_overview(df)
         assert isinstance(fig, plt.Figure)
 

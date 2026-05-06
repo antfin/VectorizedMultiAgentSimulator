@@ -10,6 +10,7 @@ Usage:
 Environment variables:
     RESULTS_DIR  — override results output path (default: rendezvous_comm/results)
 """
+
 import argparse
 import json
 import logging
@@ -27,35 +28,46 @@ def main():
         description="Run experiment sweep (headless, for OVH or CI).",
     )
     parser.add_argument(
-        "config", type=str,
+        "config",
+        type=str,
         help="Path to experiment YAML config file",
     )
     parser.add_argument(
-        "--device", type=str, default=None,
+        "--device",
+        type=str,
+        default=None,
         help="Training device: cuda, cpu (default: auto-detect)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Build experiments without training",
     )
     parser.add_argument(
-        "--max-runs", type=int, default=None,
+        "--max-runs",
+        type=int,
+        default=None,
         help="Cap number of runs (for testing)",
     )
     parser.add_argument(
-        "--skip-complete", action="store_true", default=True,
+        "--skip-complete",
+        action="store_true",
+        default=True,
         help="Skip runs that already have results (default: True)",
     )
     parser.add_argument(
-        "--force-retrain", action="store_true",
+        "--force-retrain",
+        action="store_true",
         help="Re-run even if results exist",
     )
     parser.add_argument(
-        "--rebuild-csv", action="store_true",
+        "--rebuild-csv",
+        action="store_true",
         help="Rebuild consolidated CSVs without training",
     )
     parser.add_argument(
-        "--rebuild-videos", action="store_true",
+        "--rebuild-videos",
+        action="store_true",
         help="Regenerate videos for all completed runs",
     )
     args = parser.parse_args()
@@ -86,6 +98,7 @@ def main():
     # Rebuild CSVs only (no training)
     if args.rebuild_csv:
         from src.consolidate import consolidate_csvs
+
         paths = consolidate_csvs(spec.exp_id)
         for kind, path in paths.items():
             log.info(f"  {kind}: {path}")
@@ -98,12 +111,14 @@ def main():
     if args.rebuild_videos:
         from src.storage import ExperimentStorage
         from src.runner import generate_run_videos
+
         storage = ExperimentStorage(spec.exp_id)
         run_dirs = storage.list_run_dirs()
         if not run_dirs:
             log.warning("No completed runs found.")
             sys.exit(1)
         from src.storage import _extract_run_id, RunStorage
+
         n_ok, n_fail = 0, 0
         for rd in run_dirs:
             rid = _extract_run_id(rd.name)
@@ -115,6 +130,7 @@ def main():
             try:
                 # Parse task_overrides from saved config
                 import yaml
+
                 cfg_path = rs.input_dir / "config.yaml"
                 overrides = None
                 if cfg_path.exists():
@@ -136,6 +152,7 @@ def main():
         log.info(f"Device:     {args.device}")
     else:
         import torch
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         spec.train.train_device = device
         spec.train.sampling_device = device
@@ -145,7 +162,9 @@ def main():
     is_lero = spec.lero is not None
 
     if is_lero:
-        log.info(f"Mode:       LERO ({spec.lero.n_iterations} iters × {spec.lero.n_candidates} candidates)")
+        log.info(
+            f"Mode:       LERO ({spec.lero.n_iterations} iters × {spec.lero.n_candidates} candidates)"
+        )
     else:
         all_runs = list(spec.iter_runs())
         log.info(f"Sweep:      {len(all_runs)} runs")
@@ -158,12 +177,15 @@ def main():
         # 1. From encrypted env vars (OVH AI Training)
         # 2. From .env file (local development)
         import os
+
         if os.environ.get("LERO_ENCRYPTED"):
             from src.secrets_util import decrypt_and_load_env
+
             n_keys = len(decrypt_and_load_env())
             log.info(f"Decrypted {n_keys} LLM key(s) from LERO_ENCRYPTED")
         else:
             from dotenv import load_dotenv
+
             load_dotenv(Path(__file__).parent / ".env")
 
         from src.runner import run_lero
@@ -197,7 +219,9 @@ def main():
     # Summary
     m, s = divmod(int(elapsed), 60)
     h, m = divmod(m, 60)
-    log.info(f"{'LERO' if is_lero else 'Sweep'} complete: {len(results)} runs in {h}h {m}m {s}s")
+    log.info(
+        f"{'LERO' if is_lero else 'Sweep'} complete: {len(results)} runs in {h}h {m}m {s}s"
+    )
 
     if is_lero:
         # Print key metrics
@@ -227,9 +251,7 @@ def main():
         json.dump(summary, f, indent=2)
     log.info(f"Summary:    {summary_path}")
 
-    csv_matches = sorted(
-        spec.results_dir.glob("sweep_results_*.csv")
-    )
+    csv_matches = sorted(spec.results_dir.glob("sweep_results_*.csv"))
     if csv_matches:
         log.info(f"CSV:        {csv_matches[-1]}")
 

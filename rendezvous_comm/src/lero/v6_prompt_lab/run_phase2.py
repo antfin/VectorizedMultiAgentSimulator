@@ -40,14 +40,19 @@ _V1_ADDITION = """
 When you write `slot_edits` text describing operations, prefer ones that COMBINE information across multiple input channels. The inner LLM defaults to writing within-channel statistics (target-only summaries OR agent-only summaries); your guidance should explicitly nudge it toward operations that touch BOTH the target and the agent sensor channels in a single expression. Patterns to invite (without naming features): products, boolean conjunctions, ratios, differences between channel-derived quantities.
 """
 
-_V2_ADDITION = _V1_ADDITION + """
+_V2_ADDITION = (
+    _V1_ADDITION
+    + """
 
 ## Decision-shaped framing (added in V2)
 
 Phrase operations as DECISIONS the policy needs to make, not as descriptive statistics. Examples of decision-shaped phrasing (template only, do not copy verbatim): "stay vs move", "alone vs paired", "scout vs converge", "this target or another one". Each operation you mention in slot_edits should map to a decision the agent could plausibly make from the resulting feature.
 """
+)
 
-_V3_ADDITION = _V2_ADDITION + """
+_V3_ADDITION = (
+    _V2_ADDITION
+    + """
 
 ## Parallel-bullet pattern (added in V3)
 
@@ -56,21 +61,25 @@ When you describe operations in `guidance_observation`, USE PARALLEL BULLETS for
   - <same op> applied to agent sensor → <one-line description>
   - <one cross-channel combination of the two> → <decision name>
 """
+)
 
-_V4_ADDITION = _V3_ADDITION + """
+_V4_ADDITION = (
+    _V3_ADDITION
+    + """
 
 ## Operations palette slot (added in V4)
 
 You may now also write a fourth slot named `guidance_observation` (you already do). In addition, place a 3-5 line "operations palette" sub-section at the top of `guidance_observation` listing 3-5 PATTERN TEMPLATES — each pattern is one sentence, names a generic operation (product, mask, ratio, gating), and points at how it relates to a decision. Do not name specific features.
 """
+)
 
 
 VARIANTS = {
-    "V0_baseline":              V0_META_SYSTEM,
-    "V1_cross_source":          V0_META_SYSTEM + _V1_ADDITION,
-    "V2_plus_decision":         V0_META_SYSTEM + _V2_ADDITION,
+    "V0_baseline": V0_META_SYSTEM,
+    "V1_cross_source": V0_META_SYSTEM + _V1_ADDITION,
+    "V2_plus_decision": V0_META_SYSTEM + _V2_ADDITION,
     "V3_plus_parallel_bullets": V0_META_SYSTEM + _V3_ADDITION,
-    "V4_plus_ops_palette":      V0_META_SYSTEM + _V4_ADDITION,
+    "V4_plus_ops_palette": V0_META_SYSTEM + _V4_ADDITION,
 }
 
 
@@ -78,12 +87,18 @@ VARIANTS = {
 
 
 _FORBIDDEN = (
-    "hold_signal", "hold_target_signal",
-    "approach_signal", "approach_target_signal",
-    "crowd_signal", "sparsity_signal",
-    "gap_to_partner", "pair_formation_zone",
-    "nearest_unassigned", "nearest unassigned helper",
-    "second agent needed", "I am the second",
+    "hold_signal",
+    "hold_target_signal",
+    "approach_signal",
+    "approach_target_signal",
+    "crowd_signal",
+    "sparsity_signal",
+    "gap_to_partner",
+    "pair_formation_zone",
+    "nearest_unassigned",
+    "nearest unassigned helper",
+    "second agent needed",
+    "I am the second",
 )
 
 
@@ -91,9 +106,7 @@ def assert_anticheat_clean(text: str, label: str) -> None:
     low = text.lower()
     for tok in _FORBIDDEN:
         if tok.lower() in low:
-            raise AssertionError(
-                f"ANTI-CHEAT VIOLATION in {label}: '{tok}' present"
-            )
+            raise AssertionError(f"ANTI-CHEAT VIOLATION in {label}: '{tok}' present")
 
 
 # ── Runner ──────────────────────────────────────────────────────
@@ -107,8 +120,9 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=str, default=None)
     args = p.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO,
-                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
+    )
     log = logging.getLogger("rendezvous.lero.v6_prompt_lab.run_phase2")
 
     # Anti-cheat grep on every variant before any LLM call
@@ -117,15 +131,21 @@ def main(argv=None) -> int:
     log.info("anti-cheat grep clean on all %d variants", len(VARIANTS))
 
     inner_cfg = LLMConfig(
-        model=args.model, temperature=args.temperature, max_retries=3,
+        model=args.model,
+        temperature=args.temperature,
+        max_retries=3,
         prompt_version="v2_fewshot_modular_v2_local",
     )
     meta_cfg = LLMConfig(
-        model=args.model, temperature=args.temperature, max_retries=3,
+        model=args.model,
+        temperature=args.temperature,
+        max_retries=3,
         prompt_version="v2_fewshot_modular_v2_local",
     )
     judge_cfg = LLMConfig(
-        model=args.model, temperature=0.3, max_retries=3,
+        model=args.model,
+        temperature=0.3,
+        max_retries=3,
         prompt_version="v2_fewshot_modular_v2_local",
     )
     inner_llm = LLMClient(inner_cfg)
@@ -143,10 +163,16 @@ def main(argv=None) -> int:
         "target positions. Implicit coordination from local sensors only."
     )
     task_overrides = {
-        "n_agents": 4, "n_targets": 4, "agents_per_target": 2,
-        "covering_range": 0.25, "lidar_range": 0.35, "max_steps": 400,
-        "n_lidar_rays_entities": 15, "n_lidar_rays_agents": 12,
-        "collision_penalty": -0.01, "time_penalty": -0.01,
+        "n_agents": 4,
+        "n_targets": 4,
+        "agents_per_target": 2,
+        "covering_range": 0.25,
+        "lidar_range": 0.35,
+        "max_steps": 400,
+        "n_lidar_rays_entities": 15,
+        "n_lidar_rays_agents": 12,
+        "collision_penalty": -0.01,
+        "time_penalty": -0.01,
     }
 
     t_start = time.monotonic()
@@ -171,39 +197,52 @@ def main(argv=None) -> int:
         results[name] = trial
         log.info(
             "%s: cross_source_rate=%.2f avg_cs_ops=%.2f avg_judge=%.2f (%.1fs)",
-            name, trial.cross_source_rate, trial.avg_cross_source_ops,
-            trial.avg_judge, trial.elapsed_s,
+            name,
+            trial.cross_source_rate,
+            trial.avg_cross_source_ops,
+            trial.avg_judge,
+            trial.elapsed_s,
         )
 
     elapsed = time.monotonic() - t_start
 
     # Save report
-    out = args.out or f"results/v6_prompt_lab/phase2_{time.strftime('%Y%m%d_%H%M')}.json"
+    out = (
+        args.out or f"results/v6_prompt_lab/phase2_{time.strftime('%Y%m%d_%H%M')}.json"
+    )
     Path(out).parent.mkdir(parents=True, exist_ok=True)
-    Path(out).write_text(json.dumps({
-        "elapsed_s_total": elapsed,
-        "n_candidates_per_variant": args.n_candidates,
-        "model": args.model,
-        "variants": {
-            name: {
-                **trial.summary_dict(),
-                "meta_rationale": trial.meta_decision.rationale,
-                "meta_guidance_observation": trial.meta_decision.slot_edits.get(
-                    "guidance_observation", ""
-                ),
-                "meta_guidance_shared": trial.meta_decision.slot_edits.get(
-                    "guidance_shared", ""
-                ),
-            }
-            for name, trial in results.items()
-        },
-    }, indent=2, default=str))
+    Path(out).write_text(
+        json.dumps(
+            {
+                "elapsed_s_total": elapsed,
+                "n_candidates_per_variant": args.n_candidates,
+                "model": args.model,
+                "variants": {
+                    name: {
+                        **trial.summary_dict(),
+                        "meta_rationale": trial.meta_decision.rationale,
+                        "meta_guidance_observation": trial.meta_decision.slot_edits.get(
+                            "guidance_observation", ""
+                        ),
+                        "meta_guidance_shared": trial.meta_decision.slot_edits.get(
+                            "guidance_shared", ""
+                        ),
+                    }
+                    for name, trial in results.items()
+                },
+            },
+            indent=2,
+            default=str,
+        )
+    )
     log.info("saved report → %s", out)
 
     # Print comparison table
     print()
-    print(f"{'variant':<28} {'cs_rate':>8} {'avg_cs':>8} {'avg_judge':>10} "
-          f"{'class':>20} {'mode':>22} {'elapsed':>8}")
+    print(
+        f"{'variant':<28} {'cs_rate':>8} {'avg_cs':>8} {'avg_judge':>10} "
+        f"{'class':>20} {'mode':>22} {'elapsed':>8}"
+    )
     print("-" * 110)
     for name, t in results.items():
         s = t.summary_dict()
@@ -219,4 +258,5 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

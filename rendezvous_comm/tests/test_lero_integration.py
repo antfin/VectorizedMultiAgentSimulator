@@ -25,13 +25,13 @@ To set them for a single run:
 
 import os
 
-import pytest
 
 from src.lero.codegen import extract_candidates
 from src.lero.config import LLMConfig
 from src.lero.llm_client import LLMClient
 
 # ── Markers for skipping ─────────────────────────────────────────
+
 
 def _require_env(var_name):
     """Assert that an env var is set, with a clear error message."""
@@ -42,18 +42,22 @@ def _require_env(var_name):
     )
     return val
 
+
 # ── Simple generation prompt ─────────────────────────────────────
 
 SIMPLE_MESSAGES = [
     {"role": "system", "content": "You are a Python expert. Reply with only code."},
-    {"role": "user", "content": (
-        "Write a Python function with this exact signature:\n\n"
-        "```python\n"
-        "def compute_reward(scenario_state: dict) -> torch.Tensor:\n"
-        "```\n\n"
-        "It should return `scenario_state['collision_rew'] - 0.01`. "
-        "Wrap it in a ```python code block. Import torch."
-    )},
+    {
+        "role": "user",
+        "content": (
+            "Write a Python function with this exact signature:\n\n"
+            "```python\n"
+            "def compute_reward(scenario_state: dict) -> torch.Tensor:\n"
+            "```\n\n"
+            "It should return `scenario_state['collision_rew'] - 0.01`. "
+            "Wrap it in a ```python code block. Import torch."
+        ),
+    },
 ]
 
 
@@ -65,11 +69,13 @@ def _validate_response(responses):
 
     # Try to extract a candidate
     candidates = extract_candidates(
-        responses, evolve_reward=True, evolve_observation=False,
+        responses,
+        evolve_reward=True,
+        evolve_observation=False,
     )
-    assert len(candidates) >= 1, (
-        f"Could not extract compute_reward from response:\n{text[:500]}"
-    )
+    assert (
+        len(candidates) >= 1
+    ), f"Could not extract compute_reward from response:\n{text[:500]}"
     assert candidates[0].reward_source is not None
     assert "compute_reward" in candidates[0].reward_source
     return candidates[0]
@@ -196,7 +202,7 @@ class TestEnvDiagnostic:
             status = "READY" if info["ready"] else "NOT CONFIGURED"
             print(f"\n{name}: {status}")
             print(f"  Models: {', '.join(info['models'])}")
-            print(f"  Required env vars:")
+            print("  Required env vars:")
             for var in info["env_vars"]:
                 val = os.environ.get(var.split(" ")[0])
                 flag = "SET" if val else "MISSING"

@@ -7,6 +7,7 @@ stored in each run's input/config.yaml against the current spec.
 This means two different YAML files that produce the same run
 parameters are treated as equivalent — no false "config changed".
 """
+
 import hashlib
 import json
 import subprocess
@@ -69,11 +70,14 @@ def _git_info() -> tuple:
     try:
         commit = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, cwd=_SRC_DIR,
+            capture_output=True,
+            text=True,
+            cwd=_SRC_DIR,
         )
         dirty = subprocess.run(
             ["git", "diff", "--quiet", "HEAD"],
-            capture_output=True, cwd=_SRC_DIR,
+            capture_output=True,
+            cwd=_SRC_DIR,
         )
         return (
             commit.stdout.strip() if commit.returncode == 0 else "unknown",

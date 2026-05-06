@@ -106,7 +106,10 @@ class Scenario(BaseScenario):
     def observation(self, agent: Agent):
         observations = [agent.state.pos, agent.state.vel, agent.state.pos]
         for i, obs in enumerate(observations):
-            noise = torch.zeros(*obs.shape, device=self.world.device,).uniform_(
+            noise = torch.zeros(
+                *obs.shape,
+                device=self.world.device,
+            ).uniform_(
                 -self.obs_noise,
                 self.obs_noise,
             )

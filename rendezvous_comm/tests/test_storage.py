@@ -1,4 +1,5 @@
 """Tests for the storage module (RunStorage, ExperimentStorage, helpers)."""
+
 import csv
 import json
 import re
@@ -225,9 +226,7 @@ class TestRunStorage:
         scalars_dir = rs.benchmarl_dir / "hash1" / "scalars"
         scalars_dir.mkdir(parents=True)
         # Header row and bad data should be skipped
-        (scalars_dir / "metric.csv").write_text(
-            "step,value\n0,1.0\nbad,data\n10,2.0\n"
-        )
+        (scalars_dir / "metric.csv").write_text("step,value\n0,1.0\nbad,data\n10,2.0\n")
         result = rs.load_benchmarl_scalars()
         assert result["metric"] == [(0, 1.0), (10, 2.0)]
 

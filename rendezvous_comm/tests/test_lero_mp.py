@@ -22,7 +22,6 @@ import yaml
 from src.config import load_experiment
 from src.lero.config import (
     LeroConfig,
-    LLMConfig,
     MetaPromptBudget,
     MetaPromptConfig,
     MetaPromptFairness,
@@ -43,6 +42,7 @@ from src.lero.scenario_patch import (
 
 # ── PromptLoader: slot assembly + frozen-hash guard ─────────────
 
+
 class TestPromptLoaderBackwardCompat:
     """Existing monolithic prompts (v1/v2/v2_fewshot) must still render."""
 
@@ -50,11 +50,14 @@ class TestPromptLoaderBackwardCompat:
         loader = PromptLoader("v2_fewshot")
         out = loader.render(
             "initial_user.txt",
-            n_agents=4, n_targets=4, agents_per_target=2,
+            n_agents=4,
+            n_targets=4,
+            agents_per_target=2,
             covering_range=0.35,
             scenario_reward_code="# R",
             scenario_observation_code="# O",
-            collision_penalty=-0.01, time_penalty=-0.01,
+            collision_penalty=-0.01,
+            time_penalty=-0.01,
         )
         assert "4 agents must cover 4 targets" in out
         # Monolithic templates have no slots declared.
@@ -74,8 +77,13 @@ class TestPromptLoaderSlotAssembly:
         # Assembly order matters — we want fairness AFTER state_schema
         # (so the LLM sees the available keys first, then the rules).
         assert names == [
-            "task_context", "current_code", "state_schema",
-            "fairness", "guidance", "examples", "output_spec",
+            "task_context",
+            "current_code",
+            "state_schema",
+            "fairness",
+            "guidance",
+            "examples",
+            "output_spec",
         ]
 
     def test_frozen_slot_names_lists_only_fairness(self, loader):
@@ -93,33 +101,40 @@ class TestPromptLoaderSlotAssembly:
     def test_render_assembles_slots(self, loader):
         out = loader.render(
             "initial_user.txt",
-            n_agents=4, n_targets=4, agents_per_target=2,
+            n_agents=4,
+            n_targets=4,
+            agents_per_target=2,
             covering_range=0.35,
             scenario_reward_code="# R",
             scenario_observation_code="# O",
-            collision_penalty=-0.01, time_penalty=-0.01,
+            collision_penalty=-0.01,
+            time_penalty=-0.01,
         )
         # Content from multiple slots must all appear in the output.
-        assert "4 agents must cover 4 targets" in out          # task_context
-        assert "scenario_state = {" in out                     # state_schema
-        assert "Fairness constraint" in out                    # fairness
-        assert "### Example A" in out                          # examples
-        assert "def compute_reward" in out                     # output_spec
+        assert "4 agents must cover 4 targets" in out  # task_context
+        assert "scenario_state = {" in out  # state_schema
+        assert "Fairness constraint" in out  # fairness
+        assert "### Example A" in out  # examples
+        assert "def compute_reward" in out  # output_spec
 
     def test_render_differs_from_v2_fewshot_only_in_fairness(self):
         """The slot-decomposed version must be behavior-identical to
         v2_fewshot except for the intentional fairness slot addition.
         """
         ctx = dict(
-            n_agents=4, n_targets=4, agents_per_target=2,
+            n_agents=4,
+            n_targets=4,
+            agents_per_target=2,
             covering_range=0.35,
             scenario_reward_code="# R",
             scenario_observation_code="# O",
-            collision_penalty=-0.01, time_penalty=-0.01,
+            collision_penalty=-0.01,
+            time_penalty=-0.01,
         )
         mono = PromptLoader("v2_fewshot").render("initial_user.txt", **ctx)
         modu = PromptLoader("v2_fewshot_modular").render(
-            "initial_user.txt", **ctx,
+            "initial_user.txt",
+            **ctx,
         )
         # The only added block is the fairness section.
         fairness_slot = PromptLoader("v2_fewshot_modular").slot_text("fairness")
@@ -133,7 +148,11 @@ class TestFrozenSlotHashGuard:
 
     SLOT_PATH = (
         Path(__file__).parent.parent
-        / "src" / "lero" / "prompts" / "v2_fewshot_modular" / "fairness.txt"
+        / "src"
+        / "lero"
+        / "prompts"
+        / "v2_fewshot_modular"
+        / "fairness.txt"
     )
 
     def test_tamper_raises_frozen_slot_mismatch(self):
@@ -145,11 +164,14 @@ class TestFrozenSlotHashGuard:
             with pytest.raises(FrozenSlotMismatch) as excinfo:
                 loader.render(
                     "initial_user.txt",
-                    n_agents=4, n_targets=4, agents_per_target=2,
+                    n_agents=4,
+                    n_targets=4,
+                    agents_per_target=2,
                     covering_range=0.35,
                     scenario_reward_code="# R",
                     scenario_observation_code="# O",
-                    collision_penalty=-0.01, time_penalty=-0.01,
+                    collision_penalty=-0.01,
+                    time_penalty=-0.01,
                 )
             assert "fairness" in str(excinfo.value)
         finally:
@@ -160,14 +182,19 @@ class TestFrozenSlotHashGuard:
         version_dir = tmp_path / "tmpl"
         version_dir.mkdir()
         (version_dir / "slot_a.txt").write_text("hello\n")
-        (version_dir / "meta.yaml").write_text(yaml.safe_dump({
-            "initial_user_slots": [
-                {"name": "slot_a", "file": "slot_a.txt", "frozen": True},
-            ],
-            "frozen_hashes": {"slot_a": ""},  # empty → not pinned
-        }))
+        (version_dir / "meta.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "initial_user_slots": [
+                        {"name": "slot_a", "file": "slot_a.txt", "frozen": True},
+                    ],
+                    "frozen_hashes": {"slot_a": ""},  # empty → not pinned
+                }
+            )
+        )
         # Point the loader's template dir at our temp version.
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_path)
         loader = PromptLoader("tmpl")
         out = loader.render("initial_user.txt")
@@ -179,19 +206,25 @@ class TestFrozenSlotHashGuard:
         body = "frozen content\n"
         (version_dir / "slot.txt").write_text(body)
         pinned = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        (version_dir / "meta.yaml").write_text(yaml.safe_dump({
-            "initial_user_slots": [
-                {"name": "slot", "file": "slot.txt", "frozen": True},
-            ],
-            "frozen_hashes": {"slot": pinned},
-        }))
+        (version_dir / "meta.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "initial_user_slots": [
+                        {"name": "slot", "file": "slot.txt", "frozen": True},
+                    ],
+                    "frozen_hashes": {"slot": pinned},
+                }
+            )
+        )
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_path)
         loader = PromptLoader("tmpl2")
         assert loader.render("initial_user.txt") == body
 
 
 # ── meta.fairness: AllowedKeysDict ───────────────────────────────
+
 
 class TestAllowedKeysDict:
     def _state(self):
@@ -248,8 +281,11 @@ class TestAllowedKeysDict:
         d = AllowedKeysDict(self._state())
         keys = set(iter(d))
         assert keys == {
-            "agent_pos", "agent_vel", "agent_idx",
-            "lidar_targets", "n_agents",
+            "agent_pos",
+            "agent_vel",
+            "agent_idx",
+            "lidar_targets",
+            "n_agents",
         }
         assert len(d) == 5
 
@@ -270,6 +306,7 @@ class TestAllowedKeysDict:
 
 
 # ── scenario_patch integration hook ─────────────────────────────
+
 
 class TestMaybeWrapObsState:
     """Verifies the wrap-or-passthrough decision without needing VMAS."""
@@ -311,6 +348,7 @@ class TestMakePatchedScenarioClassAcceptsNewKwarg:
 
 # ── LeroConfig additive field ────────────────────────────────────
 
+
 class TestLeroConfigWhitelistStrict:
     def test_default_is_false_for_backward_compat(self):
         assert LeroConfig().whitelist_strict is False
@@ -329,6 +367,7 @@ class TestLeroConfigWhitelistStrict:
 
 
 # ── MetaPromptConfig and nested dataclasses ─────────────────────
+
 
 class TestMetaPromptConfig:
     def test_defaults(self):
@@ -373,9 +412,7 @@ class TestLoadExperimentMetaPrompt:
         assert spec.meta_prompt.enabled is False
 
     def test_real_config_parses_nested_sections(self):
-        spec = load_experiment(
-            CONFIGS / "lero_mp" / "mp_k2_obsonly_cr035.yaml"
-        )
+        spec = load_experiment(CONFIGS / "lero_mp" / "mp_k2_obsonly_cr035.yaml")
         mp = spec.meta_prompt
         assert mp is not None
         assert mp.enabled is True
@@ -389,36 +426,40 @@ class TestLoadExperimentMetaPrompt:
 
     def test_non_lero_config_has_no_meta_prompt(self):
         """Existing ER1 configs must still load with meta_prompt=None."""
-        spec = load_experiment(
-            CONFIGS / "er1" / "single_al_lp_sr_cr035.yaml"
-        )
+        spec = load_experiment(CONFIGS / "er1" / "single_al_lp_sr_cr035.yaml")
         assert spec.lero is None
         assert spec.meta_prompt is None
 
 
 # ── ER1 parity check ────────────────────────────────────────────
 
+
 class TestER1Parity:
     """For results to sit in the same comparison table as ER1/ER3 GNN,
     task params must match exactly. This test is the regression guard."""
 
-    @pytest.mark.parametrize("param", [
-        "n_agents", "n_targets", "agents_per_target",
-        "lidar_range", "covering_range",
-        "use_agent_lidar",
-        "n_lidar_rays_entities", "n_lidar_rays_agents",
-        "targets_respawn", "shared_reward",
-        "agent_collision_penalty", "covering_rew_coeff",
-        "time_penalty", "max_steps",
-    ])
+    @pytest.mark.parametrize(
+        "param",
+        [
+            "n_agents",
+            "n_targets",
+            "agents_per_target",
+            "lidar_range",
+            "covering_range",
+            "use_agent_lidar",
+            "n_lidar_rays_entities",
+            "n_lidar_rays_agents",
+            "targets_respawn",
+            "shared_reward",
+            "agent_collision_penalty",
+            "covering_rew_coeff",
+            "time_penalty",
+            "max_steps",
+        ],
+    )
     def test_param_matches_er1_cr035(self, param):
-        mp = load_experiment(
-            CONFIGS / "lero_mp" / "mp_k2_obsonly_cr035.yaml"
-        )
-        er1 = load_experiment(
-            CONFIGS / "er1" / "single_al_lp_sr_cr035.yaml"
-        )
+        mp = load_experiment(CONFIGS / "lero_mp" / "mp_k2_obsonly_cr035.yaml")
+        er1 = load_experiment(CONFIGS / "er1" / "single_al_lp_sr_cr035.yaml")
         assert getattr(mp.task, param) == getattr(er1.task, param), (
-            f"LERO-MP task.{param} must match ER1 cr035 baseline for "
-            f"comparability"
+            f"LERO-MP task.{param} must match ER1 cr035 baseline for " f"comparability"
         )

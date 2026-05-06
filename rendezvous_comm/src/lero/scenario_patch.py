@@ -38,12 +38,14 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
     agents_pos = getattr(scenario, "agents_pos", None)
     if agents_pos is None:
         agents_pos = torch.stack(
-            [a.state.pos for a in scenario.world.agents], dim=1,
+            [a.state.pos for a in scenario.world.agents],
+            dim=1,
         )
     targets_pos = getattr(scenario, "targets_pos", None)
     if targets_pos is None:
         targets_pos = torch.stack(
-            [t.state.pos for t in scenario._targets], dim=1,
+            [t.state.pos for t in scenario._targets],
+            dim=1,
         )
     agents_targets_dists = getattr(scenario, "agents_targets_dists", None)
     if agents_targets_dists is None:
@@ -51,7 +53,8 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
     agents_per_target = getattr(scenario, "agents_per_target", None)
     if agents_per_target is None:
         agents_per_target = torch.sum(
-            (agents_targets_dists < scenario._covering_range).int(), dim=1,
+            (agents_targets_dists < scenario._covering_range).int(),
+            dim=1,
         )
     covered_targets = getattr(scenario, "covered_targets", None)
     if covered_targets is None:
@@ -67,32 +70,44 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         "covered_targets": covered_targets,
         "agents_per_target": agents_per_target,
         "all_time_covered": getattr(
-            scenario, "all_time_covered_targets",
+            scenario,
+            "all_time_covered_targets",
             torch.zeros_like(covered_targets),
         ),
         "agent_pos": agent.state.pos,
         "agent_vel": agent.state.vel,
         "agent_idx": agent_idx,
         "n_agents": torch.tensor(
-            len(scenario.world.agents), device=device,
+            len(scenario.world.agents),
+            device=device,
         ).long(),
         "n_targets": torch.tensor(
-            scenario.n_targets, device=device,
+            scenario.n_targets,
+            device=device,
         ).long(),
         "covering_range": torch.tensor(
-            scenario._covering_range, device=device,
+            scenario._covering_range,
+            device=device,
         ).float(),
         "agents_per_target_required": torch.tensor(
-            scenario._agents_per_target, device=device,
+            scenario._agents_per_target,
+            device=device,
         ).float(),
         "collision_penalty": torch.tensor(
-            scenario.agent_collision_penalty, device=device,
+            scenario.agent_collision_penalty,
+            device=device,
         ).float(),
-        "collision_rew": getattr(agent, "collision_rew", torch.zeros(
-            batch_dim, device=device,
-        )),
+        "collision_rew": getattr(
+            agent,
+            "collision_rew",
+            torch.zeros(
+                batch_dim,
+                device=device,
+            ),
+        ),
         "time_penalty": torch.tensor(
-            scenario.time_penalty, device=device,
+            scenario.time_penalty,
+            device=device,
         ).float(),
     }
     dim_c = getattr(scenario, "dim_c", 0)
@@ -105,8 +120,10 @@ def _build_reward_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
             state["messages"] = torch.stack(messages, dim=1)
         else:
             state["messages"] = torch.zeros(
-                batch_dim, len(scenario.world.agents) - 1,
-                dim_c, device=device,
+                batch_dim,
+                len(scenario.world.agents) - 1,
+                dim_c,
+                device=device,
             )
     return state
 
@@ -126,16 +143,20 @@ def _build_obs_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
         "agent_vel": agent.state.vel,
         "agent_idx": agent_idx,
         "n_agents": torch.tensor(
-            len(scenario.world.agents), device=device,
+            len(scenario.world.agents),
+            device=device,
         ).long(),
         "n_targets": torch.tensor(
-            scenario.n_targets, device=device,
+            scenario.n_targets,
+            device=device,
         ).long(),
         "covering_range": torch.tensor(
-            scenario._covering_range, device=device,
+            scenario._covering_range,
+            device=device,
         ).float(),
         "agents_per_target_required": torch.tensor(
-            scenario._agents_per_target, device=device,
+            scenario._agents_per_target,
+            device=device,
         ).float(),
         # LiDAR sensor readings (local, what the agent actually sees)
         "lidar_targets": agent.sensors[0].measure(),
@@ -155,7 +176,8 @@ def _build_obs_state(scenario, agent, agent_idx: int) -> Dict[str, Any]:
                 if comm_proximity and comms_range is not None:
                     dist = torch.linalg.vector_norm(
                         agent.state.pos - other.state.pos,
-                        dim=-1, keepdim=True,
+                        dim=-1,
+                        keepdim=True,
                     )
                     in_range = (dist <= comms_range).float()
                     msg = msg * in_range
@@ -278,6 +300,7 @@ def make_patched_scenario_class(
             _clip = reward_clip
 
             if _rmode == "replace":
+
                 def reward(self, agent, _rc=_clip):
                     # Run original reward for side effects (computes
                     # shared state, collision penalties, target respawning)
@@ -288,6 +311,7 @@ def make_patched_scenario_class(
                     state = _build_reward_state(self, agent, agent_idx)
                     return _sanitize_reward(reward_fn(state), _rc)
             else:
+
                 def reward(self, agent, _bonus_scale=_bs, _rc=_clip):
                     original_reward = super().reward(agent)
                     agent_idx = self.world.agents.index(agent)
@@ -303,8 +327,10 @@ def make_patched_scenario_class(
             # Do NOT redefine it as a class attribute — class-body names aren't
             # visible inside method bodies (Python scoping rule).
             def observation(
-                self, agent,
-                _mode=obs_state_mode, _strict=whitelist_strict,
+                self,
+                agent,
+                _mode=obs_state_mode,
+                _strict=whitelist_strict,
             ):
                 base_obs = super().observation(agent)
                 agent_idx = self.world.agents.index(agent)
@@ -316,13 +342,15 @@ def make_patched_scenario_class(
                 extra = obs_fn(state)
                 if isinstance(base_obs, dict):
                     base_obs["observation"] = torch.cat(
-                        [base_obs["observation"], extra], dim=-1,
+                        [base_obs["observation"], extra],
+                        dim=-1,
                     )
                     return base_obs
                 return torch.cat([base_obs, extra], dim=-1)
 
     _log.info(
         "Created PatchedDiscoveryScenario (reward=%s, obs=%s)",
-        reward_source is not None, obs_source is not None,
+        reward_source is not None,
+        obs_source is not None,
     )
     return PatchedDiscoveryScenario

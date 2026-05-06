@@ -20,33 +20,37 @@ from typing import Any, Iterable, Mapping, Optional, Set
 # Kept intentionally small and explicit. Changing either set requires a
 # PR-visible edit and a matching update in prompts/*/fairness.txt.
 
-LOCAL_ALLOWED_KEYS: frozenset = frozenset({
-    # own sensors / own state
-    "agent_pos",
-    "agent_vel",
-    "agent_idx",
-    "lidar_targets",
-    "lidar_agents",
-    "messages",
-    # static scenario constants (fine — same for every agent)
-    "n_agents",
-    "n_targets",
-    "covering_range",
-    "agents_per_target_required",
-})
+LOCAL_ALLOWED_KEYS: frozenset = frozenset(
+    {
+        # own sensors / own state
+        "agent_pos",
+        "agent_vel",
+        "agent_idx",
+        "lidar_targets",
+        "lidar_agents",
+        "messages",
+        # static scenario constants (fine — same for every agent)
+        "n_agents",
+        "n_targets",
+        "covering_range",
+        "agents_per_target_required",
+    }
+)
 
 # Forbidden in local mode. Listed so violations name the key explicitly.
-LOCAL_FORBIDDEN_KEYS: frozenset = frozenset({
-    "agents_pos",
-    "targets_pos",
-    "agents_targets_dists",
-    "covered_targets",
-    "agents_per_target",
-    "all_time_covered",
-    "collision_rew",
-    "collision_penalty",
-    "time_penalty",
-})
+LOCAL_FORBIDDEN_KEYS: frozenset = frozenset(
+    {
+        "agents_pos",
+        "targets_pos",
+        "agents_targets_dists",
+        "covered_targets",
+        "agents_per_target",
+        "all_time_covered",
+        "collision_rew",
+        "collision_penalty",
+        "time_penalty",
+    }
+)
 
 
 class FairnessViolation(KeyError):
@@ -95,8 +99,7 @@ class AllowedKeysDict(Mapping):
                 )
             return self._state[key]
         raise KeyError(
-            f"{self._label}: unknown key '{key}'. Allowed: "
-            f"{sorted(self._allowed)}."
+            f"{self._label}: unknown key '{key}'. Allowed: " f"{sorted(self._allowed)}."
         )
 
     def __iter__(self):

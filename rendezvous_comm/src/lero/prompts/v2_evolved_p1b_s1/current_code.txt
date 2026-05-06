@@ -9,4 +9,3 @@ Current observation function:
 ```python
 $scenario_observation_code
 ```
-

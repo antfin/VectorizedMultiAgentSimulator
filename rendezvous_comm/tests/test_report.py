@@ -1,7 +1,4 @@
 """Tests for the report module (generate_run_report, generate_sweep_report)."""
-from pathlib import Path
-
-import pytest
 
 from src.config import ExperimentSpec, SweepConfig, TaskConfig, TrainConfig
 from src.report import METRIC_DETAILS, generate_run_report, generate_sweep_report
@@ -66,9 +63,9 @@ class TestMetricDetails:
 
     def test_labels_start_with_m_prefix(self):
         for key, detail in METRIC_DETAILS.items():
-            assert detail["label"].startswith("M"), (
-                f"{key} label {detail['label']!r} does not start with 'M'"
-            )
+            assert detail["label"].startswith(
+                "M"
+            ), f"{key} label {detail['label']!r} does not start with 'M'"
 
 
 # ── generate_run_report ──────────────────────────────────────────
@@ -79,9 +76,7 @@ class TestGenerateRunReport:
 
     def test_returns_nonempty_string(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -101,17 +96,13 @@ class TestGenerateRunReport:
 
     def test_contains_spec_name_and_exp_id(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         assert "Test" in result
         assert "ER1" in result or "er1" in result
 
     def test_contains_formatted_metric_values(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         # M1 formatted as .1% → "75.0%"
         assert "75.0%" in result
         # M2 formatted as .4f → "12.5000"
@@ -121,29 +112,26 @@ class TestGenerateRunReport:
 
     def test_contains_task_configuration_section(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         assert "Task Configuration" in result
 
     def test_contains_training_configuration_section(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         assert "Training Configuration" in result
 
     def test_contains_evaluation_results_section(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         assert "Evaluation Results" in result
 
     def test_with_elapsed_seconds_includes_wall_time(self, tmp_path):
         spec = _make_spec()
         result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics(),
+            tmp_path,
+            "run_0",
+            spec,
+            _sample_metrics(),
             elapsed_seconds=3661.0,
         )
         assert "Wall time" in result
@@ -152,7 +140,10 @@ class TestGenerateRunReport:
     def test_without_elapsed_seconds_no_wall_time(self, tmp_path):
         spec = _make_spec()
         result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics(),
+            tmp_path,
+            "run_0",
+            spec,
+            _sample_metrics(),
             elapsed_seconds=0.0,
         )
         assert "not recorded" in result
@@ -161,7 +152,10 @@ class TestGenerateRunReport:
         spec = _make_spec()
         overrides = {"n_agents": 6, "lidar_range": 0.45}
         result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics(),
+            tmp_path,
+            "run_0",
+            spec,
+            _sample_metrics(),
             task_overrides=overrides,
         )
         # Overridden params get a ⚙ marker
@@ -169,9 +163,7 @@ class TestGenerateRunReport:
 
     def test_written_file_matches_return_value(self, tmp_path):
         spec = _make_spec()
-        result = generate_run_report(
-            tmp_path, "run_0", spec, _sample_metrics()
-        )
+        result = generate_run_report(tmp_path, "run_0", spec, _sample_metrics())
         report_file = tmp_path / "report.md"
         assert report_file.read_text() == result
 
@@ -209,9 +201,7 @@ class TestGenerateSweepReport:
 
     def test_writes_sweep_report_md(self, tmp_path):
         spec = _make_spec()
-        generate_sweep_report(
-            spec, self._make_all_metrics(), results_dir=tmp_path
-        )
+        generate_sweep_report(spec, self._make_all_metrics(), results_dir=tmp_path)
         report_files = list(tmp_path.glob("sweep_report_*.md"))
         assert len(report_files) == 1
         assert len(report_files[0].read_text()) > 0
@@ -219,9 +209,7 @@ class TestGenerateSweepReport:
     def test_contains_sweep_header_with_run_count(self, tmp_path):
         spec = _make_spec()
         all_metrics = self._make_all_metrics()
-        result = generate_sweep_report(
-            spec, all_metrics, results_dir=tmp_path
-        )
+        result = generate_sweep_report(spec, all_metrics, results_dir=tmp_path)
         assert "Sweep Report" in result
         assert str(len(all_metrics)) in result
 
@@ -247,9 +235,7 @@ class TestGenerateSweepReport:
     def test_contains_per_run_results_table(self, tmp_path):
         spec = _make_spec()
         all_metrics = self._make_all_metrics()
-        result = generate_sweep_report(
-            spec, all_metrics, results_dir=tmp_path
-        )
+        result = generate_sweep_report(spec, all_metrics, results_dir=tmp_path)
         assert "Per-Run Results" in result
         for run_id in all_metrics:
             assert run_id in result
@@ -263,18 +249,14 @@ class TestGenerateSweepReport:
 
     def test_empty_all_metrics_shows_no_completed_runs(self, tmp_path):
         spec = _make_spec()
-        result = generate_sweep_report(
-            spec, {}, results_dir=tmp_path
-        )
+        result = generate_sweep_report(spec, {}, results_dir=tmp_path)
         assert "No completed runs" in result
         # Should still write the file
         assert len(list(tmp_path.glob("sweep_report_*.md"))) == 1
 
     def test_empty_all_metrics_short_report(self, tmp_path):
         spec = _make_spec()
-        result = generate_sweep_report(
-            spec, {}, results_dir=tmp_path
-        )
+        result = generate_sweep_report(spec, {}, results_dir=tmp_path)
         # No aggregate or per-run sections
         assert "Aggregate Results" not in result
         assert "Per-Run Results" not in result
@@ -282,8 +264,10 @@ class TestGenerateSweepReport:
     def test_with_elapsed_seconds_shows_wall_time(self, tmp_path):
         spec = _make_spec()
         result = generate_sweep_report(
-            spec, self._make_all_metrics(),
-            elapsed_seconds=7200.0, results_dir=tmp_path,
+            spec,
+            self._make_all_metrics(),
+            elapsed_seconds=7200.0,
+            results_dir=tmp_path,
         )
         assert "Wall time" in result
         assert "2h 0m 0s" in result

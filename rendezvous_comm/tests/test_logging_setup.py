@@ -1,8 +1,8 @@
 """Tests for the logging_setup module — setup_run_logger, teardown_run_logger."""
+
 import logging
 from pathlib import Path
 
-import pytest
 
 from src.logging_setup import setup_run_logger, teardown_run_logger
 
@@ -26,8 +26,7 @@ class TestSetupWithConsole:
     def test_file_handler_writes_to_run_log(self, tmp_path):
         logger = setup_run_logger(tmp_path, name="test_fh_path")
         file_handlers = [
-            h for h in logger.handlers
-            if isinstance(h, logging.FileHandler)
+            h for h in logger.handlers if isinstance(h, logging.FileHandler)
         ]
         assert len(file_handlers) == 1
         assert Path(file_handlers[0].baseFilename) == tmp_path / "logs" / "run.log"
@@ -62,7 +61,9 @@ class TestSetupWithoutConsole:
         teardown_run_logger(logger)
 
     def test_file_handler_still_works(self, tmp_path):
-        logger = setup_run_logger(tmp_path, name="test_no_console_writes", console=False)
+        logger = setup_run_logger(
+            tmp_path, name="test_no_console_writes", console=False
+        )
         logger.info("quiet mode message")
         for h in logger.handlers:
             h.flush()
@@ -133,6 +134,7 @@ class TestFileLoggingContent:
         assert "format check" in contents
         # Timestamp pattern: four digits, dash, two digits, dash, two digits
         import re
+
         assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", contents)
         teardown_run_logger(logger)
 

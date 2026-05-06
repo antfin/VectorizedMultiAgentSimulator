@@ -30,12 +30,15 @@ pytestmark = pytest.mark.llm
 def meta_llm():
     if not os.environ.get("OPENAI_API_KEY"):
         from dotenv import load_dotenv
+
         load_dotenv()
-    return LLMClient(LLMConfig(
-        model="gpt-5.4-mini",
-        temperature=1.0,
-        max_retries=2,
-    ))
+    return LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=1.0,
+            max_retries=2,
+        )
+    )
 
 
 # ── B1: Bootstrap understands rendezvous ────────────────────────
@@ -52,13 +55,15 @@ def test_bootstrap_understands_rendezvous(tmp_path, meta_llm):
         "M1 at 10M.\n",
     )
     from pathlib import Path
+
     base_prompt = Path(
         "/Users/afin/Documents/Studio/PHD/Code/"
         "VectorizedMultiAgentSimulator/rendezvous_comm/src/lero/prompts/"
         "v2_fewshot_modular_v2"
     )
     result = bootstrap_from_description(
-        description_path=desc, meta_llm=meta_llm,
+        description_path=desc,
+        meta_llm=meta_llm,
         output_dir=tmp_path / "out",
         base_prompt_dir=base_prompt,
     )
@@ -66,7 +71,8 @@ def test_bootstrap_understands_rendezvous(tmp_path, meta_llm):
     # The LLM should mention coordination concepts
     text = (
         " ".join(card.high_level_strategies_considered)
-        + " " + " ".join(card.proposed_initial_obs_features)
+        + " "
+        + " ".join(card.proposed_initial_obs_features)
     ).lower()
     assert any(
         kw in text for kw in ("hold", "rendezvous", "coordinat", "proximity")
@@ -87,9 +93,7 @@ def test_strategy_diversity_round_0(meta_llm):
             "covers_2_or_more_domains": lambda b: (
                 len(set(s.target_domain for s in b.strategies)) >= 2
             ),
-            "diversity_rationale_nonempty": lambda b: (
-                len(b.diversity_rationale) > 20
-            ),
+            "diversity_rationale_nonempty": lambda b: (len(b.diversity_rationale) > 20),
         },
         meta_llm=meta_llm,
     )
@@ -109,24 +113,40 @@ def test_strategy_after_collapse_reverts_reward(meta_llm):
     prior = fake_round_result(
         round_idx=0,
         strategies=[
-            {"strategy_id": "S1", "target_domain": "reward",
-             "idea": "potential shaping"},
-            {"strategy_id": "S2", "target_domain": "observation",
-             "idea": "proximity_count"},
-            {"strategy_id": "S3", "target_domain": "both",
-             "idea": "obs + reward"},
+            {
+                "strategy_id": "S1",
+                "target_domain": "reward",
+                "idea": "potential shaping",
+            },
+            {
+                "strategy_id": "S2",
+                "target_domain": "observation",
+                "idea": "proximity_count",
+            },
+            {"strategy_id": "S3", "target_domain": "both", "idea": "obs + reward"},
         ],
         candidate_outcomes=[
-            {"strategy_id": "S1", "shape": "peak_collapse",
-             "final_M1": 0.05, "peak_M1": 0.40},
-            {"strategy_id": "S2", "shape": "monotonic_rise",
-             "final_M1": 0.18, "peak_M1": 0.20},
-            {"strategy_id": "S3", "shape": "peak_collapse",
-             "final_M1": 0.08, "peak_M1": 0.35},
+            {
+                "strategy_id": "S1",
+                "shape": "peak_collapse",
+                "final_M1": 0.05,
+                "peak_M1": 0.40,
+            },
+            {
+                "strategy_id": "S2",
+                "shape": "monotonic_rise",
+                "final_M1": 0.18,
+                "peak_M1": 0.20,
+            },
+            {
+                "strategy_id": "S3",
+                "shape": "peak_collapse",
+                "final_M1": 0.08,
+                "peak_M1": 0.35,
+            },
         ],
         best_id="S2",
-        best_outcome={"shape": "monotonic_rise", "final_M1": 0.18,
-                      "peak_M1": 0.20},
+        best_outcome={"shape": "monotonic_rise", "final_M1": 0.18, "peak_M1": 0.20},
     )
     result = run_strategist_scenario(
         name="S2_revert_after_collapse",
@@ -164,23 +184,36 @@ def test_strategy_builds_on_winning_pattern(meta_llm):
     prior = fake_round_result(
         round_idx=0,
         strategies=[
-            {"strategy_id": "S1", "target_domain": "observation",
-             "idea": "hold_signal + proximity_count"},
-            {"strategy_id": "S2", "target_domain": "reward",
-             "idea": "tiny shaping"},
+            {
+                "strategy_id": "S1",
+                "target_domain": "observation",
+                "idea": "hold_signal + proximity_count",
+            },
+            {"strategy_id": "S2", "target_domain": "reward", "idea": "tiny shaping"},
             {"strategy_id": "S3", "target_domain": "both", "idea": "kitchen sink"},
         ],
         candidate_outcomes=[
-            {"strategy_id": "S1", "shape": "monotonic_rise",
-             "final_M1": 0.45, "peak_M1": 0.45},
-            {"strategy_id": "S2", "shape": "flat_zero",
-             "final_M1": 0.0, "peak_M1": 0.005},
-            {"strategy_id": "S3", "shape": "oscillating",
-             "final_M1": 0.10, "peak_M1": 0.30},
+            {
+                "strategy_id": "S1",
+                "shape": "monotonic_rise",
+                "final_M1": 0.45,
+                "peak_M1": 0.45,
+            },
+            {
+                "strategy_id": "S2",
+                "shape": "flat_zero",
+                "final_M1": 0.0,
+                "peak_M1": 0.005,
+            },
+            {
+                "strategy_id": "S3",
+                "shape": "oscillating",
+                "final_M1": 0.10,
+                "peak_M1": 0.30,
+            },
         ],
         best_id="S1",
-        best_outcome={"shape": "monotonic_rise", "final_M1": 0.45,
-                      "peak_M1": 0.45},
+        best_outcome={"shape": "monotonic_rise", "final_M1": 0.45, "peak_M1": 0.45},
     )
     result = run_strategist_scenario(
         name="S3_build_on_winner",
@@ -206,6 +239,5 @@ def test_strategy_builds_on_winning_pattern(meta_llm):
             for s in result.bundle.strategies
         )
         pytest.skip(
-            f"Strategist did not refine the winning pattern. "
-            f"Strategies: {details}"
+            f"Strategist did not refine the winning pattern. " f"Strategies: {details}"
         )

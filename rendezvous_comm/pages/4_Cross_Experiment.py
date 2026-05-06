@@ -1,4 +1,5 @@
 """Cross-experiment comparison, statistical tests, and Pareto frontiers."""
+
 import streamlit as st
 import sys
 from pathlib import Path
@@ -6,17 +7,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
 from src.theme import apply_theme
-from src.config import CONFIGS_DIR, RESULTS_DIR
+from src.config import RESULTS_DIR
 from src.storage import load_cross_experiment
 from src.consolidate import load_latest_csv, list_experiments_with_data
 from src.plotting import (
-    plot_baseline_comparison, plot_metric_radar, plot_success_vs_tokens,
-    set_style, METRIC_LABELS, COLORS, LABELS,
+    plot_baseline_comparison,
+    plot_metric_radar,
+    plot_success_vs_tokens,
+    METRIC_LABELS,
 )
 from src.stats import compare_experiments, bootstrap_ci, pareto_frontier
 
@@ -30,7 +34,9 @@ if not all_exp_ids:
     st.stop()
 
 selected_exps = st.sidebar.multiselect(
-    "Experiments", all_exp_ids, default=all_exp_ids[:2],
+    "Experiments",
+    all_exp_ids,
+    default=all_exp_ids[:2],
 )
 
 if len(selected_exps) < 1:
@@ -39,6 +45,7 @@ if len(selected_exps) < 1:
 
 # Try to load from consolidated CSVs first, then fallback
 import pandas as pd
+
 frames = []
 for eid in selected_exps:
     df = load_latest_csv(RESULTS_DIR / eid, "sweep_results")
@@ -70,7 +77,9 @@ metric = st.selectbox(
 )
 
 fig = plot_baseline_comparison(
-    cross_df, metric=metric, group_col="experiment",
+    cross_df,
+    metric=metric,
+    group_col="experiment",
     title=f"{METRIC_LABELS.get(metric, metric)} — Across Experiments",
 )
 st.pyplot(fig)
@@ -85,8 +94,10 @@ if len(selected_exps) >= 2:
         exp_a = st.selectbox("Experiment A", selected_exps, index=0, key="exp_a")
     with col2:
         exp_b = st.selectbox(
-            "Experiment B", selected_exps,
-            index=min(1, len(selected_exps) - 1), key="exp_b",
+            "Experiment B",
+            selected_exps,
+            index=min(1, len(selected_exps) - 1),
+            key="exp_b",
         )
 
     if exp_a != exp_b:
@@ -148,7 +159,8 @@ if len(radar_metrics) >= 1:
     )
     if len(available) >= 3:
         fig = plot_metric_radar(
-            radar_metrics, metrics=available[:6],
+            radar_metrics,
+            metrics=available[:6],
             title="Experiment Comparison",
         )
         st.pyplot(fig)
@@ -172,16 +184,24 @@ if "M1_success_rate" in cross_df.columns and "M5_avg_tokens" in cross_df.columns
 
     if len(points) >= 2:
         frontier_idx = pareto_frontier(
-            points, maximize_x=False, maximize_y=True,
+            points,
+            maximize_x=False,
+            maximize_y=True,
         )
         if frontier_idx:
             frontier_pts = sorted(
-                [points[i] for i in frontier_idx], key=lambda p: p[0],
+                [points[i] for i in frontier_idx],
+                key=lambda p: p[0],
             )
             fx, fy = zip(*frontier_pts)
             fig.axes[0].plot(
-                fx, fy, "--", color="gray", alpha=0.6,
-                linewidth=1.5, label="Pareto frontier",
+                fx,
+                fy,
+                "--",
+                color="gray",
+                alpha=0.6,
+                linewidth=1.5,
+                label="Pareto frontier",
             )
             fig.axes[0].legend()
 

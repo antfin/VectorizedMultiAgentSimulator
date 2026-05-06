@@ -70,8 +70,10 @@ M6_NEUTRAL_BAND = 0.05
 
 
 def classify_verdict(
-    pre_m1: float, post_m1: float,
-    pre_m6: float = 0.0, post_m6: float = 0.0,
+    pre_m1: float,
+    post_m1: float,
+    pre_m6: float = 0.0,
+    post_m6: float = 0.0,
     scale: float = 1.0,
 ) -> str:
     """Deterministic verdict from metric deltas. No LLM involved.
@@ -103,6 +105,7 @@ def classify_verdict(
 
 
 # ── entry schema + persistence ─────────────────────────────────
+
 
 @dataclass
 class MutationLogEntry:
@@ -147,8 +150,11 @@ class MutationLogEntry:
     def from_dict(cls, d: Dict[str, Any]) -> "MutationLogEntry":
         # Tolerant of missing optional fields from older log formats.
         return cls(
-            ts=d["ts"], run_id=d["run_id"], task_id=d.get("task_id", ""),
-            seed=d["seed"], outer_iter=d["outer_iter"],
+            ts=d["ts"],
+            run_id=d["run_id"],
+            task_id=d.get("task_id", ""),
+            seed=d["seed"],
+            outer_iter=d["outer_iter"],
             parent_version=d["parent_version"],
             new_version=d["new_version"],
             strategy_card=d.get("strategy_card", {}),
@@ -163,7 +169,8 @@ class MutationLogEntry:
             delta_M6=d.get("delta_M6"),
             verdict=d.get("verdict"),
             fail_modes_during_next_iter=d.get(
-                "fail_modes_during_next_iter", [],
+                "fail_modes_during_next_iter",
+                [],
             ),
             best_reward_code_excerpt=d.get("best_reward_code_excerpt"),
             best_obs_code_excerpt=d.get("best_obs_code_excerpt"),
@@ -220,7 +227,9 @@ def append_entry(path: Path, entry: MutationLogEntry) -> None:
         f.write(json.dumps(entry.to_dict()) + "\n")
     _log.info(
         "mutation_log: appended entry for %s (slot=%s, pre_M1=%.3f)",
-        entry.new_version, entry.slot_name, entry.pre_mutation_peak_M1,
+        entry.new_version,
+        entry.slot_name,
+        entry.pre_mutation_peak_M1,
     )
 
 
@@ -258,13 +267,13 @@ def update_last_entry_with_post(
         return last  # already resolved; don't re-update
     last.post_mutation_peak_M1 = float(post_peak_M1)
     last.post_mutation_best_M6 = float(post_M6)
-    last.delta_peak_M1 = (
-        last.post_mutation_peak_M1 - last.pre_mutation_peak_M1
-    )
+    last.delta_peak_M1 = last.post_mutation_peak_M1 - last.pre_mutation_peak_M1
     last.delta_M6 = last.post_mutation_best_M6 - last.pre_mutation_best_M6
     last.verdict = classify_verdict(
-        last.pre_mutation_peak_M1, last.post_mutation_peak_M1,
-        last.pre_mutation_best_M6, last.post_mutation_best_M6,
+        last.pre_mutation_peak_M1,
+        last.post_mutation_peak_M1,
+        last.pre_mutation_best_M6,
+        last.post_mutation_best_M6,
         scale=verdict_scale,
     )
     if fail_modes:
@@ -325,7 +334,8 @@ def read_recent(
             except Exception as ex:  # pragma: no cover
                 _log.warning(
                     "Skipping malformed mutation_log entry in %s: %s",
-                    p, ex,
+                    p,
+                    ex,
                 )
                 continue
             if task_id is not None and e.task_id != task_id:
@@ -366,15 +376,14 @@ def summarize_for_prompt(entries: List[MutationLogEntry]) -> str:
         verdict = e.verdict or "pending"
         delta = (
             f"Δpeak_M1={e.delta_peak_M1:+.3f} ΔM6={e.delta_M6:+.3f}"
-            if e.delta_peak_M1 is not None else "outcome not yet measured"
+            if e.delta_peak_M1 is not None
+            else "outcome not yet measured"
         )
         dom = e.strategy_card.get("target_domain", "?") if e.strategy_card else "?"
         focus = ""
         if e.strategy_card and e.strategy_card.get("focus"):
             focus = "; focus=" + "; ".join(e.strategy_card["focus"][:2])
-        parts.append(
-            f"- {e.new_version}  slot={e.slot_name}  domain={dom}{focus}"
-        )
+        parts.append(f"- {e.new_version}  slot={e.slot_name}  domain={dom}{focus}")
         parts.append(f"    verdict={verdict}  {delta}")
     return "\n".join(parts)
 
@@ -400,11 +409,13 @@ def summarize_round_history_for_prompt(
         verdict = e.verdict or "pending"
         peak = (
             f"peak_M1={e.post_mutation_peak_M1:.3f}"
-            if e.post_mutation_peak_M1 is not None else "peak_M1=pending"
+            if e.post_mutation_peak_M1 is not None
+            else "peak_M1=pending"
         )
         m6 = (
             f"M6={e.post_mutation_best_M6:.3f}"
-            if e.post_mutation_best_M6 is not None else "M6=pending"
+            if e.post_mutation_best_M6 is not None
+            else "M6=pending"
         )
         slot = e.slot_name
         focus = ""
@@ -416,12 +427,10 @@ def summarize_round_history_for_prompt(
             rationale = f"\n    rationale: {rat}"
         critic = ""
         if e.critique_quality is not None:
-            critic = (
-                f"\n    critic: quality={e.critique_quality}"
-                + (
-                    f", revisions={e.critique_revisions}"
-                    if e.critique_revisions is not None else ""
-                )
+            critic = f"\n    critic: quality={e.critique_quality}" + (
+                f", revisions={e.critique_revisions}"
+                if e.critique_revisions is not None
+                else ""
             )
         header = (
             f"=== Round {i} — slot edited: {slot}{focus} ===\n"

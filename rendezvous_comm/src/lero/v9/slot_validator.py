@@ -36,6 +36,7 @@ class SlotValidationResult:
         issues: human-readable rejection reasons (empty if passed)
         metrics: numerical breakdown for telemetry / debugging
     """
+
     slot: str
     passed: bool
     issues: List[str] = field(default_factory=list)
@@ -116,9 +117,7 @@ def _validate_examples(
     text = text or ""
     blocks = _PYTHON_FENCE_PATTERN.findall(text)
     n_blocks = len(blocks)
-    role_in_any = any(
-        bool(_ROLE_ONE_HOT_PATTERN.search(b)) for b in blocks
-    )
+    role_in_any = any(bool(_ROLE_ONE_HOT_PATTERN.search(b)) for b in blocks)
 
     issues: List[str] = []
     if n_blocks < min_blocks:
@@ -231,7 +230,6 @@ def filter_valid_slot_edits(
         slot_edits, task_domain, prev_slots, **validator_kwargs
     )
     filtered = {
-        k: v for k, v in slot_edits.items()
-        if k not in results or results[k].passed
+        k: v for k, v in slot_edits.items() if k not in results or results[k].passed
     }
     return filtered, results

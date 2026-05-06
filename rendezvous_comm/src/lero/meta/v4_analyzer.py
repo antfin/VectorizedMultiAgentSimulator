@@ -152,8 +152,11 @@ def _noise_std_M1_last5(metrics_history: Sequence[Dict[str, Any]]) -> float:
 
 
 def _qualitative_summary(
-    shape: ShapeTag, slope: float, noise: float,
-    final_M1: float, peak_M1: float,
+    shape: ShapeTag,
+    slope: float,
+    noise: float,
+    final_M1: float,
+    peak_M1: float,
 ) -> str:
     """One- to two-sentence prose for the next round's Strategist."""
     drop = peak_M1 - final_M1
@@ -180,15 +183,12 @@ def _qualitative_summary(
             f"std(last5)={noise:.3f}. Policy not stable."
         )
     elif shape == "plateau":
-        parts.append(
-            f"Plateau: peak {peak_M1:.3f} then small drift to {final_M1:.3f}."
-        )
+        parts.append(f"Plateau: peak {peak_M1:.3f} then small drift to {final_M1:.3f}.")
     elif shape == "flat_zero":
         parts.append("Flat at zero — no useful learning.")
     else:  # flat_nonzero
         parts.append(
-            f"Flat at low value (peak={peak_M1:.3f}). Stuck below useful "
-            f"threshold."
+            f"Flat at low value (peak={peak_M1:.3f}). Stuck below useful " f"threshold."
         )
 
     if slope > 0.05:
@@ -218,9 +218,12 @@ def analyze_candidate_trajectory(
         return CandidateAnalysis(
             candidate_id=candidate_id,
             strategy_id=strategy_id,
-            final_M1=0.0, final_M6=0.0,
-            peak_M1=0.0, peak_at_frame=0,
-            slope_M6=0.0, noise_std_M1=0.0,
+            final_M1=0.0,
+            final_M6=0.0,
+            peak_M1=0.0,
+            peak_at_frame=0,
+            slope_M6=0.0,
+            noise_std_M1=0.0,
             shape_tag="flat_zero",
             stability_score=0.0,
             qualitative_summary="No metrics — candidate failed before eval.",
@@ -245,9 +248,12 @@ def analyze_candidate_trajectory(
     return CandidateAnalysis(
         candidate_id=candidate_id,
         strategy_id=strategy_id,
-        final_M1=final_M1, final_M6=final_M6,
-        peak_M1=peak_M1, peak_at_frame=peak_at_frame,
-        slope_M6=slope, noise_std_M1=noise,
+        final_M1=final_M1,
+        final_M6=final_M6,
+        peak_M1=peak_M1,
+        peak_at_frame=peak_at_frame,
+        slope_M6=slope,
+        noise_std_M1=noise,
         shape_tag=shape,
         stability_score=score,
         qualitative_summary=summary,
@@ -270,7 +276,9 @@ def aggregate_round_analysis(
         return f"Round {round_idx}: no candidates produced metrics."
 
     ranked = sorted(
-        candidates, key=lambda c: c.stability_score, reverse=True,
+        candidates,
+        key=lambda c: c.stability_score,
+        reverse=True,
     )
     lines = [f"Round {round_idx} ({len(candidates)} strategies):"]
     for c in ranked:
@@ -281,16 +289,15 @@ def aggregate_round_analysis(
         )
     best = ranked[0]
     if any(c.shape_tag == "peak_collapse" for c in candidates):
-        collapsed = [c.strategy_id for c in candidates
-                     if c.shape_tag == "peak_collapse"]
+        collapsed = [
+            c.strategy_id for c in candidates if c.shape_tag == "peak_collapse"
+        ]
         lines.append(
             f"  ⚠ peak_collapse on: {', '.join(collapsed)} — consider "
             f"reverting reward modifications next round."
         )
     if best.stability_score > 0.10:
-        lines.append(
-            f"  ✓ {best.strategy_id} is the round winner (mid-train at 2M)."
-        )
+        lines.append(f"  ✓ {best.strategy_id} is the round winner (mid-train at 2M).")
     else:
         lines.append(
             f"  ⚠ Best round score is low ({best.stability_score:+.3f}); "

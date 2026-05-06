@@ -24,9 +24,8 @@ import argparse
 import json
 import os
 import sys
-import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
@@ -34,12 +33,13 @@ sys.path.insert(0, str(_ROOT))
 # Auto-load .env so OVH_AI_ENDPOINTS_* and API keys are available
 try:
     from dotenv import load_dotenv
+
     load_dotenv(_ROOT / ".env")
 except ImportError:
     pass
 
-from src.lero.llm_client import LLMClient   # noqa: E402
-from src.lero.config import LLMConfig       # noqa: E402
+from src.lero.llm_client import LLMClient  # noqa: E402
+from src.lero.config import LLMConfig  # noqa: E402
 from tests.scenarios.fixtures import ALL_SCENARIOS  # noqa: E402
 from tests.scenarios.runner import check_expectations, run_scenario  # noqa: E402
 
@@ -50,9 +50,11 @@ from tests.scenarios.runner import check_expectations, run_scenario  # noqa: E40
 #   "<base>-nr" → FORCE reasoning_variant=False (control)
 LLM_CONFIGS = {
     "gpt-5.4-mini": dict(model="gpt-5.4-mini"),
-    "gpt-4o":       dict(model="gpt-4o"),
-    "o4-mini":      dict(model="o4-mini"),                              # auto → reasoning prompts
-    "o4-mini-nr":   dict(model="o4-mini", force_non_reasoning=True),    # control: same model, verbose prompts
+    "gpt-4o": dict(model="gpt-4o"),
+    "o4-mini": dict(model="o4-mini"),  # auto → reasoning prompts
+    "o4-mini-nr": dict(
+        model="o4-mini", force_non_reasoning=True
+    ),  # control: same model, verbose prompts
     "ovh-llama-3.3-70b": dict(
         model=f"openai/{os.environ.get('OVH_AI_ENDPOINTS_MODEL', 'Meta-Llama-3_3-70B-Instruct')}",
         api_base=os.environ.get("OVH_AI_ENDPOINTS_URL"),
@@ -114,23 +116,29 @@ def summarize_checks(checks: Dict) -> str:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--scenarios", type=str, default="",
+        "--scenarios",
+        type=str,
+        default="",
         help="Comma-separated scenario names (default: all).",
     )
     parser.add_argument(
-        "--llms", type=str,
+        "--llms",
+        type=str,
         default=",".join(LLM_CONFIGS.keys()),
         help="Comma-separated LLM labels.",
     )
     parser.add_argument(
-        "--output", type=str, default="/tmp/sweep_results.json",
+        "--output",
+        type=str,
+        default="/tmp/sweep_results.json",
         help="Path for full JSON dump.",
     )
     args = parser.parse_args(argv)
 
     scenarios = (
         [s.strip() for s in args.scenarios.split(",") if s.strip()]
-        if args.scenarios else list(ALL_SCENARIOS.keys())
+        if args.scenarios
+        else list(ALL_SCENARIOS.keys())
     )
     llm_labels = [s.strip() for s in args.llms.split(",") if s.strip()]
 
@@ -146,7 +154,7 @@ def main(argv=None):
             )
             return 2
 
-    print(f"# Meta-LLM Scenario Sweep")
+    print("# Meta-LLM Scenario Sweep")
     print(f"Scenarios: {len(scenarios)}  |  LLMs: {llm_labels}")
     print()
 
@@ -164,12 +172,17 @@ def main(argv=None):
         print(f"## {name}")
         print(f"_{scenario['description']}_")
         print()
-        print("| LLM | pass/total | target_slot | include_signals | critic | revisions | latency |")
+        print(
+            "| LLM | pass/total | target_slot | include_signals | critic | revisions | latency |"
+        )
         print("|---|---|---|---|---|---|---|")
         for label, llm in llms.items():
             try:
                 res = run_scenario(
-                    name, scenario, label, llm,
+                    name,
+                    scenario,
+                    label,
+                    llm,
                     reasoning_variant=_reasoning_variant_for(label),
                 )
             except Exception as e:
@@ -188,24 +201,24 @@ def main(argv=None):
                 f"| {res.critique_revisions} "
                 f"| {res.latency_seconds:.1f}s |"
             )
-            results.append({
-                "scenario": name,
-                "llm": label,
-                "checks": checks,
-                "result": {
-                    "strategy_card": res.strategy_card,
-                    "editor_new_slot": (
-                        (res.editor_new_slot or "")[:500]
-                    ),
-                    "critique": res.critique,
-                    "critique_revisions": res.critique_revisions,
-                    "latency_seconds": res.latency_seconds,
-                    "tokens_estimate": res.total_tokens_estimate,
-                    "strategy_parse_error": res.strategy_parse_error,
-                    "editor_parse_error": res.editor_parse_error,
-                    "critique_parse_error": res.critique_parse_error,
-                },
-            })
+            results.append(
+                {
+                    "scenario": name,
+                    "llm": label,
+                    "checks": checks,
+                    "result": {
+                        "strategy_card": res.strategy_card,
+                        "editor_new_slot": ((res.editor_new_slot or "")[:500]),
+                        "critique": res.critique,
+                        "critique_revisions": res.critique_revisions,
+                        "latency_seconds": res.latency_seconds,
+                        "tokens_estimate": res.total_tokens_estimate,
+                        "strategy_parse_error": res.strategy_parse_error,
+                        "editor_parse_error": res.editor_parse_error,
+                        "critique_parse_error": res.critique_parse_error,
+                    },
+                }
+            )
         print()
 
     # Summary section
@@ -215,12 +228,8 @@ def main(argv=None):
     for label in llm_labels:
         label_rows = [r for r in results if r["llm"] == label]
         total = sum(len(r["checks"]) for r in label_rows)
-        passed = sum(
-            1 for r in label_rows for c in r["checks"].values() if c.get("ok")
-        )
-        latency = sum(
-            r["result"]["latency_seconds"] for r in label_rows
-        )
+        passed = sum(1 for r in label_rows for c in r["checks"].values() if c.get("ok"))
+        latency = sum(r["result"]["latency_seconds"] for r in label_rows)
         if total == 0:
             rate = "—"
         else:

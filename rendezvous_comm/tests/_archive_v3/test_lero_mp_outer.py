@@ -10,10 +10,9 @@ tested in pure Python — no RL, no real LLM calls. Validates:
   - Handling of COOLDOWN / no-trigger decisions
 """
 
-import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pytest
 import yaml
@@ -39,6 +38,7 @@ from src.lero.meta.trigger import TriggerReason
 
 # ── stub prompts tree ───────────────────────────────────────────
 
+
 @pytest.fixture
 def tmp_prompts(tmp_path: Path, monkeypatch) -> Path:
     """Minimal root template that mutation.py can edit."""
@@ -50,25 +50,32 @@ def tmp_prompts(tmp_path: Path, monkeypatch) -> Path:
     (root / "examples.txt").write_text("original examples\n")
     (root / "fairness.txt").write_text("FAIRNESS\n")
     h = sha256_text("FAIRNESS\n")
-    (root / "meta.yaml").write_text(yaml.safe_dump({
-        "version": "root_v",
-        "initial_user_slots": [
-            {"name": "guidance", "file": "guidance.txt"},
-            {"name": "examples", "file": "examples.txt"},
-            {"name": "fairness", "file": "fairness.txt", "frozen": True},
-        ],
-        "frozen_hashes": {"fairness": h},
-    }, sort_keys=False))
+    (root / "meta.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": "root_v",
+                "initial_user_slots": [
+                    {"name": "guidance", "file": "guidance.txt"},
+                    {"name": "examples", "file": "examples.txt"},
+                    {"name": "fairness", "file": "fairness.txt", "frozen": True},
+                ],
+                "frozen_hashes": {"fairness": h},
+            },
+            sort_keys=False,
+        )
+    )
     # Point BOTH the loader and provenance at tmp_path so mutation
     # resolves root_v + writes mutated versions here.
     from src.lero.prompts import loader as loader_mod
     from src.lero.meta import provenance as prov_mod
+
     monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_path)
     monkeypatch.setattr(prov_mod, "_PROMPTS_DIR", tmp_path)
     return tmp_path
 
 
 # ── stub inner loop ─────────────────────────────────────────────
+
 
 class StubInnerLoop:
     """Pretends to be a LeroLoop. Writes the candidate metric files
@@ -112,6 +119,7 @@ def _reset_stub_inner_loop_counter():
 
 # ── stub meta-LLM ───────────────────────────────────────────────
 
+
 def stub_meta_llm(slot_body="BOUNDED reward shaping\n- no monotonic growth"):
     def call(messages):
         return (
@@ -119,10 +127,12 @@ def stub_meta_llm(slot_body="BOUNDED reward shaping\n- no monotonic growth"):
             "Expected-improvement: medium\n\n"
             f"{SLOT_BEGIN}\n{slot_body}\n{SLOT_END}\n"
         )
+
     return call
 
 
 # ── helpers ─────────────────────────────────────────────────────
+
 
 def _mp_config(**overrides) -> MetaPromptConfig:
     base = MetaPromptConfig(
@@ -134,7 +144,7 @@ def _mp_config(**overrides) -> MetaPromptConfig:
             plateau_delta=0.03,
             variance_threshold=0.15,
             peak_vs_final_gap_max=0.20,
-            cooldown_inner_iters=0,   # immediate reaction for tests
+            cooldown_inner_iters=0,  # immediate reaction for tests
         ),
         budget=MetaPromptBudget(
             max_outer_iters=3,
@@ -152,8 +162,10 @@ def _mp_config(**overrides) -> MetaPromptConfig:
 
 def _minimal_spec():
     """Smallest possible ExperimentSpec that LeroLoop stub accepts."""
+
     class DummySpec:
         exp_id = "lero_mp_outer_test"
+
     return DummySpec()
 
 
@@ -176,6 +188,7 @@ def _llm_config():
 
 # ── build_template_record ───────────────────────────────────────
 
+
 class TestBuildTemplateRecord:
     def test_builds_from_inner_result(self):
         rec = build_template_record(
@@ -186,10 +199,16 @@ class TestBuildTemplateRecord:
                 "M2_avg_return": 12.0,
             },
             candidate_metrics=[
-                {"M1_success_rate": 0.75, "M6_coverage_progress": 0.9,
-                 "M2_avg_return": 12.0},
-                {"M1_success_rate": 0.4, "M6_coverage_progress": 0.7,
-                 "M2_avg_return": 8.0},
+                {
+                    "M1_success_rate": 0.75,
+                    "M6_coverage_progress": 0.9,
+                    "M2_avg_return": 12.0,
+                },
+                {
+                    "M1_success_rate": 0.4,
+                    "M6_coverage_progress": 0.7,
+                    "M2_avg_return": 8.0,
+                },
             ],
             mutation_target_slot=None,
             mutation_rationale=None,
@@ -202,13 +221,16 @@ class TestBuildTemplateRecord:
 
     def test_fail_mode_propagated_from_candidates(self):
         rec = build_template_record(
-            version="v", inner_result={
+            version="v",
+            inner_result={
                 "M1_success_rate": 0.0,
             },
-            candidate_metrics=[{
-                "_error": "forbidden key",
-                "_error_type": "FairnessViolation",
-            }],
+            candidate_metrics=[
+                {
+                    "_error": "forbidden key",
+                    "_error_type": "FairnessViolation",
+                }
+            ],
             mutation_target_slot="guidance",
             mutation_rationale="r",
         )
@@ -216,9 +238,11 @@ class TestBuildTemplateRecord:
 
     def test_seed_std_computed_from_list(self):
         rec = build_template_record(
-            version="v", inner_result={"M1_success_rate": 0.5},
+            version="v",
+            inner_result={"M1_success_rate": 0.5},
             candidate_metrics=[{"M1_success_rate": 0.5}],
-            mutation_target_slot=None, mutation_rationale=None,
+            mutation_target_slot=None,
+            mutation_rationale=None,
             seed_M1_values=[0.4, 0.5, 0.6],
         )
         assert 0.07 < rec.seed_M1_std < 0.09  # population std = 0.0816...
@@ -228,7 +252,8 @@ class TestBuildTemplateRecord:
             version="v",
             inner_result={"M1_success_rate": 0.42},
             candidate_metrics=[{"M1_success_rate": 0.42}],
-            mutation_target_slot=None, mutation_rationale=None,
+            mutation_target_slot=None,
+            mutation_rationale=None,
         )
         # No peak_M1 yet → fall back to final M1
         assert rec.best_peak_M1 == pytest.approx(0.42)
@@ -247,12 +272,19 @@ class TestBuildTemplateRecord:
                 "M2_avg_return": 0.0,
             },
             candidate_metrics=[
-                {"M1_success_rate": 0.0, "M6_coverage_progress": 0.10,
-                 "M2_avg_return": -1.5},
-                {"M1_success_rate": 0.0, "M6_coverage_progress": 0.18,
-                 "M2_avg_return": -0.9},
+                {
+                    "M1_success_rate": 0.0,
+                    "M6_coverage_progress": 0.10,
+                    "M2_avg_return": -1.5,
+                },
+                {
+                    "M1_success_rate": 0.0,
+                    "M6_coverage_progress": 0.18,
+                    "M2_avg_return": -0.9,
+                },
             ],
-            mutation_target_slot=None, mutation_rationale=None,
+            mutation_target_slot=None,
+            mutation_rationale=None,
         )
         # Best across candidates, not the zero'd final.
         assert rec.best_M6 == pytest.approx(0.18)
@@ -266,10 +298,14 @@ class TestBuildTemplateRecord:
             inner_result={},
             candidate_metrics=[
                 {"_error": "oom", "_error_type": "RuntimeError"},
-                {"M1_success_rate": 0.4, "M6_coverage_progress": 0.6,
-                 "M2_avg_return": 2.5},
+                {
+                    "M1_success_rate": 0.4,
+                    "M6_coverage_progress": 0.6,
+                    "M2_avg_return": 2.5,
+                },
             ],
-            mutation_target_slot=None, mutation_rationale=None,
+            mutation_target_slot=None,
+            mutation_rationale=None,
         )
         assert rec.best_M6 == pytest.approx(0.6)
         assert rec.best_M2 == pytest.approx(2.5)
@@ -277,18 +313,29 @@ class TestBuildTemplateRecord:
 
 # ── LeroMpOuterLoop orchestration ───────────────────────────────
 
+
 class TestOuterLoopOrchestration:
     def test_stops_when_converged_after_initial_run(
-        self, tmp_prompts, tmp_path,
+        self,
+        tmp_prompts,
+        tmp_path,
     ):
         """All three outer iters produce the same high M1 → CONVERGED."""
         StubInnerLoop.SCRIPT = [
-            {"final_metrics": {"M1_success_rate": 0.9,
-                               "M6_coverage_progress": 0.95,
-                               "M2_avg_return": 20.0},
-             "candidates": [{"M1_success_rate": 0.9,
-                             "M6_coverage_progress": 0.95,
-                             "M2_avg_return": 20.0}]},
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.9,
+                    "M6_coverage_progress": 0.95,
+                    "M2_avg_return": 20.0,
+                },
+                "candidates": [
+                    {
+                        "M1_success_rate": 0.9,
+                        "M6_coverage_progress": 0.95,
+                        "M2_avg_return": 20.0,
+                    }
+                ],
+            },
         ] * 10
 
         loop = LeroMpOuterLoop(
@@ -312,7 +359,8 @@ class TestOuterLoopOrchestration:
         # Budget cap = 3 outer iters → stops at BUDGET_EXCEEDED.
         # (CONVERGED needs ≥4 records with converged_iters=3.)
         assert result.stop_reason in {
-            TriggerReason.BUDGET_EXCEEDED, TriggerReason.CONVERGED,
+            TriggerReason.BUDGET_EXCEEDED,
+            TriggerReason.CONVERGED,
         }
         assert len(result.history) >= 1
         # history.json persisted
@@ -324,30 +372,53 @@ class TestOuterLoopOrchestration:
         switch to the new version directory for the next iter."""
         StubInnerLoop.SCRIPT = [
             # Iter 0: reward-hacking detected (peak-vs-final gap)
-            {"final_metrics": {
-                "M1_success_rate": 0.10, "M6_coverage_progress": 0.3,
-                "M2_avg_return": 800.0,
-                "peak_M1": 0.85,  # outer loop reads this as best_peak_M1
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.10,
+                    "M6_coverage_progress": 0.3,
+                    "M2_avg_return": 800.0,
+                    "peak_M1": 0.85,  # outer loop reads this as best_peak_M1
+                },
+                "candidates": [
+                    {
+                        "M1_success_rate": 0.10,
+                        "M2_avg_return": 800.0,
+                        "M6_coverage_progress": 0.3,
+                    }
+                ],
             },
-             "candidates": [{"M1_success_rate": 0.10,
-                             "M2_avg_return": 800.0,
-                             "M6_coverage_progress": 0.3}]},
             # Iter 1 (under mutated template): healthy
-            {"final_metrics": {
-                "M1_success_rate": 0.8, "M6_coverage_progress": 0.9,
-                "M2_avg_return": 12.0, "peak_M1": 0.8,
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.8,
+                    "M6_coverage_progress": 0.9,
+                    "M2_avg_return": 12.0,
+                    "peak_M1": 0.8,
+                },
+                "candidates": [
+                    {
+                        "M1_success_rate": 0.8,
+                        "M2_avg_return": 12.0,
+                        "M6_coverage_progress": 0.9,
+                    }
+                ],
             },
-             "candidates": [{"M1_success_rate": 0.8,
-                             "M2_avg_return": 12.0,
-                             "M6_coverage_progress": 0.9}]},
             # Iter 2: still healthy (for budget completion)
-            {"final_metrics": {
-                "M1_success_rate": 0.82, "M6_coverage_progress": 0.91,
-                "M2_avg_return": 12.5, "peak_M1": 0.82,
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.82,
+                    "M6_coverage_progress": 0.91,
+                    "M2_avg_return": 12.5,
+                    "peak_M1": 0.82,
+                },
+                "candidates": [
+                    {
+                        "M1_success_rate": 0.82,
+                        "M2_avg_return": 12.5,
+                        "M6_coverage_progress": 0.91,
+                    }
+                ],
             },
-             "candidates": [{"M1_success_rate": 0.82,
-                             "M2_avg_return": 12.5,
-                             "M6_coverage_progress": 0.91}]},
         ]
 
         loop = LeroMpOuterLoop(
@@ -384,11 +455,16 @@ class TestOuterLoopOrchestration:
     def test_fairness_violation_aborts(self, tmp_prompts, tmp_path):
         """Two consecutive fairness violations → FAIRNESS_REPEATED stop."""
         StubInnerLoop.SCRIPT = [
-            {"final_metrics": {"M1_success_rate": 0.0,
-                               "M6_coverage_progress": 0.0,
-                               "M2_avg_return": 0.0},
-             "candidates": [{"_error": "oracle access",
-                             "_error_type": "FairnessViolation"}]},
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.0,
+                    "M6_coverage_progress": 0.0,
+                    "M2_avg_return": 0.0,
+                },
+                "candidates": [
+                    {"_error": "oracle access", "_error_type": "FairnessViolation"}
+                ],
+            },
         ] * 5
 
         loop = LeroMpOuterLoop(
@@ -403,26 +479,33 @@ class TestOuterLoopOrchestration:
         result = loop.run()
         assert result.stop_reason == TriggerReason.FAIRNESS_REPEATED
         # At least 2 fairness-violation records before abort.
-        fv = [
-            r for r in result.history
-            if r.fail_mode == FailMode.FAIRNESS_VIOLATION
-        ]
+        fv = [r for r in result.history if r.fail_mode == FailMode.FAIRNESS_VIOLATION]
         assert len(fv) >= 2
 
     def test_meta_disabled_runs_single_inner_pass(
-        self, tmp_prompts, tmp_path,
+        self,
+        tmp_prompts,
+        tmp_path,
     ):
         """When meta_prompt.enabled=false the outer loop must exit after
         ONE inner pass — not burn ``max_outer_iters`` inner runs."""
         # Script has enough canned results for 3 outer iters; if the
         # short-circuit works, only the first one is consumed.
         StubInnerLoop.SCRIPT = [
-            {"final_metrics": {"M1_success_rate": 0.3,
-                               "M6_coverage_progress": 0.5,
-                               "M2_avg_return": 5.0},
-             "candidates": [{"M1_success_rate": 0.3,
-                             "M6_coverage_progress": 0.5,
-                             "M2_avg_return": 5.0}]},
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.3,
+                    "M6_coverage_progress": 0.5,
+                    "M2_avg_return": 5.0,
+                },
+                "candidates": [
+                    {
+                        "M1_success_rate": 0.3,
+                        "M6_coverage_progress": 0.5,
+                        "M2_avg_return": 5.0,
+                    }
+                ],
+            },
         ] * 3
 
         loop = LeroMpOuterLoop(
@@ -447,12 +530,20 @@ class TestOuterLoopOrchestration:
 
     def test_stop_reason_and_detail_persisted(self, tmp_prompts, tmp_path):
         StubInnerLoop.SCRIPT = [
-            {"final_metrics": {"M1_success_rate": 0.5,
-                               "M6_coverage_progress": 0.5,
-                               "M2_avg_return": 5.0},
-             "candidates": [{"M1_success_rate": 0.5,
-                             "M6_coverage_progress": 0.5,
-                             "M2_avg_return": 5.0}]},
+            {
+                "final_metrics": {
+                    "M1_success_rate": 0.5,
+                    "M6_coverage_progress": 0.5,
+                    "M2_avg_return": 5.0,
+                },
+                "candidates": [
+                    {
+                        "M1_success_rate": 0.5,
+                        "M6_coverage_progress": 0.5,
+                        "M2_avg_return": 5.0,
+                    }
+                ],
+            },
         ] * 5
 
         loop = LeroMpOuterLoop(

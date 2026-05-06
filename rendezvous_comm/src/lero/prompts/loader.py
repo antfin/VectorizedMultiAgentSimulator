@@ -157,9 +157,7 @@ class PromptLoader:
         td_name = (meta or {}).get("task_domain")
         if not td_name:
             return None
-        td_path = (
-            self.template_dir.parent / "task_domains" / f"{td_name}.yaml"
-        )
+        td_path = self.template_dir.parent / "task_domains" / f"{td_name}.yaml"
         if not td_path.exists() and yaml is not None:
             # Fallback: try the original module-level prompts dir
             # (in case template_dir was redirected to a copy that
@@ -222,9 +220,10 @@ class PromptLoader:
         for slot in slots:
             # v3 §3.2: swap output_spec file for the conditional variant
             file_name = slot["file"]
-            if (
-                slot["name"] == "output_spec"
-                and output_spec_variant in ("both", "reward_only", "obs_only")
+            if slot["name"] == "output_spec" and output_spec_variant in (
+                "both",
+                "reward_only",
+                "obs_only",
             ):
                 variant_name = f"output_spec_{output_spec_variant}.txt"
                 variant_path = self.template_dir / variant_name

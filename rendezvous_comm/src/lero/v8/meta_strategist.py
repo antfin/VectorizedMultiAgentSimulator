@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -184,11 +182,17 @@ def enumerate_bundle_v8(
     gated_cap: int,
 ) -> Tuple[V7StrategyBundle, str]:
     system = _bundle_system(
-        feature_target_min, feature_target_max, feature_cap, gated_cap,
+        feature_target_min,
+        feature_target_max,
+        feature_cap,
+        gated_cap,
     )
     user = _build_bundle_prompt_v8(
-        task_summary, feature_target_min, feature_target_max,
-        feature_cap, gated_cap,
+        task_summary,
+        feature_target_min,
+        feature_target_max,
+        feature_cap,
+        gated_cap,
     )
     last_err: Optional[Exception] = None
     raw = ""
@@ -203,14 +207,15 @@ def enumerate_bundle_v8(
         try:
             js = raw.find("{")
             je = raw.rfind("}")
-            data = json.loads(raw[js:je + 1])
+            data = json.loads(raw[js : je + 1])
             strategies = [_parse_strategy(s) for s in data["strategies"]]
             chosen = int(data.get("chosen_idx", 0))
             chosen = max(0, min(len(strategies) - 1, chosen))
             bundle = V7StrategyBundle(strategies=strategies, chosen_idx=chosen)
             _log.info(
                 "v8 bundle: %d strategies, chosen='%s' (score=%.1f)",
-                len(strategies), strategies[chosen].name,
+                len(strategies),
+                strategies[chosen].name,
                 strategies[chosen].combined_score,
             )
             return bundle, raw
@@ -243,9 +248,11 @@ def _build_reflect_prompt_v8(
 ) -> str:
     cur = bundle.current()
     best_code = (inner.best.candidate.obs_source if inner.best else "")[:1500]
-    worst_code = (inner.worst.candidate.obs_source
-                  if inner.worst and inner.worst is not inner.best
-                  else "")[:800]
+    worst_code = (
+        inner.worst.candidate.obs_source
+        if inner.worst and inner.worst is not inner.best
+        else ""
+    )[:800]
     return f"""[ACTIVE STRATEGY]
 {cur.name}: {cur.full_solution}
 success_signature: {cur.success_signature.ast_pattern_description}
@@ -290,9 +297,13 @@ def reflect_and_decide_v8(
     gated_cap: int,
 ) -> Tuple[V8ReflectionDecision, str]:
     user = _build_reflect_prompt_v8(
-        bundle, inner, diagnosis,
-        feature_target_min, feature_target_max,
-        feature_cap, gated_cap,
+        bundle,
+        inner,
+        diagnosis,
+        feature_target_min,
+        feature_target_max,
+        feature_cap,
+        gated_cap,
     )
     last_err: Optional[Exception] = None
     raw = ""
@@ -307,7 +318,7 @@ def reflect_and_decide_v8(
         try:
             js = raw.find("{")
             je = raw.rfind("}")
-            data = json.loads(raw[js:je + 1])
+            data = json.loads(raw[js : je + 1])
             slot_edits = dict(data.get("slot_edits") or {})
             bu = data.get("bundle_update") or {}
             demote = list(bu.get("demote") or [])

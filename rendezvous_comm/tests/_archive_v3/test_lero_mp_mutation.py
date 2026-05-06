@@ -29,13 +29,15 @@ from src.lero.prompts.loader import PromptLoader
 
 # ── helpers ──────────────────────────────────────────────────────
 
+
 def _rec(version, peak_m1, **kw):
     base = dict(
         template_version=version,
         inner_iter_count=3,
         best_peak_M1=peak_m1,
         best_final_M1=peak_m1,
-        best_M6=0.8, best_M2=10.0,
+        best_M6=0.8,
+        best_M2=10.0,
         seed_M1_std=0.02,
         fail_mode=FailMode.HEALTHY,
     )
@@ -69,19 +71,25 @@ def tmp_prompts(tmp_path: Path) -> Path:
     (parent / "examples.txt").write_text("original examples\n")
     (parent / "fairness.txt").write_text("FAIRNESS RULES\n")
     h = sha256_text("FAIRNESS RULES\n")
-    (parent / "meta.yaml").write_text(yaml.safe_dump({
-        "version": "p_root",
-        "initial_user_slots": [
-            {"name": "guidance", "file": "guidance.txt"},
-            {"name": "examples", "file": "examples.txt"},
-            {"name": "fairness", "file": "fairness.txt", "frozen": True},
-        ],
-        "frozen_hashes": {"fairness": h},
-    }, sort_keys=False))
+    (parent / "meta.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": "p_root",
+                "initial_user_slots": [
+                    {"name": "guidance", "file": "guidance.txt"},
+                    {"name": "examples", "file": "examples.txt"},
+                    {"name": "fairness", "file": "fairness.txt", "frozen": True},
+                ],
+                "frozen_hashes": {"fairness": h},
+            },
+            sort_keys=False,
+        )
+    )
     return tmp_path
 
 
 # ── build_meta_prompt ───────────────────────────────────────────
+
 
 class TestBuildMetaPrompt:
     def test_contains_required_sections(self):
@@ -90,22 +98,35 @@ class TestBuildMetaPrompt:
             parent_version="p_root",
             target_slot="guidance",
             history=hist,
-            top_candidates=[{
-                "M1_success_rate": 0.6, "M2_avg_return": 8.0,
-                "M6_coverage_progress": 0.9, "reward_code": "def compute_reward(s): return s",
-            }],
+            top_candidates=[
+                {
+                    "M1_success_rate": 0.6,
+                    "M2_avg_return": 8.0,
+                    "M6_coverage_progress": 0.9,
+                    "reward_code": "def compute_reward(s): return s",
+                }
+            ],
             fail_mode=FailMode.REWARD_HACK,
             loader=None,  # unit-test mode
         )
         for marker in [
-            "HARD CONSTRAINTS", "frozen", "guidance",
-            "OBJECTIVE", "peak-M1", "HISTORY", "CONTRASTIVE",
-            "CURRENT `guidance` SLOT", "TOP CANDIDATES",
+            "HARD CONSTRAINTS",
+            "frozen",
+            "guidance",
+            "OBJECTIVE",
+            "peak-M1",
+            "HISTORY",
+            "CONTRASTIVE",
+            "CURRENT `guidance` SLOT",
+            "TOP CANDIDATES",
             # New sections from the 2026-04-22 redesign
-            "DIAGNOSIS", "REFERENCE TECHNIQUES",
+            "DIAGNOSIS",
+            "REFERENCE TECHNIQUES",
             "CANDIDATE-AGGREGATE STATS",
             "DO NOT RESTATE",
-            SLOT_BEGIN, SLOT_END, FailMode.REWARD_HACK.value,
+            SLOT_BEGIN,
+            SLOT_END,
+            FailMode.REWARD_HACK.value,
         ]:
             assert marker in p, f"missing {marker!r} in prompt"
 
@@ -116,7 +137,9 @@ class TestBuildMetaPrompt:
             target_slot="guidance",
             history=hist,
             top_candidates=[],
-            fail_mode=FailMode.PLATEAU if hasattr(FailMode, "PLATEAU") else FailMode.HEALTHY,
+            fail_mode=FailMode.PLATEAU
+            if hasattr(FailMode, "PLATEAU")
+            else FailMode.HEALTHY,
             loader=None,
         )
         # Worst should appear above best in the emitted block.
@@ -126,6 +149,7 @@ class TestBuildMetaPrompt:
 
     def test_with_real_loader_inlines_current_slot(self, tmp_prompts, monkeypatch):
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
         loader = PromptLoader("p_root")
         p = build_meta_prompt(
@@ -136,11 +160,12 @@ class TestBuildMetaPrompt:
             fail_mode=FailMode.HEALTHY,
             loader=loader,
         )
-        assert "original guidance" in p          # inlined
+        assert "original guidance" in p  # inlined
         assert sha256_text("FAIRNESS RULES\n")[:12] in p  # fairness-hash prefix shown
 
 
 # ── parse_mutation_response ─────────────────────────────────────
+
 
 class TestParseMutationResponse:
     def test_well_formed_response(self):
@@ -178,8 +203,10 @@ class TestParseMutationResponse:
         assert expected == "unspecified"
 
     def test_expected_improvement_case_insensitive(self):
-        resp = "Rationale: r\nExpected-improvement: LARGE\n" + \
-               f"\n{SLOT_BEGIN}\nvalid enough content\n{SLOT_END}\n"
+        resp = (
+            "Rationale: r\nExpected-improvement: LARGE\n"
+            + f"\n{SLOT_BEGIN}\nvalid enough content\n{SLOT_END}\n"
+        )
         _, _, expected = parse_mutation_response(resp, "guidance")
         assert expected == "large"
 
@@ -229,7 +256,8 @@ class TestFairnessRestatementGuard:
         )
         assert _is_fairness_restatement(targeted) is False
         new_slot, _, _ = parse_mutation_response(
-            _canned_response(slot_body=targeted), "guidance",
+            _canned_response(slot_body=targeted),
+            "guidance",
         )
         assert "hold_signal" in new_slot
 
@@ -248,9 +276,11 @@ class TestFairnessRestatementGuard:
 
 # ── propose_new_template (end-to-end, stubbed LLM) ──────────────
 
+
 class TestProposeNewTemplate:
     def test_happy_path_materializes_new_version(self, tmp_prompts, monkeypatch):
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
 
         calls: List[List[Dict[str, str]]] = []
@@ -302,6 +332,7 @@ class TestProposeNewTemplate:
 
     def test_refuses_frozen_slot_target(self, tmp_prompts, monkeypatch):
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
 
         def stub_llm(_messages):
@@ -310,7 +341,7 @@ class TestProposeNewTemplate:
         with pytest.raises(ValueError) as exc:
             propose_new_template(
                 parent_version="p_root",
-                target_slot="fairness",   # the FROZEN slot
+                target_slot="fairness",  # the FROZEN slot
                 history=[],
                 top_candidates=[],
                 fail_mode=FailMode.FAIRNESS_VIOLATION,
@@ -324,6 +355,7 @@ class TestProposeNewTemplate:
 
     def test_parse_error_propagates(self, tmp_prompts, monkeypatch):
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
 
         def stub_llm(_messages):
@@ -345,6 +377,7 @@ class TestProposeNewTemplate:
         """If p_root_mp_001 exists from a prior run, the next call
         should pick _002 instead of raising FileExistsError."""
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
 
         def stub_llm(_messages):
@@ -379,6 +412,7 @@ class TestProposeNewTemplate:
     def test_resulting_template_renders(self, tmp_prompts, monkeypatch):
         """End-to-end: mutation output is consumable by PromptLoader."""
         from src.lero.prompts import loader as loader_mod
+
         monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_prompts)
 
         def stub_llm(_messages):
@@ -397,5 +431,5 @@ class TestProposeNewTemplate:
         loader = PromptLoader(result.new_version)
         rendered = loader.render("initial_user.txt")
         assert "MUTATED guidance v2" in rendered
-        assert "FAIRNESS RULES" in rendered        # frozen slot preserved
-        assert "original examples" in rendered     # un-edited slot copied
+        assert "FAIRNESS RULES" in rendered  # frozen slot preserved
+        assert "original examples" in rendered  # un-edited slot copied

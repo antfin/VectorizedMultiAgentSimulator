@@ -6,28 +6,20 @@ Executes one scenario end-to-end through the REAL Strategist + Editor
 
 from __future__ import annotations
 
-import json
-import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from src.lero.config import LLMConfig
 from src.lero.llm_client import LLMClient
 from src.lero.meta.critique import (
-    CritiqueOutcome,
-    build_critic_prompt,
     critique_and_revise,
-    parse_critique,
 )
-from src.lero.meta.failmode import FailMode
 from src.lero.meta.mutation import (
-    _format_top_candidates,
     build_editor_prompt,
     parse_mutation_response,
 )
 from src.lero.meta.strategy import (
-    StrategyCard,
     build_strategist_prompt,
     parse_strategy_card,
 )
@@ -49,8 +41,9 @@ class ScenarioResult:
     total_tokens_estimate: int
 
 
-def _make_llm(model: str, api_base: Optional[str] = None,
-              api_key: Optional[str] = None) -> LLMClient:
+def _make_llm(
+    model: str, api_base: Optional[str] = None, api_key: Optional[str] = None
+) -> LLMClient:
     cfg = LLMConfig(
         model=model,
         temperature=1.0,
@@ -64,11 +57,13 @@ def _make_llm(model: str, api_base: Optional[str] = None,
 def _call(llm: LLMClient) -> Callable[[List[Dict[str, str]]], str]:
     def _go(messages):
         return llm.generate(messages, n=1)[0]
+
     return _go
 
 
 def run_scenario(
-    name: str, scenario: Dict[str, Any],
+    name: str,
+    scenario: Dict[str, Any],
     llm_label: str,
     meta_llm: LLMClient,
     fairness_text: str = (
@@ -86,6 +81,7 @@ def run_scenario(
     for o-series / gpt-oss / Claude-thinking models.
     """
     from src.lero.meta._reasoning import is_reasoning_model
+
     if reasoning_variant is None:
         reasoning_variant = is_reasoning_model(meta_llm.config.model)
 
@@ -108,10 +104,12 @@ def run_scenario(
     try:
         strat_raw = meta_llm.generate(
             [
-                {"role": "system",
-                 "content": "You are a careful research engineer deciding "
-                            "how to improve a multi-agent RL prompt "
-                            "template. Output only the requested YAML."},
+                {
+                    "role": "system",
+                    "content": "You are a careful research engineer deciding "
+                    "how to improve a multi-agent RL prompt "
+                    "template. Output only the requested YAML.",
+                },
                 {"role": "user", "content": strat_prompt},
             ],
             n=1,
@@ -122,11 +120,16 @@ def run_scenario(
     except Exception as e:
         strat_err = f"{type(e).__name__}: {e}"
         return ScenarioResult(
-            scenario_name=name, llm_label=llm_label,
-            strategy_card=None, strategy_parse_error=strat_err,
-            editor_new_slot=None, editor_rationale=None,
+            scenario_name=name,
+            llm_label=llm_label,
+            strategy_card=None,
+            strategy_parse_error=strat_err,
+            editor_new_slot=None,
+            editor_rationale=None,
             editor_parse_error=None,
-            critique=None, critique_revisions=0, critique_parse_error=None,
+            critique=None,
+            critique_revisions=0,
+            critique_parse_error=None,
             latency_seconds=time.monotonic() - t0,
             total_tokens_estimate=tokens_est,
         )
@@ -152,16 +155,19 @@ def run_scenario(
         try:
             editor_raw = meta_llm.generate(
                 [
-                    {"role": "system",
-                     "content": "You are a careful prompt-engineering "
-                                "assistant. Follow the output format exactly."},
+                    {
+                        "role": "system",
+                        "content": "You are a careful prompt-engineering "
+                        "assistant. Follow the output format exactly.",
+                    },
                     {"role": "user", "content": editor_prompt},
                 ],
                 n=1,
             )[0]
             tokens_est += len(editor_raw) // 4
             editor_new_slot, editor_rationale, _ = parse_mutation_response(
-                editor_raw, card.target_slot,
+                editor_raw,
+                card.target_slot,
             )
         except Exception as e:
             editor_err = f"{type(e).__name__}: {e}"
@@ -226,7 +232,8 @@ def run_scenario(
 
 
 def check_expectations(
-    result: ScenarioResult, expected: Dict[str, Any],
+    result: ScenarioResult,
+    expected: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Validate a ScenarioResult against the scenario's expected dict.
 
@@ -242,21 +249,24 @@ def check_expectations(
         want = set(expected["target_slot"])
         checks["target_slot"] = {
             "ok": slot in want,
-            "got": slot, "want_any": list(want),
+            "got": slot,
+            "want_any": list(want),
         }
 
     if "include_signals_contains_any" in expected:
         want = set(expected["include_signals_contains_any"])
         checks["include_signals_contains_any"] = {
             "ok": bool(include & want),
-            "got": list(include), "want_any": list(want),
+            "got": list(include),
+            "want_any": list(want),
         }
 
     if "include_signals_equals" in expected:
         want = set(expected["include_signals_equals"])
         checks["include_signals_equals"] = {
             "ok": include == want,
-            "got": list(include), "want": list(want),
+            "got": list(include),
+            "want": list(want),
         }
 
     if "confidence_in" in expected:
@@ -273,7 +283,8 @@ def check_expectations(
         hits = [t for t in terms if t in slot_text]
         checks["editor_mentions_any"] = {
             "ok": bool(hits),
-            "hits": hits, "want_any": terms,
+            "hits": hits,
+            "want_any": terms,
         }
 
     if "editor_avoids_any" in expected:
@@ -281,7 +292,8 @@ def check_expectations(
         violations = [t for t in terms if t in slot_text]
         checks["editor_avoids_any"] = {
             "ok": not violations,
-            "violations": violations, "forbidden": terms,
+            "violations": violations,
+            "forbidden": terms,
         }
 
     if "editor_must_not_contain_all" in expected:
@@ -289,7 +301,8 @@ def check_expectations(
         all_present = all(t in slot_text for t in terms)
         checks["editor_must_not_contain_all"] = {
             "ok": not all_present,
-            "all_present": all_present, "forbidden": terms,
+            "all_present": all_present,
+            "forbidden": terms,
         }
 
     critique = result.critique or {}
@@ -298,7 +311,8 @@ def check_expectations(
         want = expected["critic_flags_fairness_restatement"]
         checks["critic_flags_fairness_restatement"] = {
             "ok": critique.get("has_fairness_restatement") == want,
-            "got": critique.get("has_fairness_restatement"), "want": want,
+            "got": critique.get("has_fairness_restatement"),
+            "want": want,
         }
 
     if "critic_quality_in" in expected:
@@ -312,7 +326,8 @@ def check_expectations(
         want = expected["critic_diverges_from_priors"]
         checks["critic_diverges_from_priors"] = {
             "ok": critique.get("diverges_from_priors") == want,
-            "got": critique.get("diverges_from_priors"), "want": want,
+            "got": critique.get("diverges_from_priors"),
+            "want": want,
         }
 
     if "critic_cites_features_any" in expected:
@@ -321,7 +336,9 @@ def check_expectations(
         hits = [t for t in want if any(t in c for c in cited)]
         checks["critic_cites_features_any"] = {
             "ok": bool(hits),
-            "hits": hits, "want_any": want, "cited": cited,
+            "hits": hits,
+            "want_any": want,
+            "cited": cited,
         }
 
     return checks

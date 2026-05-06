@@ -171,8 +171,8 @@ class LeroMPv4Config:
     # Inner-loop / round structure
     n_rounds: int = 3
     n_strategies_per_round: int = 3
-    eval_frames: int = 200_000          # per-strategy candidate eval (per inner candidate)
-    mid_frames: int = 2_000_000         # winner of each round trains here
+    eval_frames: int = 200_000  # per-strategy candidate eval (per inner candidate)
+    mid_frames: int = 2_000_000  # winner of each round trains here
     final_full_frames: int = 10_000_000  # global winner deep-train
 
     # v4.1 Change C — multi-iteration inner loop per strategy. Each
@@ -201,7 +201,7 @@ class LeroMPv4Config:
     bootstrap_cache_dir: Optional[str] = None
 
     # Inner-LLM behaviour
-    evolve_reward: bool = True   # v4 default: allow LLM to evolve reward
+    evolve_reward: bool = True  # v4 default: allow LLM to evolve reward
     evolve_observation: bool = True
     obs_state_mode: str = "local"
     whitelist_strict: bool = True

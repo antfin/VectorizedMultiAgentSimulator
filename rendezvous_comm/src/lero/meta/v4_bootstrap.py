@@ -38,11 +38,14 @@ _log = logging.getLogger("rendezvous.lero.mp.v4.bootstrap")
 
 
 def _cache_key(description: str, meta_model: str, meta_temp: float) -> str:
-    payload = json.dumps({
-        "description": description,
-        "meta_model": meta_model,
-        "meta_temperature": meta_temp,
-    }, sort_keys=True).encode("utf-8")
+    payload = json.dumps(
+        {
+            "description": description,
+            "meta_model": meta_model,
+            "meta_temperature": meta_temp,
+        },
+        sort_keys=True,
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
@@ -132,7 +135,7 @@ class BootstrapResult:
 
 
 def _materialize_bootstrap_prompt(
-    template_dir: Path,    # base v2_fewshot_modular_v2 to copy structure from
+    template_dir: Path,  # base v2_fewshot_modular_v2 to copy structure from
     output_dir: Path,
     card: BootstrapCard,
 ) -> None:
@@ -215,7 +218,7 @@ def _parse_response(raw: str) -> tuple[str, BootstrapCard]:
             "Bootstrap response BOOTSTRAP_CARD section did not contain "
             "valid JSON ({...})."
         )
-    json_text = card_part[json_start:json_end + 1]
+    json_text = card_part[json_start : json_end + 1]
     try:
         data = json.loads(json_text)
     except json.JSONDecodeError as e:
@@ -273,7 +276,8 @@ def bootstrap_from_description(
     if cache_card_path.exists() and cache_thoughts_path.exists():
         _log.info(
             "v4 bootstrap CACHE HIT (key=%s key=%s) — skipping meta-LLM call",
-            key, meta_model,
+            key,
+            meta_model,
         )
         card = BootstrapCard.model_validate_json(
             cache_card_path.read_text(),

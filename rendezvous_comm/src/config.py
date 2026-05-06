@@ -1,4 +1,5 @@
 """Experiment configuration loading and management."""
+
 import itertools
 import os
 from dataclasses import dataclass, field
@@ -10,9 +11,7 @@ import yaml
 
 RENDEZVOUS_ROOT = Path(__file__).parent.parent
 CONFIGS_DIR = RENDEZVOUS_ROOT / "configs"
-RESULTS_DIR = Path(
-    os.environ.get("RESULTS_DIR", str(RENDEZVOUS_ROOT / "results"))
-)
+RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", str(RENDEZVOUS_ROOT / "results")))
 CHECKPOINTS_DIR = Path(
     os.environ.get("CHECKPOINTS_DIR", str(RENDEZVOUS_ROOT / "checkpoints"))
 )
@@ -86,7 +85,7 @@ class TrainConfig:
     model_type: str = "mlp"
     # GNN-specific (ignored when model_type="mlp")
     gnn_topology: str = "from_pos"  # "from_pos" or "full"
-    gnn_class: str = "GATv2Conv"    # torch_geometric conv class name
+    gnn_class: str = "GATv2Conv"  # torch_geometric conv class name
     gnn_edge_radius: Optional[float] = None  # None = use lidar_range
     gnn_hidden_size: int = 148  # Hidden size for GNN sequence (~75K params)
 
@@ -115,8 +114,8 @@ class ExperimentSpec:
     sweep: SweepConfig = field(default_factory=SweepConfig)
     source_path: Optional[Path] = None
     # LERO evolutionary loop (None = not a LERO experiment)
-    lero: Optional[Any] = None   # LeroConfig
-    llm: Optional[Any] = None    # LLMConfig
+    lero: Optional[Any] = None  # LeroConfig
+    llm: Optional[Any] = None  # LLMConfig
     # LERO-MP meta-prompt outer loop (None = disabled / not configured)
     meta_prompt: Optional[Any] = None  # MetaPromptConfig
     # LERO-MP v4 (description-driven, multi-strategy). Set when YAML
@@ -182,12 +181,12 @@ class ExperimentSpec:
         Example: er1_mappo_n4_t7_k2_l035_s0
         """
         sweep = self.sweep
-        param_names = [
-            "n_agents", "n_targets", "agents_per_target", "lidar_range"
-        ]
+        param_names = ["n_agents", "n_targets", "agents_per_target", "lidar_range"]
         param_values = [
-            sweep.n_agents, sweep.n_targets,
-            sweep.agents_per_target, sweep.lidar_range,
+            sweep.n_agents,
+            sweep.n_targets,
+            sweep.agents_per_target,
+            sweep.lidar_range,
         ]
         for algo in sweep.algorithms:
             for combo in itertools.product(*param_values):
@@ -226,6 +225,7 @@ def load_experiment(yaml_path) -> ExperimentSpec:
     llm_config = None
     if "lero" in raw:
         from .lero.config import LeroConfig, LLMConfig
+
         lero_config = LeroConfig(**raw["lero"])
         if "llm" in raw:
             llm_config = LLMConfig(**raw["llm"])
@@ -241,6 +241,7 @@ def load_experiment(yaml_path) -> ExperimentSpec:
             MetaPromptFairness,
             MetaPromptTrigger,
         )
+
         mp_raw = dict(raw["meta_prompt"])
         trigger = MetaPromptTrigger(**mp_raw.pop("trigger", {}))
         budget = MetaPromptBudget(**mp_raw.pop("budget", {}))
@@ -256,6 +257,7 @@ def load_experiment(yaml_path) -> ExperimentSpec:
     v4_config = None
     if "v4" in raw:
         from .lero.config import LeroMPv4Config
+
         v4_config = LeroMPv4Config(**dict(raw["v4"]))
 
     return ExperimentSpec(

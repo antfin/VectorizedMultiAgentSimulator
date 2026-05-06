@@ -48,9 +48,14 @@ from .meta_strategist import enumerate_bundle_v9
 
 
 _TASK_OVERRIDES = {
-    "n_agents": 4, "n_targets": 4, "agents_per_target": 2,
-    "covering_range": 0.25, "lidar_range": 0.35, "max_steps": 400,
-    "n_lidar_rays_entities": 15, "n_lidar_rays_agents": 12,
+    "n_agents": 4,
+    "n_targets": 4,
+    "agents_per_target": 2,
+    "covering_range": 0.25,
+    "lidar_range": 0.35,
+    "max_steps": 400,
+    "n_lidar_rays_entities": 15,
+    "n_lidar_rays_agents": 12,
 }
 
 _TASK_SUMMARY = (
@@ -68,6 +73,7 @@ def _render_inner_prompt(
     via the loader (with task_domain substitution working). Returns the
     rendered messages list."""
     from ..prompts import loader as _l
+
     base_dir = Path(_l.__file__).parent / base_prompt_version
     with tempfile.TemporaryDirectory() as tmp:
         new_dir = Path(tmp) / base_prompt_version
@@ -78,9 +84,7 @@ def _render_inner_prompt(
             td_dst = Path(tmp) / "task_domains"
             shutil.copytree(td_src, td_dst)
         for slot, text in slot_overrides.items():
-            (new_dir / f"{slot}.txt").write_text(
-                (text or "").rstrip() + "\n"
-            )
+            (new_dir / f"{slot}.txt").write_text((text or "").rstrip() + "\n")
         orig = _l._PROMPTS_DIR
         try:
             _l._PROMPTS_DIR = Path(tmp)
@@ -131,9 +135,7 @@ def _measure_examples(text: str) -> Dict:
     n_blocks = len(blocks)
     role_in_examples = 0
     for b in blocks:
-        if re.search(
-            r"(F\.one_hot|one_hot\s*\(|\[:\s*,\s*agent_idx\]\s*=\s*1)", b
-        ):
+        if re.search(r"(F\.one_hot|one_hot\s*\(|\[:\s*,\s*agent_idx\]\s*=\s*1)", b):
             role_in_examples += 1
     return {
         "n_python_blocks": n_blocks,
@@ -145,9 +147,9 @@ def _measure_inner_candidate(code: str) -> Dict:
     ana = analyze_inner_code(code)
     n_g = count_gated_features(code)
     n_d = count_dense_features(ana, code)
-    role_match = bool(re.search(
-        r"(F\.one_hot|one_hot\s*\(|\[:\s*,\s*agent_idx\]\s*=\s*1)", code
-    ))
+    role_match = bool(
+        re.search(r"(F\.one_hot|one_hot\s*\(|\[:\s*,\s*agent_idx\]\s*=\s*1)", code)
+    )
     return {
         "n_features": ana.n_returned_features,
         "n_gated": n_g,
@@ -159,39 +161,46 @@ def _measure_inner_candidate(code: str) -> Dict:
 
 
 def run_one_trial(
-    meta_llm: LLMClient, inner_client: LLMClient,
-    loader: PromptLoader, trial_idx: int,
-    n_inner: int = 3, base_prompt_version: str = "v3_modular_taskdomain",
+    meta_llm: LLMClient,
+    inner_client: LLMClient,
+    loader: PromptLoader,
+    trial_idx: int,
+    n_inner: int = 3,
+    base_prompt_version: str = "v3_modular_taskdomain",
 ) -> Dict:
     log = logging.getLogger(f"v9.phase4.trial{trial_idx}")
 
     log.info("Phase A: bundle enumeration")
     bundle, raw = enumerate_bundle_v9(
-        meta_llm, loader, _TASK_SUMMARY,
+        meta_llm,
+        loader,
+        _TASK_SUMMARY,
     )
     chosen = bundle.current()
     arts = chosen.artifacts
 
     td = loader.task_domain() or {}
     concepts = td.get("inferable_concepts") or []
-    hints_check = _measure_inferable_hints(
-        arts.inferable_hints_text, concepts
-    )
+    hints_check = _measure_inferable_hints(arts.inferable_hints_text, concepts)
     examples_check = _measure_examples(arts.examples_text)
 
     log.info(
         "  chosen='%s' score=%.1f | hints %d/%d concepts | "
         "examples blocks=%d role_in=%d",
-        chosen.name, chosen.combined_score,
-        hints_check["concepts_hit"], hints_check["concepts_total"],
+        chosen.name,
+        chosen.combined_score,
+        hints_check["concepts_hit"],
+        hints_check["concepts_total"],
         examples_check["n_python_blocks"],
         examples_check["blocks_with_role_one_hot"],
     )
 
     log.info("Phase B: %d inner candidates", n_inner)
     inner_llm = InnerLLM(
-        inner_client, evolve_reward=False,
-        evolve_observation=True, use_structured=False,
+        inner_client,
+        evolve_reward=False,
+        evolve_observation=True,
+        use_structured=False,
     )
     messages = _render_inner_prompt(
         base_prompt_version=base_prompt_version,
@@ -216,12 +225,8 @@ def run_one_trial(
         log.info("  cand %d: %s", i, meas)
 
     valid = [r for r in inner_reports if "err" not in r]
-    role_rate = (
-        sum(1 for r in valid if r["role_one_hot_present"]) / max(1, len(valid))
-    )
-    cs_rate = (
-        sum(1 for r in valid if r["touches_both_lidars"]) / max(1, len(valid))
-    )
+    role_rate = sum(1 for r in valid if r["role_one_hot_present"]) / max(1, len(valid))
+    cs_rate = sum(1 for r in valid if r["touches_both_lidars"]) / max(1, len(valid))
 
     return {
         "trial_idx": trial_idx,
@@ -245,14 +250,22 @@ def main(n_trials: int = 5) -> int:
     )
     log = logging.getLogger("v9.phase4")
 
-    meta_llm = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v3_modular_taskdomain",
-    ))
-    inner_client = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v3_modular_taskdomain",
-    ))
+    meta_llm = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v3_modular_taskdomain",
+        )
+    )
+    inner_client = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v3_modular_taskdomain",
+        )
+    )
 
     loader = PromptLoader(version="v3_modular_taskdomain")
 
@@ -274,12 +287,9 @@ def main(n_trials: int = 5) -> int:
     if n > 0:
         avg_role = sum(r["inner_role_rate"] for r in valid_trials) / n
         avg_cs = sum(r["inner_cross_source_rate"] for r in valid_trials) / n
-        avg_hints = (
-            sum(r["hints_check"]["concepts_hit"] for r in valid_trials) / n
-        )
+        avg_hints = sum(r["hints_check"]["concepts_hit"] for r in valid_trials) / n
         avg_blocks = (
-            sum(r["examples_check"]["n_python_blocks"] for r in valid_trials)
-            / n
+            sum(r["examples_check"]["n_python_blocks"] for r in valid_trials) / n
         )
     else:
         avg_role = avg_cs = avg_hints = avg_blocks = 0.0
@@ -298,24 +308,30 @@ def main(n_trials: int = 5) -> int:
         "trials": results,
     }
 
-    out = Path(
-        f"results/v9_prompt_lab/phase4_{time.strftime('%Y%m%d_%H%M')}.json"
-    )
+    out = Path(f"results/v9_prompt_lab/phase4_{time.strftime('%Y%m%d_%H%M')}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2, default=str))
     log.info("saved %s", out)
 
     print()
     print("=" * 70)
-    print(f"v9 Phase 4 convergence — {n}/{n_trials} valid trials, "
-          f"{summary['elapsed_s']:.0f}s")
-    print(f"  avg inner role_one_hot rate: {avg_role*100:.0f}%   "
-          f"(target ≥80%) {'PASS' if avg_role>=0.80 else 'FAIL'}")
+    print(
+        f"v9 Phase 4 convergence — {n}/{n_trials} valid trials, "
+        f"{summary['elapsed_s']:.0f}s"
+    )
+    print(
+        f"  avg inner role_one_hot rate: {avg_role*100:.0f}%   "
+        f"(target ≥80%) {'PASS' if avg_role>=0.80 else 'FAIL'}"
+    )
     print(f"  avg inner cross_source rate: {avg_cs*100:.0f}%")
-    print(f"  avg hints concepts hit: {avg_hints:.1f}/7   "
-          f"{'PASS' if avg_hints>=7 else 'FAIL'}")
-    print(f"  avg examples blocks: {avg_blocks:.1f}   "
-          f"(target ≥2) {'PASS' if avg_blocks>=2 else 'FAIL'}")
+    print(
+        f"  avg hints concepts hit: {avg_hints:.1f}/7   "
+        f"{'PASS' if avg_hints>=7 else 'FAIL'}"
+    )
+    print(
+        f"  avg examples blocks: {avg_blocks:.1f}   "
+        f"(target ≥2) {'PASS' if avg_blocks>=2 else 'FAIL'}"
+    )
 
     all_pass = (
         summary["pass_role_rate_80pct"]

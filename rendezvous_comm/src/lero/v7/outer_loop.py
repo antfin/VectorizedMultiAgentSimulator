@@ -28,7 +28,6 @@ Architecture:
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import os
@@ -37,16 +36,14 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ...config import ExperimentSpec
 from ..llm_client import LLMClient
 from ..loop import LeroLoop
-from ..v5.inner_loop import InnerResult, run_inner_loop
-from ..v5.registry import Registry, RegistryEntry
-from .diagnosis import V7Diagnosis, diagnose_inner_result
+from ..v5.inner_loop import run_inner_loop
+from .diagnosis import diagnose_inner_result
 from .meta_strategist import (
-    V7ReflectionDecision,
     enumerate_bundle,
     reflect_and_decide,
 )
@@ -89,7 +86,8 @@ def _save_checkpoint(output_dir: Path, ckpt: V7Checkpoint) -> None:
     os.replace(tmp, p)
     _log.info(
         "v7 checkpoint: outer_done=%d early_stopped=%s",
-        ckpt.outer_idx_completed, ckpt.early_stopped,
+        ckpt.outer_idx_completed,
+        ckpt.early_stopped,
     )
 
 
@@ -103,6 +101,7 @@ def _load_checkpoint(output_dir: Path) -> Optional[V7Checkpoint]:
 
 def _redirect_prompt_loader(prompts_root: Path) -> None:
     from ..prompts import loader as _l
+
     prompts_root.mkdir(parents=True, exist_ok=True)
     _l._PROMPTS_DIR = prompts_root
 
@@ -183,6 +182,7 @@ def run_v7_outer_loop(
     _redirect_prompt_loader(prompts_root)
 
     from ..prompts import loader as _l_mod
+
     _orig_prompts_dir = Path(_l_mod.__file__).parent
     base_src = _orig_prompts_dir / cfg.base_prompt_version
     if not base_src.exists():
@@ -231,8 +231,7 @@ def run_v7_outer_loop(
         if ckpt.early_stopped:
             break
 
-        _log.info("=== v7 OUTER ITER %d/%d ===",
-                   outer_idx + 1, cfg.max_outer)
+        _log.info("=== v7 OUTER ITER %d/%d ===", outer_idx + 1, cfg.max_outer)
 
         # Save bundle state before this iter
         outer_dir = output_dir / f"outer_{outer_idx:02d}"
@@ -269,14 +268,20 @@ def run_v7_outer_loop(
 
         # Diagnose
         diag = diagnose_inner_result(inner_result, active)
-        (outer_dir / "_diagnosis.json").write_text(json.dumps({
-            "label": diag.label,
-            "pattern_present": diag.pattern_present,
-            "metrics_signature_match": diag.metrics_signature_match,
-            "rationale": diag.rationale,
-            "inner_M1": diag.inner_M1,
-            "inner_M6": diag.inner_M6,
-        }, indent=2, default=str))
+        (outer_dir / "_diagnosis.json").write_text(
+            json.dumps(
+                {
+                    "label": diag.label,
+                    "pattern_present": diag.pattern_present,
+                    "metrics_signature_match": diag.metrics_signature_match,
+                    "rationale": diag.rationale,
+                    "inner_M1": diag.inner_M1,
+                    "inner_M6": diag.inner_M6,
+                },
+                indent=2,
+                default=str,
+            )
+        )
         (outer_dir / "_diagnosis_full.txt").write_text(
             f"=== V7 DIAGNOSIS ===\n"
             f"label: {diag.label}\n"
@@ -288,16 +293,22 @@ def run_v7_outer_loop(
         )
         _log.info(
             "v7 outer %d diag: label=%s pattern=%s M1=%.3f M6=%.3f",
-            outer_idx, diag.label, diag.pattern_present,
-            diag.inner_M1, diag.inner_M6,
+            outer_idx,
+            diag.label,
+            diag.pattern_present,
+            diag.inner_M1,
+            diag.inner_M6,
         )
 
         # If achieved or no candidates, short-circuit
         if diag.label == "achieved":
             ckpt.early_stopped = True
             bundle.record_outcome(
-                outer_idx, diag.label, diag.inner_M1,
-                diag.inner_M6, diag.pattern_present,
+                outer_idx,
+                diag.label,
+                diag.inner_M1,
+                diag.inner_M6,
+                diag.pattern_present,
             )
             ckpt.outer_idx_completed = outer_idx
             _save_checkpoint(output_dir, ckpt)
@@ -307,32 +318,50 @@ def run_v7_outer_loop(
         if diag.label == "too_early":
             _log.warning("v7 outer %d: too_early — no inner result", outer_idx)
             bundle.record_outcome(
-                outer_idx, "too_early", 0.0, 0.0, False,
+                outer_idx,
+                "too_early",
+                0.0,
+                0.0,
+                False,
             )
             ckpt.outer_idx_completed = outer_idx
             _save_checkpoint(output_dir, ckpt)
             continue
 
         decision, raw_reflect = reflect_and_decide(
-            meta_llm, bundle, inner_result, diag,
+            meta_llm,
+            bundle,
+            inner_result,
+            diag,
         )
         (outer_dir / "_reflection_response.txt").write_text(raw_reflect)
-        (outer_dir / "_decision.json").write_text(json.dumps({
-            "next_action": decision.next_action,
-            "rationale": decision.rationale,
-            "slot_edits_keys": list(decision.slot_edits.keys()),
-            "bundle_demote": decision.bundle_demote,
-            "bundle_add_names": [s.name for s in decision.bundle_add],
-        }, indent=2, default=str))
+        (outer_dir / "_decision.json").write_text(
+            json.dumps(
+                {
+                    "next_action": decision.next_action,
+                    "rationale": decision.rationale,
+                    "slot_edits_keys": list(decision.slot_edits.keys()),
+                    "bundle_demote": decision.bundle_demote,
+                    "bundle_add_names": [s.name for s in decision.bundle_add],
+                },
+                indent=2,
+                default=str,
+            )
+        )
         _log.info(
             "v7 outer %d decision: action=%s rationale=%s",
-            outer_idx, decision.next_action, decision.rationale[:160],
+            outer_idx,
+            decision.next_action,
+            decision.rationale[:160],
         )
 
         # Record outcome on the active strategy
         bundle.record_outcome(
-            outer_idx, diag.label, diag.inner_M1,
-            diag.inner_M6, diag.pattern_present,
+            outer_idx,
+            diag.label,
+            diag.inner_M1,
+            diag.inner_M6,
+            diag.pattern_present,
         )
 
         # Apply bundle updates
@@ -373,7 +402,8 @@ def run_v7_outer_loop(
             _write_slots(next_prompt_dir, _strategy_to_slots(bundle.current()))
             _log.info(
                 "v7 outer %d: SWITCHED to strategy '%s'",
-                outer_idx, bundle.current().name,
+                outer_idx,
+                bundle.current().name,
             )
         elif decision.next_action in (
             "refine_current_strategy",
@@ -387,7 +417,8 @@ def run_v7_outer_loop(
         else:
             _log.warning(
                 "v7 outer %d: unknown next_action %r — defaulting to refine",
-                outer_idx, decision.next_action,
+                outer_idx,
+                decision.next_action,
             )
             current_slots = _read_slot_files(prompt_dir)
             _write_slots(next_prompt_dir, current_slots)
@@ -409,9 +440,7 @@ def run_v7_outer_loop(
         "bundle_chosen_at_end": bundle.current().name if bundle.current() else None,
         "bundle_history": bundle.history,
         "bundle_final": _bundle_dict(bundle),
-        "elapsed_s_total": ckpt.elapsed_s_so_far + (
-            time.monotonic() - t_start
-        ),
+        "elapsed_s_total": ckpt.elapsed_s_so_far + (time.monotonic() - t_start),
     }
     (output_dir / "v7_summary.json").write_text(
         json.dumps(summary, indent=2, default=str)
@@ -424,6 +453,7 @@ def run_v7_outer_loop(
 
     _log.info(
         "=== v7 DONE === outer_done=%d early_stopped=%s",
-        ckpt.outer_idx_completed + 1, ckpt.early_stopped,
+        ckpt.outer_idx_completed + 1,
+        ckpt.early_stopped,
     )
     return summary

@@ -34,7 +34,6 @@ from ..v6_prompt_lab.analyzer import analyze_inner_code
 from ..v6_prompt_lab.harness import _build_inner_messages_with_slots, _read_base_slots
 from .diagnosis import diagnose_inner_result
 from .meta_strategist import enumerate_bundle, reflect_and_decide
-from .strategy import V7Strategy, V7StrategyBundle
 
 
 _TASK_SUMMARY = (
@@ -46,10 +45,16 @@ _TASK_SUMMARY = (
 )
 
 _TASK_OVERRIDES = {
-    "n_agents": 4, "n_targets": 4, "agents_per_target": 2,
-    "covering_range": 0.25, "lidar_range": 0.35, "max_steps": 400,
-    "n_lidar_rays_entities": 15, "n_lidar_rays_agents": 12,
-    "collision_penalty": -0.01, "time_penalty": -0.01,
+    "n_agents": 4,
+    "n_targets": 4,
+    "agents_per_target": 2,
+    "covering_range": 0.25,
+    "lidar_range": 0.35,
+    "max_steps": 400,
+    "n_lidar_rays_entities": 15,
+    "n_lidar_rays_agents": 12,
+    "collision_penalty": -0.01,
+    "time_penalty": -0.01,
 }
 
 
@@ -82,7 +87,8 @@ def _make_inner(
     reg.fitness_trajectory = [0.05, 0.06, 0.07]
     reg.add_outcome(...) if False else None  # noqa
     return InnerResult(
-        best=out, worst=out,
+        best=out,
+        worst=out,
         all_outcomes=[out],
         registry=reg,
         did_stagnate=False,
@@ -114,18 +120,27 @@ def enhance_observation(scenario_state):
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO,
-                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
+    )
     log = logging.getLogger("rendezvous.lero.v7.run_phase3_test")
 
-    meta_llm = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v2_fewshot_modular_v2_local",
-    ))
-    inner_client = LLMClient(LLMConfig(
-        model="gpt-5.4-mini", temperature=0.8, max_retries=3,
-        prompt_version="v2_fewshot_modular_v2_local",
-    ))
+    meta_llm = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v2_fewshot_modular_v2_local",
+        )
+    )
+    inner_client = LLMClient(
+        LLMConfig(
+            model="gpt-5.4-mini",
+            temperature=0.8,
+            max_retries=3,
+            prompt_version="v2_fewshot_modular_v2_local",
+        )
+    )
 
     t0 = time.monotonic()
 
@@ -141,8 +156,9 @@ def main() -> int:
     new_slots = dict(base_slots)
     new_slots["guidance_observation"] = chosen.lero_translation_hint
 
-    inner_llm = InnerLLM(inner_client, evolve_reward=False,
-                          evolve_observation=True, use_structured=False)
+    inner_llm = InnerLLM(
+        inner_client, evolve_reward=False, evolve_observation=True, use_structured=False
+    )
     messages = _build_inner_messages_with_slots(
         prompt_version="v2_fewshot_modular_v2_local",
         slot_overrides=new_slots,
@@ -164,7 +180,8 @@ def main() -> int:
             cs_rate += 1
         log.info(
             "  inner cand: cross_source=%d touches_both=%s n_features=%d",
-            ana.n_cross_source, ana.touches_both_lidars,
+            ana.n_cross_source,
+            ana.touches_both_lidars,
             ana.n_returned_features,
         )
     print(f"\nPhase B: {cs_rate}/{n_inner_gens} candidates have cross-source ops")
@@ -172,59 +189,88 @@ def main() -> int:
     # === Phase C: 4 reflection scenarios ===
     log.info("=== Phase C: reflection scenario tests ===")
     scenarios = [
-        ("translation_failure", _CODE_NO_AND_PRODUCT, 0.000, 0.080,
-         "translation_failure", "refine_inner_prompt_for_current"),
-        ("rl_too_hard",          _CODE_WITH_AND_PRODUCT, 0.000, 0.100,
-         "rl_too_hard", "switch_to_next_strategy"),
-        ("partial",              _CODE_WITH_AND_PRODUCT, 0.000, 0.250,
-         "partial", "refine_current_strategy"),
-        ("achieved",             _CODE_WITH_AND_PRODUCT, 0.080, 0.350,
-         "achieved", "stop"),
+        (
+            "translation_failure",
+            _CODE_NO_AND_PRODUCT,
+            0.000,
+            0.080,
+            "translation_failure",
+            "refine_inner_prompt_for_current",
+        ),
+        (
+            "rl_too_hard",
+            _CODE_WITH_AND_PRODUCT,
+            0.000,
+            0.100,
+            "rl_too_hard",
+            "switch_to_next_strategy",
+        ),
+        (
+            "partial",
+            _CODE_WITH_AND_PRODUCT,
+            0.000,
+            0.250,
+            "partial",
+            "refine_current_strategy",
+        ),
+        ("achieved", _CODE_WITH_AND_PRODUCT, 0.080, 0.350, "achieved", "stop"),
     ]
     results = []
     for name, code, M1, M6, expected_label, expected_action in scenarios:
         synth = _make_inner(code, M1=M1, M6=M6)
         diag = diagnose_inner_result(synth, chosen)
         decision, _ = reflect_and_decide(meta_llm, bundle, synth, diag)
-        ok_label = (diag.label == expected_label)
-        ok_action = (decision.next_action == expected_action)
-        results.append({
-            "scenario": name,
-            "expected_label": expected_label,
-            "actual_label": diag.label,
-            "label_match": ok_label,
-            "expected_action": expected_action,
-            "actual_action": decision.next_action,
-            "action_match": ok_action,
-            "rationale": decision.rationale[:200],
-        })
+        ok_label = diag.label == expected_label
+        ok_action = decision.next_action == expected_action
+        results.append(
+            {
+                "scenario": name,
+                "expected_label": expected_label,
+                "actual_label": diag.label,
+                "label_match": ok_label,
+                "expected_action": expected_action,
+                "actual_action": decision.next_action,
+                "action_match": ok_action,
+                "rationale": decision.rationale[:200],
+            }
+        )
         log.info(
             "  %s: label=%s (exp %s) action=%s (exp %s) ok=%s",
-            name, diag.label, expected_label,
-            decision.next_action, expected_action,
+            name,
+            diag.label,
+            expected_label,
+            decision.next_action,
+            expected_action,
             ok_label and ok_action,
         )
 
     # Save report
     out = Path(f"results/v7_prompt_lab/phase3_{time.strftime('%Y%m%d_%H%M')}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({
-        "elapsed_s": time.monotonic() - t0,
-        "bundle": [
+    out.write_text(
+        json.dumps(
             {
-                "name": s.name, "score": s.combined_score,
-                "lero_codability": s.lero_codability,
-                "rl_trainability": s.rl_trainability,
-                "full_solution": s.full_solution,
-            }
-            for s in bundle.strategies
-        ],
-        "chosen_idx": bundle.chosen_idx,
-        "chosen_translation_hint": chosen.lero_translation_hint,
-        "phase_b_cross_source_rate": cs_rate / max(1, n_inner_gens),
-        "phase_b_n_candidates": n_inner_gens,
-        "phase_c_scenarios": results,
-    }, indent=2, default=str))
+                "elapsed_s": time.monotonic() - t0,
+                "bundle": [
+                    {
+                        "name": s.name,
+                        "score": s.combined_score,
+                        "lero_codability": s.lero_codability,
+                        "rl_trainability": s.rl_trainability,
+                        "full_solution": s.full_solution,
+                    }
+                    for s in bundle.strategies
+                ],
+                "chosen_idx": bundle.chosen_idx,
+                "chosen_translation_hint": chosen.lero_translation_hint,
+                "phase_b_cross_source_rate": cs_rate / max(1, n_inner_gens),
+                "phase_b_n_candidates": n_inner_gens,
+                "phase_c_scenarios": results,
+            },
+            indent=2,
+            default=str,
+        )
+    )
     log.info("saved %s", out)
 
     print()
@@ -232,12 +278,15 @@ def main() -> int:
     print("-" * 100)
     for r in results:
         ok = "✓" if r["label_match"] and r["action_match"] else "✗"
-        print(f"{r['scenario']:<25} {r['actual_label']:<24} "
-              f"{r['actual_action']:<35} {ok}")
+        print(
+            f"{r['scenario']:<25} {r['actual_label']:<24} "
+            f"{r['actual_action']:<35} {ok}"
+        )
     print(f"\nelapsed: {time.monotonic() - t0:.1f}s, output: {out}")
     return 0
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

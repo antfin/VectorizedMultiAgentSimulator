@@ -6,8 +6,7 @@ can exercise decision logic without running RL.
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from src.lero.meta.failmode import FailMode
 from src.lero.meta.mutation_log import MutationLogEntry
@@ -181,7 +180,10 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "target_slot": ["guidance_observation", "guidance_shared"],
             "include_signals_contains_any": ["scalar"],
             "editor_mentions_any": [
-                "proximity", "lidar_targets", "gap", "nearest",
+                "proximity",
+                "lidar_targets",
+                "gap",
+                "nearest",
             ],
         },
     },
@@ -215,7 +217,11 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "target_slot": ["guidance_observation", "guidance_shared"],
             "include_signals_contains_any": ["fingerprint", "scalar"],
             "editor_mentions_any": [
-                "crowd", "proximity_count", "spacing", "lidar_agents", "repuls",
+                "crowd",
+                "proximity_count",
+                "spacing",
+                "lidar_agents",
+                "repuls",
             ],
         },
     },
@@ -230,10 +236,16 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "bias": "exploratory",
         "expected": {
             "target_slot": [
-                "guidance_observation", "guidance_shared", "guidance_reward",
+                "guidance_observation",
+                "guidance_shared",
+                "guidance_reward",
             ],
             "editor_mentions_any": [
-                "agent_idx", "assignment", "team", "role", "partner",
+                "agent_idx",
+                "assignment",
+                "team",
+                "role",
+                "partner",
             ],
         },
     },
@@ -255,7 +267,6 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "editor_must_not_contain_all": ["local sensors only", "oracle"],
         },
     },
-
     # B. Critic behavior
     "B1_critic_catches_fairness_paraphrase": {
         "description": "Editor output reads like a fairness paraphrase.",
@@ -293,7 +304,10 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "critic_flags_fairness_restatement": False,
             "critic_quality_in": ["keep"],
             "critic_cites_features_any": [
-                "lidar_targets", "gap", "proximity_count", "hold_signal",
+                "lidar_targets",
+                "gap",
+                "proximity_count",
+                "hold_signal",
             ],
         },
     },
@@ -323,7 +337,6 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "critic_quality_in": ["revise", "reject"],
         },
     },
-
     # C. include_signals gating
     "C1_no_outliers_default_scalar_only": {
         "description": "All metrics normal — Strategist should NOT upgrade tiers.",
@@ -349,15 +362,17 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "include_signals_contains_any": ["fingerprint", "curve_shape"],
         },
     },
-
     # D. Prior-slot-version handling
     "D1_avoid_prior_regression_pattern": {
         "description": "Prior tried 'add lidar summary' and got regression.",
         "fail_mode": FailMode.HEALTHY,
         "history": [
             _rec(peak=0.05, mutation_slot="guidance_observation"),
-            _rec(peak=0.02, mutation_slot="guidance_observation",
-                 rationale="add lidar summary"),
+            _rec(
+                peak=0.02,
+                mutation_slot="guidance_observation",
+                rationale="add lidar summary",
+            ),
         ],
         "candidates": [_cand(m1=0.02, obs_code=_OBS_GENERIC)],
         "priors": [
@@ -375,12 +390,18 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "bias": "observation_first",
         "expected": {
             "target_slot": [
-                "guidance_observation", "guidance_reward", "guidance_shared",
+                "guidance_observation",
+                "guidance_reward",
+                "guidance_shared",
             ],
             # Editor must NOT duplicate the lidar-summary pattern
             "editor_avoids_any": ["lidar summary", "mean/max/min lidar"],
             "editor_mentions_any": [
-                "gap", "proximity_count", "hold", "approach", "partner",
+                "gap",
+                "proximity_count",
+                "hold",
+                "approach",
+                "partner",
             ],
         },
     },
@@ -389,8 +410,11 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "fail_mode": FailMode.HEALTHY,
         "history": [
             _rec(peak=0.05, mutation_slot="guidance_observation"),
-            _rec(peak=0.08, mutation_slot="guidance_observation",
-                 rationale="add proximity_count"),
+            _rec(
+                peak=0.08,
+                mutation_slot="guidance_observation",
+                rationale="add proximity_count",
+            ),
         ],
         "candidates": [_cand(m1=0.08, obs_code=_OBS_GENERIC)],
         "priors": [
@@ -409,11 +433,15 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "expected": {
             # Either extend proximity_count or add a related coordination signal
             "editor_mentions_any": [
-                "proximity_count", "gap", "hold", "approach", "partner", "team",
+                "proximity_count",
+                "gap",
+                "hold",
+                "approach",
+                "partner",
+                "team",
             ],
         },
     },
-
     # E. Seed bias
     "E1_override_bias_when_evidence_contradicts": {
         "description": "obs-first bias + reward-hack evidence — Strategist should override bias.",
@@ -428,7 +456,6 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "target_slot": ["guidance_reward", "guidance_shared"],
         },
     },
-
     # A6-A8: additional fail-mode variants
     "A6_oscillating_M1": {
         "description": "M1 bounces between evals — training instability.",
@@ -437,8 +464,9 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             _rec(peak=0.20, final=0.05, m6=0.35, seed_std=0.18),
         ],
         "candidates": [
-            _cand(m1=0.05, peak=0.20, final=0.05, m6=0.35,
-                  reward_code=_REWARD_UNSTABLE),
+            _cand(
+                m1=0.05, peak=0.20, final=0.05, m6=0.35, reward_code=_REWARD_UNSTABLE
+            ),
         ],
         "priors": [],
         "bias": "reward_first",
@@ -446,8 +474,13 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "target_slot": ["guidance_reward", "guidance_shared"],
             "include_signals_contains_any": ["fingerprint", "curve_shape"],
             "editor_mentions_any": [
-                "stability", "smooth", "bounded", "clip", "tanh",
-                "variance", "oscillat",
+                "stability",
+                "smooth",
+                "bounded",
+                "clip",
+                "tanh",
+                "variance",
+                "oscillat",
             ],
         },
     },
@@ -466,8 +499,14 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "expected": {
             "target_slot": ["guidance_reward", "guidance_shared"],
             "editor_mentions_any": [
-                "bounded", "clip", "clamp", "nan", "magnitude", "tanh",
-                "finite", "stability",
+                "bounded",
+                "clip",
+                "clamp",
+                "nan",
+                "magnitude",
+                "tanh",
+                "finite",
+                "stability",
             ],
         },
     },
@@ -483,12 +522,15 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "expected": {
             "target_slot": ["guidance_reward", "guidance_shared"],
             "editor_mentions_any": [
-                "magnitude", "scale", "shaping", "normaliz", "potential",
+                "magnitude",
+                "scale",
+                "shaping",
+                "normaliz",
+                "potential",
                 "smooth",
             ],
         },
     },
-
     # B4-B5: Additional Critic edge cases
     "B4_critic_flags_generic_advice": {
         "description": "Editor writes vague non-specific advice.",
@@ -523,11 +565,12 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "critic_quality_in": ["keep", "revise"],  # either acceptable
             "critic_flags_fairness_restatement": False,
             "critic_cites_features_any": [
-                "proximity_count", "gap", "lidar_targets",
+                "proximity_count",
+                "gap",
+                "lidar_targets",
             ],
         },
     },
-
     # C3: Multi-outlier — must pick one focus
     "C3_multi_outlier_picks_one": {
         "description": "Both M4=90 AND M9=0.15 — two outliers — must not scattershot.",
@@ -543,11 +586,13 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "target_slot": ["guidance_observation", "guidance_shared"],
             # At least ONE focus identifier — but we don't expect 4 focuses
             "editor_mentions_any": [
-                "proximity", "spacing", "crowd", "lidar_agents",
+                "proximity",
+                "spacing",
+                "crowd",
+                "lidar_agents",
             ],
         },
     },
-
     # D3: Conflicting priors on same slot
     "D3_conflicting_priors_same_slot": {
         "description": "Same slot had both a regression AND a marginal_improvement prior.",
@@ -580,15 +625,20 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "bias": "observation_first",
         "expected": {
             "target_slot": [
-                "guidance_observation", "guidance_reward", "guidance_shared",
+                "guidance_observation",
+                "guidance_reward",
+                "guidance_shared",
             ],
             "editor_avoids_any": ["lidar mean, max, min", "raw sensor rollouts"],
             "editor_mentions_any": [
-                "proximity_count", "gap", "hold", "approach", "team",
+                "proximity_count",
+                "gap",
+                "hold",
+                "approach",
+                "team",
             ],
         },
     },
-
     # E2-E3: remaining bias scenarios
     "E2_reward_first_bias_observation_evidence": {
         "description": "reward_first bias + observation evidence (M9 low, crowding) — should override bias.",
@@ -615,12 +665,13 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "expected": {
             # Any slot OK; just verify it doesn't error
             "target_slot": [
-                "guidance_observation", "guidance_reward", "guidance_shared",
+                "guidance_observation",
+                "guidance_reward",
+                "guidance_shared",
             ],
             "confidence_in": ["small", "medium", "large"],
         },
     },
-
     # H1: repeated fairness violations — should not touch observation at all
     "H1_three_fairness_violations_in_a_row": {
         "description": "Three successive FAIRNESS_VIOLATION runs — candidates can't stop looking at oracle state.",
@@ -643,15 +694,13 @@ ALL_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "editor_must_not_contain_all": ["local sensors only", "oracle"],
         },
     },
-
     # F. All-metrics-good — negative control
     "F1_no_mutation_needed": {
         "description": "Healthy + high peak_M1 — LLM should still pick a slot (we can't stop it) but focus should be minimal.",
         "fail_mode": FailMode.HEALTHY,
         "history": [_rec(peak=0.75, final=0.70, m6=0.85, m2=3.0)],
         "candidates": [
-            _cand(m1=0.75, m6=0.85, peak=0.75, final=0.70,
-                  obs_code=_OBS_HOLD_APPROACH),
+            _cand(m1=0.75, m6=0.85, peak=0.75, final=0.70, obs_code=_OBS_HOLD_APPROACH),
         ],
         "priors": [],
         "bias": "exploratory",

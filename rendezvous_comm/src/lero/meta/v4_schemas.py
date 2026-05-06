@@ -43,10 +43,9 @@ def _coerce_to_str_list(v: Any) -> list:
         return [_coerce_to_str(item) for item in v]
     if isinstance(v, dict):
         # {"item1": "...", "item2": "..."} → ["item1: ...", ...]
-        return [
-            f"{k}: {_coerce_to_str(val)}" for k, val in v.items()
-        ]
+        return [f"{k}: {_coerce_to_str(val)}" for k, val in v.items()]
     return [_coerce_to_str(v)]
+
 
 # ── Phase 0: Bootstrap ──────────────────────────────────────────
 
@@ -73,7 +72,8 @@ class BootstrapCard(BaseModel):
     )
     failure_modes_anticipated: List[str] = Field(
         description="3–5 likely failure modes the LLM expects.",
-        min_length=2, max_length=8,
+        min_length=2,
+        max_length=8,
     )
     high_level_strategies_considered: List[str] = Field(
         description=(
@@ -81,7 +81,8 @@ class BootstrapCard(BaseModel):
             "Each one names a coordination concept (not raw code), "
             "e.g. 'pre-compute a hold_signal for arrived agents'."
         ),
-        min_length=2, max_length=8,
+        min_length=2,
+        max_length=8,
     )
     proposed_initial_obs_features: List[str] = Field(
         description=(
@@ -117,17 +118,23 @@ class BootstrapCard(BaseModel):
     # are expected (e.g. {"primary": "...", "secondary": "..."}). The
     # validators stringify them instead of erroring out.
     @field_validator(
-        "task_summary", "success_metric_understanding", "key_difficulty",
-        "fairness_audit", mode="before",
+        "task_summary",
+        "success_metric_understanding",
+        "key_difficulty",
+        "fairness_audit",
+        mode="before",
     )
     @classmethod
     def _coerce_str_fields(cls, v):
         return _coerce_to_str(v)
 
     @field_validator(
-        "failure_modes_anticipated", "high_level_strategies_considered",
-        "proposed_initial_obs_features", "proposed_initial_reward_components",
-        "assumptions", mode="before",
+        "failure_modes_anticipated",
+        "high_level_strategies_considered",
+        "proposed_initial_obs_features",
+        "proposed_initial_reward_components",
+        "assumptions",
+        mode="before",
     )
     @classmethod
     def _coerce_list_fields(cls, v):
@@ -188,13 +195,15 @@ class StrategyV4(BaseModel):
     )
     rationale: str = Field(
         description=(
-            "2–3 sentences citing specific prior-round evidence "
-            "(empty for round 0)."
+            "2–3 sentences citing specific prior-round evidence " "(empty for round 0)."
         ),
     )
 
     @field_validator(
-        "high_level_idea", "expected_effect", "rationale", mode="before",
+        "high_level_idea",
+        "expected_effect",
+        "rationale",
+        mode="before",
     )
     @classmethod
     def _coerce_str_fields(cls, v):
@@ -216,7 +225,8 @@ class StrategyBundle(BaseModel):
 
     round_idx: int = Field(ge=0)
     strategies: List[StrategyV4] = Field(
-        min_length=1, max_length=10,
+        min_length=1,
+        max_length=10,
         description="One per inner candidate slot.",
     )
     diversity_rationale: str = Field(

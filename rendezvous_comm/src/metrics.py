@@ -22,6 +22,7 @@ Cross-experiment analysis utilities (unnumbered, used for ER2+):
   compute_ate              - Ablation Treatment Effect (mask/shuffle comms)
   compute_delta_return_per_msg - Marginal return improvement per message
 """
+
 import csv
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,34 +41,33 @@ class EpisodeMetrics:
     """
 
     # Per-step accumulators
-    cumulative_reward: Optional[Tensor] = None   # (n_envs,)
-    step_count: Optional[Tensor] = None          # (n_envs,)
-    collision_count: Optional[Tensor] = None     # (n_envs,)
-    done_at_step: Optional[Tensor] = None        # (n_envs,) step when done
-    total_tokens: Optional[Tensor] = None        # (n_envs,)
-    is_done: Optional[Tensor] = None             # (n_envs,) bool
+    cumulative_reward: Optional[Tensor] = None  # (n_envs,)
+    step_count: Optional[Tensor] = None  # (n_envs,)
+    collision_count: Optional[Tensor] = None  # (n_envs,)
+    done_at_step: Optional[Tensor] = None  # (n_envs,) step when done
+    total_tokens: Optional[Tensor] = None  # (n_envs,)
+    is_done: Optional[Tensor] = None  # (n_envs,) bool
     targets_covered_total: Optional[Tensor] = None  # (n_envs,) cumulative
     per_agent_covering: Optional[Tensor] = None  # (n_envs, n_agents)
-    pairwise_dist_sum: Optional[Tensor] = None   # (n_envs,)
+    pairwise_dist_sum: Optional[Tensor] = None  # (n_envs,)
     n_targets: int = 7
     n_agents: int = 4
 
     def init(
-        self, n_envs: int, device: str = "cpu",
-        n_targets: int = 7, n_agents: int = 4,
+        self,
+        n_envs: int,
+        device: str = "cpu",
+        n_targets: int = 7,
+        n_agents: int = 4,
     ):
         self.cumulative_reward = torch.zeros(n_envs, device=device)
         self.step_count = torch.zeros(n_envs, device=device, dtype=torch.long)
         self.collision_count = torch.zeros(n_envs, device=device)
-        self.done_at_step = torch.full(
-            (n_envs,), -1, device=device, dtype=torch.long
-        )
+        self.done_at_step = torch.full((n_envs,), -1, device=device, dtype=torch.long)
         self.total_tokens = torch.zeros(n_envs, device=device)
         self.is_done = torch.zeros(n_envs, device=device, dtype=torch.bool)
         self.targets_covered_total = torch.zeros(n_envs, device=device)
-        self.per_agent_covering = torch.zeros(
-            n_envs, n_agents, device=device
-        )
+        self.per_agent_covering = torch.zeros(n_envs, n_agents, device=device)
         self.pairwise_dist_sum = torch.zeros(n_envs, device=device)
         self.n_targets = n_targets
         self.n_agents = n_agents
@@ -100,9 +100,7 @@ class EpisodeMetrics:
         # M4: Collisions — sum across agents
         for agent_info in info:
             if "collision_rew" in agent_info:
-                self.collision_count += (
-                    agent_info["collision_rew"] < 0
-                ).float()
+                self.collision_count += (agent_info["collision_rew"] < 0).float()
 
         # M6: Track cumulative targets covered.
         # With targets_respawn=False, each target is covered exactly once
@@ -123,7 +121,9 @@ class EpisodeMetrics:
             dists = torch.cdist(agent_positions, agent_positions)
             # Upper triangle mean (exclude diagonal)
             n_ag = agent_positions.shape[1]
-            mask = torch.triu(torch.ones(n_ag, n_ag, device=dists.device), diagonal=1).bool()
+            mask = torch.triu(
+                torch.ones(n_ag, n_ag, device=dists.device), diagonal=1
+            ).bool()
             n_pairs = mask.sum().item()
             if n_pairs > 0:
                 pairwise_mean = dists[:, mask].mean(dim=-1)
@@ -162,9 +162,7 @@ class EpisodeMetrics:
         avg_tokens = self.total_tokens.mean().item()
 
         # M6: Coverage Progress
-        targets_covered = self.targets_covered_total.clamp(
-            max=self.n_targets
-        )
+        targets_covered = self.targets_covered_total.clamp(max=self.n_targets)
         coverage_progress = (targets_covered / self.n_targets).mean().item()
 
         # M8: Agent Utilization (coefficient of variation of covering counts)
@@ -172,7 +170,8 @@ class EpisodeMetrics:
         mean_cov = self.per_agent_covering.mean(dim=-1)
         std_cov = self.per_agent_covering.std(dim=-1)
         cv = torch.where(
-            mean_cov > 0, std_cov / mean_cov,
+            mean_cov > 0,
+            std_cov / mean_cov,
             torch.zeros_like(mean_cov),
         )
         agent_utilization = cv.mean().item()
@@ -271,6 +270,7 @@ def compute_m7_sample_efficiency(
 
 # ── Cross-experiment analysis utilities ─────────────────────────────
 
+
 def compute_budget_frontier(
     results_at_budgets: Dict[float, Dict[str, float]],
 ) -> Dict[float, float]:
@@ -299,12 +299,10 @@ def compute_ate(
     """Ablation Treatment Effect (delta when masking/shuffling comms)."""
     return {
         "ate_success": (
-            baseline_metrics["M1_success_rate"]
-            - ablated_metrics["M1_success_rate"]
+            baseline_metrics["M1_success_rate"] - ablated_metrics["M1_success_rate"]
         ),
         "ate_return": (
-            baseline_metrics["M2_avg_return"]
-            - ablated_metrics["M2_avg_return"]
+            baseline_metrics["M2_avg_return"] - ablated_metrics["M2_avg_return"]
         ),
     }
 
@@ -317,7 +315,5 @@ def compute_delta_return_per_msg(
     tokens = metrics_with_comm["M5_avg_tokens"]
     if tokens == 0:
         return 0.0
-    delta_return = (
-        metrics_with_comm["M2_avg_return"] - metrics_no_comm["M2_avg_return"]
-    )
+    delta_return = metrics_with_comm["M2_avg_return"] - metrics_no_comm["M2_avg_return"]
     return delta_return / tokens

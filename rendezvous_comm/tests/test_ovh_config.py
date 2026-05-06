@@ -1,4 +1,5 @@
 """Tests for OVH config loading from configs/ovh.yaml."""
+
 import pytest
 import yaml
 
@@ -14,7 +15,6 @@ from src.ovh import (
     default_mount_code,
     default_mount_results,
     estimate_cost,
-    reload_ovh_config,
     _OVH_CONFIG_PATH,
 )
 
@@ -23,9 +23,7 @@ class TestOvhConfigFileExists:
     """configs/ovh.yaml should exist and be valid YAML."""
 
     def test_config_file_exists(self):
-        assert _OVH_CONFIG_PATH.exists(), (
-            f"OVH config not found at {_OVH_CONFIG_PATH}"
-        )
+        assert _OVH_CONFIG_PATH.exists(), f"OVH config not found at {_OVH_CONFIG_PATH}"
 
     def test_config_is_valid_yaml(self):
         with open(_OVH_CONFIG_PATH) as f:
@@ -96,7 +94,8 @@ class TestGpuModels:
         cost = estimate_cost(gpu, 1, 60, 1.0)
         expected_gpu_cost = GPU_MODELS[gpu]["eur_per_hr"]
         assert cost["gpu_cost_eur"] == pytest.approx(
-            expected_gpu_cost, abs=0.01,
+            expected_gpu_cost,
+            abs=0.01,
         )
 
 
@@ -116,10 +115,14 @@ class TestConfigNoSecrets:
 
         _collect(data)
         secret_keys = {
-            "password", "token", "secret", "api_key", "apikey",
-            "access_key", "private_key", "credentials",
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "apikey",
+            "access_key",
+            "private_key",
+            "credentials",
         }
         found = keys & secret_keys
-        assert not found, (
-            f"ovh.yaml should not have secret keys: {found}"
-        )
+        assert not found, f"ovh.yaml should not have secret keys: {found}"

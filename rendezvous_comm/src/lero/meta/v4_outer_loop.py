@@ -22,13 +22,12 @@ this file + v4_strategist + v4_composer + v4_bootstrap).
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import shutil
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ...config import ExperimentSpec
 from ..config import LLMConfig
@@ -40,7 +39,6 @@ from . import provenance as _prov_mod
 from .v4_analyzer import (
     aggregate_round_analysis,
     analyze_candidate_trajectory,
-    stability_score,
 )
 from .v4_bootstrap import bootstrap_from_description
 from .v4_composer import compose_prompt_for_strategy
@@ -49,7 +47,6 @@ from .v4_schemas import (
     CandidateAnalysis,
     FitnessWeights,
     RoundResult,
-    StrategyBundle,
     StrategyV4,
     V4Result,
 )
@@ -103,19 +100,23 @@ def _trajectory_from_inner_result(
         m6_final = float(inner_result.get("M6_coverage_progress", 0.0))
         out = []
         for p in traj:
-            out.append({
-                "M1": float(p.get("M1", 0.0)),
-                "M6": m6_final,
-                "frame": int(p.get("frame", 0)),
-            })
+            out.append(
+                {
+                    "M1": float(p.get("M1", 0.0)),
+                    "M6": m6_final,
+                    "frame": int(p.get("frame", 0)),
+                }
+            )
         return out
     # Fallback: single point from the eval-only run
-    return [{
-        "M1": float(inner_result.get("M1_success_rate", 0.0)),
-        "M6": float(inner_result.get("M6_coverage_progress", 0.0)),
-        "frame": int(inner_result.get("eval_frames", 0))
-                  or int(inner_result.get("max_n_frames", 0)),
-    }]
+    return [
+        {
+            "M1": float(inner_result.get("M1_success_rate", 0.0)),
+            "M6": float(inner_result.get("M6_coverage_progress", 0.0)),
+            "frame": int(inner_result.get("eval_frames", 0))
+            or int(inner_result.get("max_n_frames", 0)),
+        }
+    ]
 
 
 def _redirect_prompt_loader(prompts_root: Path) -> None:
@@ -137,6 +138,7 @@ def _redirect_prompt_loader(prompts_root: Path) -> None:
 @dataclass
 class _PerSeedRoundOutput:
     """Internal: what we pass between rounds within one seed."""
+
     candidates: List[CandidateAnalysis]
     chosen_strategy: StrategyV4
     mid_analysis: CandidateAnalysis
@@ -150,8 +152,8 @@ class LeroMpV4OuterLoop:
     def __init__(
         self,
         spec: ExperimentSpec,
-        v4_config,                    # LeroMPv4Config
-        llm_config: LLMConfig,        # inner-LLM config (not meta)
+        v4_config,  # LeroMPv4Config
+        llm_config: LLMConfig,  # inner-LLM config (not meta)
         output_dir: Path,
         base_prompt_dir: Optional[Path] = None,
     ):
@@ -164,9 +166,9 @@ class LeroMpV4OuterLoop:
         # Where the bootstrap copies the modular template from. By default
         # use v2_fewshot_modular_v2 (the one with the slot decomposition).
         if base_prompt_dir is None:
-            from importlib.resources import files
             # Find the prompts dir relative to the package
             from ..prompts import loader as _l
+
             base_prompt_dir = _l._PROMPTS_DIR / "v2_fewshot_modular_v2"
         self.base_prompt_dir = Path(base_prompt_dir)
 
@@ -234,7 +236,8 @@ class LeroMpV4OuterLoop:
         for round_idx in range(self.cfg.n_rounds):
             _log.info(
                 "--- Round %d/%d ---",
-                round_idx + 1, self.cfg.n_rounds,
+                round_idx + 1,
+                self.cfg.n_rounds,
             )
             round_output = self._run_round(
                 round_idx=round_idx,
@@ -245,21 +248,25 @@ class LeroMpV4OuterLoop:
                 task_overrides=task_overrides,
                 algorithm=algorithm,
             )
-            rounds.append(RoundResult(
-                round_idx=round_idx,
-                bundle=round_output["bundle"],
-                candidates=round_output["candidates"],
-                best_strategy_id=round_output["best_strategy_id"],
-                best_candidate_2M=round_output["mid_analysis"],
-                cross_round_summary=round_output["aggregate_text"],
-            ))
+            rounds.append(
+                RoundResult(
+                    round_idx=round_idx,
+                    bundle=round_output["bundle"],
+                    candidates=round_output["candidates"],
+                    best_strategy_id=round_output["best_strategy_id"],
+                    best_candidate_2M=round_output["mid_analysis"],
+                    cross_round_summary=round_output["aggregate_text"],
+                )
+            )
 
         # Phase 2: pick global best, deep-train at full_frames
         global_best_round = max(
-            rounds, key=lambda r: r.best_candidate_2M.stability_score,
+            rounds,
+            key=lambda r: r.best_candidate_2M.stability_score,
         )
         global_best_strategy = next(
-            s for s in global_best_round.bundle.strategies
+            s
+            for s in global_best_round.bundle.strategies
             if s.strategy_id == global_best_round.best_strategy_id
         )
         _log.info(
@@ -313,8 +320,10 @@ class LeroMpV4OuterLoop:
         _log.info(
             "=== LERO-MP v4 DONE === elapsed=%.0fs final_M1=%.3f "
             "peak_M1=%.3f score=%+.3f",
-            elapsed, final_analysis.final_M1,
-            final_analysis.peak_M1, final_analysis.stability_score,
+            elapsed,
+            final_analysis.final_M1,
+            final_analysis.peak_M1,
+            final_analysis.stability_score,
         )
         return result
 
@@ -356,8 +365,7 @@ class LeroMpV4OuterLoop:
         # evolve_reward_from_round; afterwards strategist's
         # target_domain decides per strategy.
         round_evolve_reward = (
-            self.cfg.evolve_reward
-            and round_idx >= self.cfg.evolve_reward_from_round
+            self.cfg.evolve_reward and round_idx >= self.cfg.evolve_reward_from_round
         )
         candidates: List[CandidateAnalysis] = []
         for strategy in bundle.strategies:
@@ -387,15 +395,17 @@ class LeroMpV4OuterLoop:
 
         # 4. Pick best, mid-train at mid_frames
         ranked = sorted(
-            candidates, key=lambda c: c.stability_score, reverse=True,
+            candidates,
+            key=lambda c: c.stability_score,
+            reverse=True,
         )
         best_id = ranked[0].strategy_id
-        best_strategy = next(
-            s for s in bundle.strategies if s.strategy_id == best_id
-        )
+        best_strategy = next(s for s in bundle.strategies if s.strategy_id == best_id)
         _log.info(
             "Round %d winner: %s (score=%+.3f) — mid-training at %d frames",
-            round_idx, best_id, ranked[0].stability_score,
+            round_idx,
+            best_id,
+            ranked[0].stability_score,
             self.cfg.mid_frames,
         )
         mid_analysis = self._train_strategy(
@@ -512,7 +522,8 @@ class LeroMpV4OuterLoop:
         return ""
 
     def _extract_prior_winner_code(
-        self, history: List[RoundResult],
+        self,
+        history: List[RoundResult],
     ) -> Optional[str]:
         """v4.1 Change E — return the actual best obs/reward code from
         the most recent completed round so the composer can inject it

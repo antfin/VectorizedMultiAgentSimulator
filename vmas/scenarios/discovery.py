@@ -269,7 +269,8 @@ class Scenario(BaseScenario):
                     if self.comm_proximity:
                         # Mask messages from agents outside comm range
                         dist = torch.linalg.vector_norm(
-                            agent.state.pos - other.state.pos, dim=-1,
+                            agent.state.pos - other.state.pos,
+                            dim=-1,
                             keepdim=True,
                         )
                         in_range = (dist <= self._comms_range).float()

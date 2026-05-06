@@ -4,6 +4,7 @@ Renders configs, metrics, and summaries as readable tables.
 Falls back to plain text when IPython is not available.
 All HTML uses dark-first styling for notebook compatibility.
 """
+
 import base64
 import math
 from pathlib import Path
@@ -13,15 +14,55 @@ from .config import ExperimentSpec
 
 
 METRIC_INFO = {
-    "M1_success_rate": ("M1", "Success Rate", "Episodes where all targets covered", ".1%"),
+    "M1_success_rate": (
+        "M1",
+        "Success Rate",
+        "Episodes where all targets covered",
+        ".1%",
+    ),
     "M2_avg_return": ("M2", "Avg Return", "Mean cumulative reward per episode", ".2f"),
-    "M3_avg_steps": ("M3", "Avg Steps", "Mean steps to completion (max_steps if not done)", ".1f"),
-    "M4_avg_collisions": ("M4", "Collisions/Episode", "Mean agent-agent collisions", ".2f"),
-    "M5_avg_tokens": ("M5", "Tokens/Episode", "Communication tokens used per episode", ".1f"),
-    "M6_coverage_progress": ("M6", "Coverage Progress", "Fraction of targets covered (partial credit)", ".1%"),
-    "M7_sample_efficiency": ("M7", "Sample Efficiency", "Frames to 80% of final reward", ",.0f"),
-    "M8_agent_utilization": ("M8", "Agent Utilization", "CV of per-agent covering (0=balanced)", ".3f"),
-    "M9_spatial_spread": ("M9", "Spatial Spread", "Mean pairwise agent distance (higher=exploring)", ".3f"),
+    "M3_avg_steps": (
+        "M3",
+        "Avg Steps",
+        "Mean steps to completion (max_steps if not done)",
+        ".1f",
+    ),
+    "M4_avg_collisions": (
+        "M4",
+        "Collisions/Episode",
+        "Mean agent-agent collisions",
+        ".2f",
+    ),
+    "M5_avg_tokens": (
+        "M5",
+        "Tokens/Episode",
+        "Communication tokens used per episode",
+        ".1f",
+    ),
+    "M6_coverage_progress": (
+        "M6",
+        "Coverage Progress",
+        "Fraction of targets covered (partial credit)",
+        ".1%",
+    ),
+    "M7_sample_efficiency": (
+        "M7",
+        "Sample Efficiency",
+        "Frames to 80% of final reward",
+        ",.0f",
+    ),
+    "M8_agent_utilization": (
+        "M8",
+        "Agent Utilization",
+        "CV of per-agent covering (0=balanced)",
+        ".3f",
+    ),
+    "M9_spatial_spread": (
+        "M9",
+        "Spatial Spread",
+        "Mean pairwise agent distance (higher=exploring)",
+        ".3f",
+    ),
     "n_envs": ("", "Eval Episodes", "Number of evaluation episodes", ".0f"),
 }
 
@@ -45,6 +86,7 @@ _BLUE = "#3498db"
 def _in_notebook() -> bool:
     try:
         from IPython import get_ipython
+
         return get_ipython() is not None
     except ImportError:
         return False
@@ -54,6 +96,7 @@ def _html(content: str):
     """Display HTML in notebook or print plain text."""
     if _in_notebook():
         from IPython.display import display, HTML
+
         display(HTML(content))
     else:
         print(content)
@@ -70,8 +113,12 @@ def display_figure(fig, close=True):
 
     buf = BytesIO()
     fig.savefig(
-        buf, format="png", dpi=150, bbox_inches="tight",
-        facecolor="white", edgecolor="none",
+        buf,
+        format="png",
+        dpi=150,
+        bbox_inches="tight",
+        facecolor="white",
+        edgecolor="none",
     )
     buf.seek(0)
     b64 = base64.b64encode(buf.read()).decode()
@@ -107,6 +154,7 @@ def _subheader_row(text, colspan=3):
 
 # ── Config display ─────────────────────────────────────────────────
 
+
 def display_config(spec: ExperimentSpec):
     """Display full experiment configuration as a formatted table."""
     task = spec.task.to_dict()
@@ -126,13 +174,13 @@ def _build_config_html(spec, task, train, sweep, total_runs):
     rows += (
         f'<tr style="background:{_BG_HEADER};color:white">'
         f'<td colspan="3" style="padding:10px;font-size:16px">'
-        f'<b>{spec.exp_id.upper()}: {spec.name}</b>'
-        f' &nbsp;&mdash;&nbsp; Total runs: <b>{total_runs}</b></td></tr>'
+        f"<b>{spec.exp_id.upper()}: {spec.name}</b>"
+        f" &nbsp;&mdash;&nbsp; Total runs: <b>{total_runs}</b></td></tr>"
     )
     rows += (
         f'<tr><td colspan="3" style="padding:8px;font-style:italic;'
         f'background:{_BG_SURFACE2};color:{_FG_SECONDARY}">'
-        f'{spec.description}</td></tr>'
+        f"{spec.description}</td></tr>"
     )
 
     def _param_row(k, v, desc):
@@ -164,7 +212,7 @@ def _build_config_html(spec, task, train, sweep, total_runs):
     rows += (
         f'<tr style="background:{_BG_HEADER_GREEN};color:white">'
         f'<td colspan="3" style="padding:6px">'
-        f'<b>Sweep Dimensions</b></td></tr>'
+        f"<b>Sweep Dimensions</b></td></tr>"
     )
     for k, v in sweep.items():
         desc = _task_param_desc(k) or _sweep_param_desc(k)
@@ -257,6 +305,7 @@ def _train_param_desc(key: str) -> str:
 
 # ── Metrics display ────────────────────────────────────────────────
 
+
 def display_metrics(metrics: Dict[str, float], title: str = "Evaluation Metrics"):
     """Display metrics as a formatted table with descriptions."""
     if _in_notebook():
@@ -313,6 +362,7 @@ def _display_metrics_text(metrics: Dict[str, float], title: str):
 
 # ── Sweep summary ──────────────────────────────────────────────────
 
+
 def display_sweep_summary(all_metrics: Dict[str, Dict[str, float]]):
     """Display a summary table of all sweep run results."""
     if not all_metrics:
@@ -325,9 +375,13 @@ def display_sweep_summary(all_metrics: Dict[str, Dict[str, float]]):
     for run_id, metrics in all_metrics.items():
         row = {"run_id": run_id}
         for key in [
-            "M1_success_rate", "M2_avg_return", "M3_avg_steps",
-            "M4_avg_collisions", "M6_coverage_progress",
-            "M8_agent_utilization", "M9_spatial_spread",
+            "M1_success_rate",
+            "M2_avg_return",
+            "M3_avg_steps",
+            "M4_avg_collisions",
+            "M6_coverage_progress",
+            "M8_agent_utilization",
+            "M9_spatial_spread",
         ]:
             info = METRIC_INFO.get(key)
             if info and key in metrics:
@@ -340,12 +394,14 @@ def display_sweep_summary(all_metrics: Dict[str, Dict[str, float]]):
 
     if _in_notebook():
         from IPython.display import display
+
         display(df)
     else:
         print(df.to_string())
 
 
 # ── Environment dimensions ────────────────────────────────────────
+
 
 def display_environment_info(spec: ExperimentSpec):
     """Display computed environment dimensions and physical intuition."""
@@ -358,20 +414,33 @@ def display_environment_info(spec: ExperimentSpec):
     lidar_frac = task.lidar_range / diag
 
     info_rows = [
-        ("Field size", f"{field_w:.1f} x {field_h:.1f}",
-         f"Coords from -{task.x_semidim} to +{task.x_semidim}"),
-        ("Field diagonal", f"~{diag:.2f} units",
-         "Max distance between any two points"),
-        ("Agent speed", f"~{agent_speed} units/step",
-         "Terminal velocity (drag=0.25, force=1.0)"),
-        ("Steps to cross", f"~{crossing_steps} steps",
-         "Diagonal / speed"),
-        ("LiDAR range", f"{task.lidar_range}",
-         f"{lidar_frac:.0%} of diagonal -- very local"),
-        ("Covering range", f"{task.covering_range}",
-         f"K={task.agents_per_target} agents must be this close"),
-        ("Max steps", f"{task.max_steps}",
-         f"~{task.max_steps // crossing_steps}x crossing time"),
+        (
+            "Field size",
+            f"{field_w:.1f} x {field_h:.1f}",
+            f"Coords from -{task.x_semidim} to +{task.x_semidim}",
+        ),
+        ("Field diagonal", f"~{diag:.2f} units", "Max distance between any two points"),
+        (
+            "Agent speed",
+            f"~{agent_speed} units/step",
+            "Terminal velocity (drag=0.25, force=1.0)",
+        ),
+        ("Steps to cross", f"~{crossing_steps} steps", "Diagonal / speed"),
+        (
+            "LiDAR range",
+            f"{task.lidar_range}",
+            f"{lidar_frac:.0%} of diagonal -- very local",
+        ),
+        (
+            "Covering range",
+            f"{task.covering_range}",
+            f"K={task.agents_per_target} agents must be this close",
+        ),
+        (
+            "Max steps",
+            f"{task.max_steps}",
+            f"~{task.max_steps // crossing_steps}x crossing time",
+        ),
     ]
 
     if _in_notebook():
@@ -384,15 +453,15 @@ def display_environment_info(spec: ExperimentSpec):
                 f'<td style="padding:4px 12px;font-family:monospace;'
                 f'color:{_FG_PRIMARY}">{value}</td>'
                 f'<td style="padding:4px 12px;color:{_FG_MUTED}">'
-                f'{note}</td></tr>'
+                f"{note}</td></tr>"
             )
         _html(
             f'<table style="{_table_style()};border-radius:4px;'
             f'overflow:hidden">'
             f'<tr style="background:{_BG_HEADER_BLUE};color:white">'
             f'<td colspan="3" style="padding:8px">'
-            f'<b>Environment Dimensions</b></td></tr>'
-            f'{html_rows}</table>'
+            f"<b>Environment Dimensions</b></td></tr>"
+            f"{html_rows}</table>"
         )
     else:
         print("\n  ENVIRONMENT DIMENSIONS")
@@ -403,6 +472,7 @@ def display_environment_info(spec: ExperimentSpec):
 
 # ── Scrollable output ─────────────────────────────────────────────
 
+
 def scrollable(text: str, height: int = 300, title: str = ""):
     """Display long text in a scrollable container."""
     escaped = text.replace("&", "&amp;").replace("<", "&lt;")
@@ -410,17 +480,17 @@ def scrollable(text: str, height: int = 300, title: str = ""):
     if title:
         header = (
             f'<div style="padding:6px 10px;background:{_BG_HEADER};'
-            f'color:white;font-size:12px;font-weight:bold;'
+            f"color:white;font-size:12px;font-weight:bold;"
             f'border-radius:4px 4px 0 0">{title}</div>'
         )
     if _in_notebook():
         _html(
-            f'{header}'
+            f"{header}"
             f'<div style="max-height:{height}px;overflow-y:auto;'
-            f'border:1px solid {_BORDER};padding:10px;'
-            f'font-family:monospace;font-size:11px;'
-            f'background:{_BG_SURFACE};color:{_FG_PRIMARY};'
-            f'white-space:pre-wrap;line-height:1.5;'
+            f"border:1px solid {_BORDER};padding:10px;"
+            f"font-family:monospace;font-size:11px;"
+            f"background:{_BG_SURFACE};color:{_FG_PRIMARY};"
+            f"white-space:pre-wrap;line-height:1.5;"
             f'border-radius:0 0 4px 4px">{escaped}</div>'
         )
     else:
@@ -444,17 +514,21 @@ def _embed_md_images(md_text: str, base_dir: Path) -> str:
             return m.group(0)
         b64 = base64.b64encode(img_path.read_bytes()).decode()
         ext = img_path.suffix.lstrip(".")
-        mime = {"png": "image/png", "jpg": "image/jpeg",
-                "jpeg": "image/jpeg", "svg": "image/svg+xml"}.get(
-            ext, f"image/{ext}"
-        )
+        mime = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "svg": "image/svg+xml",
+        }.get(ext, f"image/{ext}")
         return f"![{alt}](data:{mime};base64,{b64})"
 
     return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _replace, md_text)
 
 
 def scrollable_md(
-    md_text: str, height: int = 400, title: str = "",
+    md_text: str,
+    height: int = 400,
+    title: str = "",
     image_base: "Path | None" = None,
 ):
     """Display markdown report using IPython.display.Markdown.
@@ -475,11 +549,13 @@ def scrollable_md(
         from IPython.display import display, Markdown, HTML
 
         if title:
-            display(HTML(
-                f'<div style="padding:6px 10px;background:{_BG_HEADER};'
-                f'color:white;font-size:12px;font-weight:bold;'
-                f'border-radius:4px">{title}</div>'
-            ))
+            display(
+                HTML(
+                    f'<div style="padding:6px 10px;background:{_BG_HEADER};'
+                    f"color:white;font-size:12px;font-weight:bold;"
+                    f'border-radius:4px">{title}</div>'
+                )
+            )
         display(Markdown(md_text))
     else:
         if title:
@@ -490,22 +566,36 @@ def scrollable_md(
 
 # ── Metric cards ──────────────────────────────────────────────────
 
-def display_metric_cards(
-    metrics: Dict[str, float], title: str = ""
-):
+
+def display_metric_cards(metrics: Dict[str, float], title: str = ""):
     """Display key metrics as large colored KPI cards."""
     card_specs = [
         ("M1_success_rate", "M1: Success Rate", ".0%", _m1_color),
-        ("M6_coverage_progress", "M6: Coverage", ".0%",
-         lambda v: _GREEN if v > 0.7 else _ORANGE if v > 0.3 else _RED),
-        ("M3_avg_steps", "M3: Avg Steps", ".0f",
-         lambda v: _GREEN if v < 100 else _ORANGE if v < 150 else _RED),
-        ("M9_spatial_spread", "M9: Spatial Spread", ".2f",
-         lambda _: _BLUE),
-        ("M8_agent_utilization", "M8: Agent Util (CV)", ".2f",
-         lambda v: _GREEN if v < 0.5 else _ORANGE),
-        ("M4_avg_collisions", "M4: Collisions", ".1f",
-         lambda v: _GREEN if v < 5 else _ORANGE),
+        (
+            "M6_coverage_progress",
+            "M6: Coverage",
+            ".0%",
+            lambda v: _GREEN if v > 0.7 else _ORANGE if v > 0.3 else _RED,
+        ),
+        (
+            "M3_avg_steps",
+            "M3: Avg Steps",
+            ".0f",
+            lambda v: _GREEN if v < 100 else _ORANGE if v < 150 else _RED,
+        ),
+        ("M9_spatial_spread", "M9: Spatial Spread", ".2f", lambda _: _BLUE),
+        (
+            "M8_agent_utilization",
+            "M8: Agent Util (CV)",
+            ".2f",
+            lambda v: _GREEN if v < 0.5 else _ORANGE,
+        ),
+        (
+            "M4_avg_collisions",
+            "M4: Collisions",
+            ".1f",
+            lambda v: _GREEN if v < 5 else _ORANGE,
+        ),
     ]
 
     if not _in_notebook():
@@ -524,19 +614,21 @@ def display_metric_cards(
         color = color_fn(val)
         cards_html += (
             f'<div style="display:inline-block;width:145px;margin:6px;'
-            f'padding:14px 10px;border-radius:8px;background:{color};'
+            f"padding:14px 10px;border-radius:8px;background:{color};"
             f'color:white;text-align:center;vertical-align:top">'
             f'<div style="font-size:24px;font-weight:bold">'
-            f'{val:{fmt}}</div>'
+            f"{val:{fmt}}</div>"
             f'<div style="font-size:11px;margin-top:4px;opacity:0.9">'
-            f'{label}</div></div>'
+            f"{label}</div></div>"
         )
 
     header = (
         f'<div style="font-size:14px;font-weight:bold;margin-bottom:4px;'
-        f'color:{_FG_PRIMARY}">{title}</div>' if title else ""
+        f'color:{_FG_PRIMARY}">{title}</div>'
+        if title
+        else ""
     )
-    _html(f'{header}<div>{cards_html}</div>')
+    _html(f"{header}<div>{cards_html}</div>")
 
 
 def _m1_color(v):
@@ -549,31 +641,38 @@ def _m1_color(v):
 
 # ── Verdict box ───────────────────────────────────────────────────
 
+
 def display_verdict(success_rate: float, avg_return: float):
     """Display a color-coded verdict box based on success rate."""
     if success_rate > 0.50:
         color, verdict = _ORANGE, "TASK TOO EASY"
-        msg = ("Floor is >50%. Increase difficulty (more targets, "
-               "smaller LiDAR, higher K) before running ER2+.")
+        msg = (
+            "Floor is >50%. Increase difficulty (more targets, "
+            "smaller LiDAR, higher K) before running ER2+."
+        )
     elif success_rate >= 0.20:
         color, verdict = _GREEN, "FLOOR ESTABLISHED"
-        msg = ("Proceed to ER2+. Any communication method must beat "
-               "this floor to justify its complexity.")
+        msg = (
+            "Proceed to ER2+. Any communication method must beat "
+            "this floor to justify its complexity."
+        )
     else:
         color, verdict = _RED, "TASK TOO HARD"
-        msg = ("Floor is <20%. Consider easier configs or more "
-               "training frames, or try the complete config.")
+        msg = (
+            "Floor is <20%. Consider easier configs or more "
+            "training frames, or try the complete config."
+        )
 
     if _in_notebook():
         _html(
             f'<div style="padding:16px;border-left:6px solid {color};'
             f'background:{_BG_SURFACE};margin:10px 0;border-radius:4px">'
             f'<div style="font-size:18px;font-weight:bold;color:{color}">'
-            f'{verdict}</div>'
+            f"{verdict}</div>"
             f'<div style="margin-top:8px;color:{_FG_PRIMARY}">{msg}</div>'
             f'<div style="margin-top:10px;font-size:13px;color:{_FG_MUTED}">'
-            f'M1 Success Rate: {success_rate:.0%} &nbsp;|&nbsp; '
-            f'M2 Avg Return: {avg_return:.2f}</div></div>'
+            f"M1 Success Rate: {success_rate:.0%} &nbsp;|&nbsp; "
+            f"M2 Avg Return: {avg_return:.2f}</div></div>"
         )
     else:
         print(f"\n  {verdict}")
@@ -582,6 +681,7 @@ def display_verdict(success_rate: float, avg_return: float):
 
 
 # ── Run status ─────────────────────────────────────────────────────
+
 
 def display_run_status(spec: ExperimentSpec):
     """Show which runs are complete vs pending."""
@@ -598,17 +698,14 @@ def display_run_status(spec: ExperimentSpec):
         color = _GREEN if done == total else _ORANGE
         _html(
             f'<div style="padding:10px;border:1px solid {_BORDER};'
-            f'margin:10px 0;border-radius:4px;background:{_BG_SURFACE};'
+            f"margin:10px 0;border-radius:4px;background:{_BG_SURFACE};"
             f'color:{_FG_PRIMARY}">'
-            f'<b>Run Status:</b> '
+            f"<b>Run Status:</b> "
             f'<span style="color:{color}">{done}/{total} complete</span>'
-            f' &mdash; {pending} pending</div>'
+            f" &mdash; {pending} pending</div>"
         )
     else:
-        print(
-            f"\n  Run Status: {done}/{total} complete, "
-            f"{pending} pending\n"
-        )
+        print(f"\n  Run Status: {done}/{total} complete, " f"{pending} pending\n")
 
 
 # ── Config selector ──────────────────────────────────────────────
@@ -668,9 +765,7 @@ def display_config_selector(exp_id: str):
     for i, (yaml_path, spec) in enumerate(configs):
         all_runs = list(spec.iter_runs())
         total = len(all_runs)
-        done = sum(
-            1 for rid, _, _, _ in all_runs if rid in completed_runs
-        )
+        done = sum(1 for rid, _, _, _ in all_runs if rid in completed_runs)
 
         if done == 0:
             freshness_key = "new"
@@ -688,27 +783,23 @@ def display_config_selector(exp_id: str):
 
         algos = ", ".join(a.upper() for a in spec.sweep.algorithms)
         agents = spec.sweep.n_agents
-        agents_str = (
-            str(agents[0]) if len(agents) == 1
-            else f"{agents[0]}-{agents[-1]}"
-        )
+        agents_str = str(agents[0]) if len(agents) == 1 else f"{agents[0]}-{agents[-1]}"
         lidar = spec.sweep.lidar_range
-        lidar_str = (
-            str(lidar[0]) if len(lidar) == 1
-            else f"{lidar[0]}-{lidar[-1]}"
-        )
+        lidar_str = str(lidar[0]) if len(lidar) == 1 else f"{lidar[0]}-{lidar[-1]}"
 
-        rows_data.append({
-            "idx": i + 1,
-            "filename": yaml_path.name,
-            "path": yaml_path,
-            "algos": algos,
-            "agents": agents_str,
-            "lidar": lidar_str,
-            "total": total,
-            "done": done,
-            "freshness": freshness_key,
-        })
+        rows_data.append(
+            {
+                "idx": i + 1,
+                "filename": yaml_path.name,
+                "path": yaml_path,
+                "algos": algos,
+                "agents": agents_str,
+                "lidar": lidar_str,
+                "total": total,
+                "done": done,
+                "freshness": freshness_key,
+            }
+        )
 
     if _in_notebook():
         _display_selector_html(exp_id, rows_data)
@@ -720,8 +811,11 @@ def _display_selector_html(exp_id, rows_data):
     table_rows = ""
     for r in rows_data:
         done_color = (
-            _GREEN if r["done"] == r["total"]
-            else _ORANGE if r["done"] > 0 else _FG_MUTED
+            _GREEN
+            if r["done"] == r["total"]
+            else _ORANGE
+            if r["done"] > 0
+            else _FG_MUTED
         )
         badge = _FRESHNESS_BADGE[r["freshness"]]
         table_rows += (
@@ -840,9 +934,7 @@ def select_config(exp_id: str, force_retrain: bool = False):
             print(f"  -> Using: {configs[0][0].name}")
             return configs[0][0], force_retrain
 
-        choice = input(
-            f"  Select config [1-{len(configs)}]: "
-        ).strip()
+        choice = input(f"  Select config [1-{len(configs)}]: ").strip()
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(configs):
@@ -854,6 +946,7 @@ def select_config(exp_id: str, force_retrain: bool = False):
 
 
 # ── Baseline comparison (chart + table side-by-side) ─────────────
+
 
 def display_baseline_comparison(
     heuristic_metrics: Dict[str, float],
@@ -879,8 +972,12 @@ def display_baseline_comparison(
     if fig is not None:
         buf = BytesIO()
         fig.savefig(
-            buf, format="png", dpi=120, bbox_inches="tight",
-            facecolor="white", edgecolor="none",
+            buf,
+            format="png",
+            dpi=120,
+            bbox_inches="tight",
+            facecolor="white",
+            edgecolor="none",
         )
         buf.seek(0)
         b64 = base64.b64encode(buf.read()).decode()
@@ -891,8 +988,12 @@ def display_baseline_comparison(
         plt.close(fig)
 
     keys = [
-        "M1_success_rate", "M2_avg_return", "M3_avg_steps",
-        "M4_avg_collisions", "M6_coverage_progress", "M9_spatial_spread",
+        "M1_success_rate",
+        "M2_avg_return",
+        "M3_avg_steps",
+        "M4_avg_collisions",
+        "M6_coverage_progress",
+        "M9_spatial_spread",
     ]
     table_rows = ""
     for k in keys:
@@ -926,7 +1027,7 @@ def display_baseline_comparison(
         f'color:{_GREEN}">Heuristic</th>'
         f'<th style="padding:6px 8px;text-align:right;'
         f'color:{_RED}">Random</th>'
-        f'</tr>{table_rows}</table>'
+        f"</tr>{table_rows}</table>"
     )
 
     _html(f"""
@@ -937,6 +1038,7 @@ def display_baseline_comparison(
 
 
 # ── Results dashboard (KPI cards + consolidated chart) ────────────
+
 
 def display_results_dashboard(
     trained_metrics: Dict[str, float],
@@ -950,9 +1052,7 @@ def display_results_dashboard(
         comparison_fig: matplotlib figure (from plot_results_comparison)
         run_id: run identifier for title
     """
-    display_metric_cards(
-        trained_metrics, title=f"Trained Policy — {run_id}"
-    )
+    display_metric_cards(trained_metrics, title=f"Trained Policy — {run_id}")
 
     if comparison_fig is not None and _in_notebook():
         import matplotlib.pyplot as plt
@@ -960,8 +1060,12 @@ def display_results_dashboard(
 
         buf = BytesIO()
         comparison_fig.savefig(
-            buf, format="png", dpi=120, bbox_inches="tight",
-            facecolor="white", edgecolor="none",
+            buf,
+            format="png",
+            dpi=120,
+            bbox_inches="tight",
+            facecolor="white",
+            edgecolor="none",
         )
         buf.seek(0)
         b64 = base64.b64encode(buf.read()).decode()
@@ -974,6 +1078,7 @@ def display_results_dashboard(
 
 
 # ── Training videos (first + last side-by-side) ──────────────────
+
 
 def display_training_videos(run_storage):
     """Embed first and last eval videos side-by-side as HTML5 video.
@@ -1016,7 +1121,7 @@ def display_training_videos(run_storage):
             f'<div style="flex:1;min-width:300px;text-align:center">'
             f'<div style="font-weight:bold;margin-bottom:6px;'
             f'color:{_FG_PRIMARY}">{label}</div>'
-            f'<video controls loop autoplay muted '
+            f"<video controls loop autoplay muted "
             f'style="width:100%;border-radius:4px;'
             f'border:1px solid {_BORDER}">'
             f'<source src="data:video/mp4;base64,{b64}" '
@@ -1046,6 +1151,7 @@ def display_training_videos(run_storage):
 
 # ── Artifact tree ─────────────────────────────────────────────────
 
+
 def display_artifact_tree(run_storage):
     """Display output artifacts as a styled HTML tree.
 
@@ -1058,10 +1164,7 @@ def display_artifact_tree(run_storage):
         for f in sorted(base.rglob("*")):
             if f.is_file():
                 size = f.stat().st_size
-                sz = (
-                    f"{size / 1024:.1f} KB" if size > 1024
-                    else f"{size} B"
-                )
+                sz = f"{size / 1024:.1f} KB" if size > 1024 else f"{size} B"
                 print(f"  {f.relative_to(base)}  ({sz})")
         return
 
@@ -1103,7 +1206,7 @@ def display_artifact_tree(run_storage):
             items += (
                 f'<div style="margin-top:8px;padding:2px 0;'
                 f'color:{_FG_SECONDARY};font-weight:bold">'
-                f'{icon} {dirname}/</div>'
+                f"{icon} {dirname}/</div>"
             )
             prev_dir = dirname
 
@@ -1113,9 +1216,9 @@ def display_artifact_tree(run_storage):
             f'<div style="padding:2px 0 2px {indent};'
             f'font-family:monospace;font-size:12px">'
             f'{file_icon} <span style="color:{_FG_PRIMARY}">'
-            f'{filename}</span>'
+            f"{filename}</span>"
             f' <span style="color:{_FG_MUTED};font-size:11px">'
-            f'({sz})</span></div>'
+            f"({sz})</span></div>"
         )
 
     _html(f"""

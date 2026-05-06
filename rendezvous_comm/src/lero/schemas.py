@@ -29,8 +29,7 @@ try:
     from pydantic import BaseModel, ConfigDict, Field
 except ImportError as e:  # pragma: no cover
     raise ImportError(
-        "Pydantic is required for LERO-MP v3. "
-        "Install: pip install 'pydantic>=2.0'"
+        "Pydantic is required for LERO-MP v3. " "Install: pip install 'pydantic>=2.0'"
     ) from e
 
 
@@ -89,7 +88,9 @@ class StrategyCard(BaseModel):
 
     target_domain: Literal["reward", "observation", "shared", "both"]
     target_slot: Literal[
-        "guidance_shared", "guidance_reward", "guidance_observation",
+        "guidance_shared",
+        "guidance_reward",
+        "guidance_observation",
     ]
     focus: List[str] = Field(
         default_factory=list,
@@ -120,8 +121,7 @@ class StrategyCard(BaseModel):
     signal_rationale: Optional[str] = Field(
         default=None,
         description=(
-            "1 sentence justifying include_signals if it deviates from "
-            "['scalar']."
+            "1 sentence justifying include_signals if it deviates from " "['scalar']."
         ),
     )
 
@@ -181,7 +181,10 @@ class EditorCritique(BaseModel):
         max_length=5,
     )
     suggested_signal_change: Literal[
-        "keep", "add_fingerprint", "drop_fingerprint",
-        "add_curve_shape", "drop_curve_shape",
+        "keep",
+        "add_fingerprint",
+        "drop_fingerprint",
+        "add_curve_shape",
+        "drop_curve_shape",
     ] = "keep"
     overall_quality: Literal["keep", "revise", "reject"]

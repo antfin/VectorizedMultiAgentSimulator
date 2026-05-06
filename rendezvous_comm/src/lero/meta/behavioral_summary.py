@@ -31,6 +31,7 @@ _log = logging.getLogger("rendezvous.lero.behavioral")
 
 # ── Tier 1: per-candidate scalars ────────────────────────────────
 
+
 def format_tier1(metrics: Dict) -> str:
     """Compact one-line scalar summary covering M1/M2/M3/M4/M6/M8/M9."""
     m1 = metrics.get("M1_success_rate", 0.0)
@@ -49,10 +50,10 @@ def format_tier1(metrics: Dict) -> str:
 # ── Outlier gate (threshold-based) ────────────────────────────────
 
 _OUTLIER_RULES = {
-    "M4_high_collisions":     lambda m: m.get("M4_avg_collisions", 0) > 50,
-    "M9_clustered":           lambda m: m.get("M9_spatial_spread", 0.5) < 0.2,
-    "M9_scattered":           lambda m: m.get("M9_spatial_spread", 0.5) > 0.8,
-    "M8_role_imbalance":      lambda m: m.get("M8_agent_utilization_cv", 0) > 0.4,
+    "M4_high_collisions": lambda m: m.get("M4_avg_collisions", 0) > 50,
+    "M9_clustered": lambda m: m.get("M9_spatial_spread", 0.5) < 0.2,
+    "M9_scattered": lambda m: m.get("M9_spatial_spread", 0.5) > 0.8,
+    "M8_role_imbalance": lambda m: m.get("M8_agent_utilization_cv", 0) > 0.4,
 }
 
 
@@ -65,6 +66,7 @@ def outlier_flags(metrics: Dict) -> List[str]:
 
 
 # ── Tier 2: behavioral fingerprint ────────────────────────────────
+
 
 def fingerprint_from_csv(csv_path: Path) -> Optional[str]:
     """Read BenchMARL scalar CSV and return a coverage-over-time summary.
@@ -82,10 +84,15 @@ def fingerprint_from_csv(csv_path: Path) -> Optional[str]:
     # BenchMARL CSVs typically have columns ``frames``/``step`` and
     # per-metric columns. We accept a few column-name variants.
     frames_col = _pick_col(rows[0], ("frames", "step", "global_step", "total_frames"))
-    m1_col = _pick_col(rows[0], (
-        "M1_success_rate", "eval/M1_success_rate",
-        "eval/success_rate", "success_rate",
-    ))
+    m1_col = _pick_col(
+        rows[0],
+        (
+            "M1_success_rate",
+            "eval/M1_success_rate",
+            "eval/success_rate",
+            "success_rate",
+        ),
+    )
     if not frames_col or not m1_col:
         return None
     series = [
@@ -101,11 +108,16 @@ def fingerprint_from_csv(csv_path: Path) -> Optional[str]:
     peak_at = peak_frames
     drop = peak - end
     tag = (
-        "reward_hack_shape" if drop > 0.20
-        else "monotonic_rise" if (end >= peak * 0.95 and peak > 0.05)
-        else "plateau_then_collapse" if drop > 0.10
-        else "flat_zero" if peak < 0.02
-        else "flat_nonzero" if peak < 0.05
+        "reward_hack_shape"
+        if drop > 0.20
+        else "monotonic_rise"
+        if (end >= peak * 0.95 and peak > 0.05)
+        else "plateau_then_collapse"
+        if drop > 0.10
+        else "flat_zero"
+        if peak < 0.02
+        else "flat_nonzero"
+        if peak < 0.05
         else "oscillating"
     )
     return (
@@ -139,6 +151,7 @@ def classify_learning_curve(trajectory: Sequence[float]) -> str:
 
 
 # ── Prompt rendering with include_signals gating ──────────────────
+
 
 def format_behavioral_block(
     metrics: Dict,
@@ -183,6 +196,7 @@ def format_behavioral_block(
 
 
 # ── internals ────────────────────────────────────────────────────
+
 
 def _read_scalar_rows(path: Path) -> List[Dict[str, str]]:
     with path.open() as f:

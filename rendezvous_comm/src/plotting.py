@@ -3,6 +3,7 @@
 All plot functions return matplotlib figure objects so notebooks
 can display them inline or save to files.
 """
+
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -12,16 +13,20 @@ import numpy as np
 
 # ── Polimi brand palette ─────────────────────────────────────────────
 from .theme import (
-    POLIMI_DARK_BLUE, POLIMI_LIGHT_BLUE, POLIMI_GREEN,
-    POLIMI_RED, POLIMI_ORANGE, POLIMI_GRAY,
+    POLIMI_DARK_BLUE,
+    POLIMI_LIGHT_BLUE,
+    POLIMI_GREEN,
+    POLIMI_RED,
+    POLIMI_ORANGE,
+    POLIMI_GRAY,
 )
 
 COLORS = {
-    "er1": POLIMI_DARK_BLUE,   # blue  - no comm
-    "er2": POLIMI_ORANGE,      # orange - engineered schema
-    "er3": POLIMI_GREEN,       # green  - symbolic intent
-    "er4": POLIMI_RED,         # red    - event triggered
-    "e1": POLIMI_LIGHT_BLUE,   # light blue - static LLM
+    "er1": POLIMI_DARK_BLUE,  # blue  - no comm
+    "er2": POLIMI_ORANGE,  # orange - engineered schema
+    "er3": POLIMI_GREEN,  # green  - symbolic intent
+    "er4": POLIMI_RED,  # red    - event triggered
+    "e1": POLIMI_LIGHT_BLUE,  # light blue - static LLM
 }
 
 LABELS = {
@@ -45,24 +50,31 @@ METRIC_LABELS = {
 
 
 _POLIMI_CYCLE = [
-    POLIMI_DARK_BLUE, POLIMI_RED, POLIMI_GREEN,
-    POLIMI_ORANGE, POLIMI_LIGHT_BLUE, POLIMI_GRAY,
+    POLIMI_DARK_BLUE,
+    POLIMI_RED,
+    POLIMI_GREEN,
+    POLIMI_ORANGE,
+    POLIMI_LIGHT_BLUE,
+    POLIMI_GRAY,
 ]
 
 
 def set_style():
-    plt.rcParams.update({
-        "figure.figsize": (10, 6),
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
-        "font.size": 12,
-        "axes.grid": True,
-        "grid.alpha": 0.3,
-        "axes.prop_cycle": plt.cycler(color=_POLIMI_CYCLE),
-    })
+    plt.rcParams.update(
+        {
+            "figure.figsize": (10, 6),
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            "font.size": 12,
+            "axes.grid": True,
+            "grid.alpha": 0.3,
+            "axes.prop_cycle": plt.cycler(color=_POLIMI_CYCLE),
+        }
+    )
 
 
 # ── Single experiment plots ────────────────────────────────────────
+
 
 def plot_sweep_heatmap(
     df,
@@ -95,8 +107,9 @@ def plot_sweep_heatmap(
     for i in range(len(pivot.index)):
         for j in range(len(pivot.columns)):
             val = pivot.values[i, j]
-            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                    color="black", fontsize=10)
+            ax.text(
+                j, i, f"{val:.2f}", ha="center", va="center", color="black", fontsize=10
+            )
 
     fig.colorbar(im, ax=ax)
     fig.tight_layout()
@@ -154,6 +167,7 @@ def plot_seed_variance(
 
 # ── Cross-experiment comparison ────────────────────────────────────
 
+
 def plot_baseline_comparison(
     cross_df,
     metric: str = "M1_success_rate",
@@ -183,8 +197,14 @@ def plot_baseline_comparison(
 
     # Value labels on bars
     for bar, mean in zip(bars, means):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                f"{mean:.3f}", ha="center", va="bottom", fontsize=10)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{mean:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
 
     fig.tight_layout()
     return fig
@@ -202,7 +222,9 @@ def plot_metric_radar(
     """
     if metrics is None:
         metrics = [
-            "M1_success_rate", "M2_avg_return", "M3_avg_steps",
+            "M1_success_rate",
+            "M2_avg_return",
+            "M3_avg_steps",
             "M4_avg_collisions",
         ]
 
@@ -248,7 +270,11 @@ def plot_success_vs_tokens(
         ax.scatter(
             mvals.get("M5_avg_tokens", 0),
             mvals.get("M1_success_rate", 0),
-            c=color, s=150, label=label, zorder=5, edgecolors="white",
+            c=color,
+            s=150,
+            label=label,
+            zorder=5,
+            edgecolors="white",
         )
 
     ax.set_xlabel("M5: Tokens / Episode")
@@ -279,11 +305,36 @@ def plot_training_dashboard(
     fig.suptitle(title, fontsize=14, fontweight="bold")
 
     panels = [
-        ("eval_reward_episode_reward_mean", "Eval Reward", axes[0, 0], POLIMI_DARK_BLUE),
-        ("collection_agents_info_targets_covered", "Targets Covered / Step", axes[0, 1], POLIMI_GREEN),
-        ("collection_agents_info_covering_reward", "Covering Reward", axes[1, 0], POLIMI_ORANGE),
-        ("collection_agents_info_collision_rew", "Collision Penalty", axes[1, 1], POLIMI_RED),
-        ("eval_reward_episode_len_mean", "Eval Episode Length", axes[2, 0], POLIMI_LIGHT_BLUE),
+        (
+            "eval_reward_episode_reward_mean",
+            "Eval Reward",
+            axes[0, 0],
+            POLIMI_DARK_BLUE,
+        ),
+        (
+            "collection_agents_info_targets_covered",
+            "Targets Covered / Step",
+            axes[0, 1],
+            POLIMI_GREEN,
+        ),
+        (
+            "collection_agents_info_covering_reward",
+            "Covering Reward",
+            axes[1, 0],
+            POLIMI_ORANGE,
+        ),
+        (
+            "collection_agents_info_collision_rew",
+            "Collision Penalty",
+            axes[1, 1],
+            POLIMI_RED,
+        ),
+        (
+            "eval_reward_episode_len_mean",
+            "Eval Episode Length",
+            axes[2, 0],
+            POLIMI_LIGHT_BLUE,
+        ),
         ("train_agents_entropy", "Policy Entropy", axes[2, 1], POLIMI_GRAY),
     ]
 
@@ -300,8 +351,12 @@ def plot_training_dashboard(
     # Add heuristic reference line on reward plot
     if heuristic_reward is not None:
         axes[0, 0].axhline(
-            y=heuristic_reward, color=POLIMI_RED, linestyle="--",
-            linewidth=1.5, alpha=0.7, label=f"Heuristic ({heuristic_reward:.1f})",
+            y=heuristic_reward,
+            color=POLIMI_RED,
+            linestyle="--",
+            linewidth=1.5,
+            alpha=0.7,
+            label=f"Heuristic ({heuristic_reward:.1f})",
         )
         axes[0, 0].legend(fontsize=9)
 
@@ -322,7 +377,11 @@ def plot_baseline_comparison_bars(
         metric_key: which metric to compare
     """
     set_style()
-    default_colors = {"Random": POLIMI_RED, "Trained": POLIMI_DARK_BLUE, "Heuristic": POLIMI_GREEN}
+    default_colors = {
+        "Random": POLIMI_RED,
+        "Trained": POLIMI_DARK_BLUE,
+        "Heuristic": POLIMI_GREEN,
+    }
     if colors is None:
         colors = default_colors
 
@@ -339,7 +398,10 @@ def plot_baseline_comparison_bars(
         ax.text(
             max(v + 0.02, 0.05) if is_pct else v + abs(v) * 0.05,
             bar.get_y() + bar.get_height() / 2,
-            label, va="center", fontsize=11, fontweight="bold",
+            label,
+            va="center",
+            fontsize=11,
+            fontweight="bold",
         )
 
     if is_pct:
@@ -384,12 +446,20 @@ def plot_baseline_grouped_bars(
     bar_h = 0.35
 
     bars_h = ax.barh(
-        y - bar_h / 2, heur_vals, bar_h,
-        label="Heuristic", color=POLIMI_GREEN, edgecolor="white",
+        y - bar_h / 2,
+        heur_vals,
+        bar_h,
+        label="Heuristic",
+        color=POLIMI_GREEN,
+        edgecolor="white",
     )
     bars_r = ax.barh(
-        y + bar_h / 2, rand_vals, bar_h,
-        label="Random", color=POLIMI_RED, edgecolor="white",
+        y + bar_h / 2,
+        rand_vals,
+        bar_h,
+        label="Random",
+        color=POLIMI_RED,
+        edgecolor="white",
     )
 
     all_vals = heur_vals + rand_vals
@@ -402,8 +472,12 @@ def plot_baseline_grouped_bars(
             v = bar.get_width()
             offset = x_pad * 0.1 if v >= 0 else -x_pad * 0.1
             ax.text(
-                v + offset, bar.get_y() + bar.get_height() / 2,
-                f"{v:.2f}", va="center", fontsize=10, fontweight="bold",
+                v + offset,
+                bar.get_y() + bar.get_height() / 2,
+                f"{v:.2f}",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
             )
 
     ax.set_xlim(x_min - x_pad * 0.3, x_max + x_pad)
@@ -448,14 +522,15 @@ def plot_results_comparison(
     fig, axes = plt.subplots(1, 3, figsize=(14, 4))
 
     for ax, metric in zip(axes, metrics):
-        values = [
-            comparison_dict[p].get(metric, 0) for p in policy_labels
-        ]
+        values = [comparison_dict[p].get(metric, 0) for p in policy_labels]
         bar_colors = [colors.get(p, "#999") for p in policy_labels]
 
         bars = ax.barh(
-            policy_labels, values, color=bar_colors,
-            height=0.5, edgecolor="white",
+            policy_labels,
+            values,
+            color=bar_colors,
+            height=0.5,
+            edgecolor="white",
         )
 
         is_pct = "rate" in metric or "progress" in metric
@@ -467,8 +542,12 @@ def plot_results_comparison(
             label = f"{v:.0%}" if is_pct else f"{v:.2f}"
             offset = v_pad * 0.1
             ax.text(
-                v + offset, bar.get_y() + bar.get_height() / 2,
-                label, va="center", fontsize=10, fontweight="bold",
+                v + offset,
+                bar.get_y() + bar.get_height() / 2,
+                label,
+                va="center",
+                fontsize=10,
+                fontweight="bold",
             )
 
         ax.set_xlim(
@@ -513,10 +592,17 @@ def plot_sweep_overview(
         colors = [cmap(norm(n)) for n in df["n_agents"]]
         # Build legend handles
         from matplotlib.lines import Line2D
+
         handles = [
-            Line2D([0], [0], marker="o", color="w",
-                   markerfacecolor=cmap(norm(n)), markersize=8,
-                   label=f"N={n}")
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=cmap(norm(n)),
+                markersize=8,
+                label=f"N={n}",
+            )
             for n in agents_vals
         ]
     else:
@@ -536,8 +622,12 @@ def plot_sweep_overview(
             continue
 
         ax.scatter(
-            df[x_key], df[y_key],
-            c=colors, s=60, alpha=0.7, edgecolors="white",
+            df[x_key],
+            df[y_key],
+            c=colors,
+            s=60,
+            alpha=0.7,
+            edgecolors="white",
             linewidth=0.5,
         )
         ax.set_xlabel(METRIC_LABELS.get(x_key, x_key), fontsize=10)
@@ -552,9 +642,12 @@ def plot_sweep_overview(
 
     if handles:
         fig.legend(
-            handles=handles, loc="upper right",
-            bbox_to_anchor=(0.99, 0.99), fontsize=9,
-            title="Agents", title_fontsize=10,
+            handles=handles,
+            loc="upper right",
+            bbox_to_anchor=(0.99, 0.99),
+            fontsize=9,
+            title="Agents",
+            title_fontsize=10,
         )
 
     fig.tight_layout(rect=[0, 0, 1, 0.96])

@@ -331,7 +331,6 @@ class Scenario(BaseScenario):
             )
 
         def defender(i):
-
             return Agent(
                 name=f"agent_blue_{i}",
                 shape=Sphere(radius=self.agent_size),
@@ -386,7 +385,6 @@ class Scenario(BaseScenario):
         return agents
 
     def reset_agents(self, env_index: int = None):
-
         if self.spawn_in_formation:
             self._spawn_formation(self.blue_agents, True, env_index)
             if not self.only_blue_formation:
@@ -517,9 +515,9 @@ class Scenario(BaseScenario):
             if env_index is None:
                 self.min_agent_dist_to_ball_blue = min_agent_dist_to_ball_blue
             else:
-                self.min_agent_dist_to_ball_blue[
-                    env_index
-                ] = min_agent_dist_to_ball_blue
+                self.min_agent_dist_to_ball_blue[env_index] = (
+                    min_agent_dist_to_ball_blue
+                )
         if not self.ai_red_agents:
             min_agent_dist_to_ball_red = self.get_closest_agent_to_ball(
                 self.red_agents, env_index
@@ -1481,7 +1479,6 @@ class Scenario(BaseScenario):
         return max_dist
 
     def info(self, agent: Agent):
-
         blue = agent in self.blue_agents
         info = {
             "sparse_reward": self._sparse_reward_blue

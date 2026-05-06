@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -54,8 +53,11 @@ class InnerResult:
 
 def _short_handle(cand: CandidateCode, iter_idx: int, rank: int) -> str:
     src = (cand.obs_source or "") + " " + (cand.reward_source or "")
-    by_lines = [ln.strip() for ln in src.splitlines()
-                if ln.strip().startswith("def ") or "=" in ln]
+    by_lines = [
+        ln.strip()
+        for ln in src.splitlines()
+        if ln.strip().startswith("def ") or "=" in ln
+    ]
     if by_lines:
         snippet = by_lines[0][:60].replace("def ", "").replace("(", "_").rstrip()
         snippet = "".join(c if c.isalnum() or c == "_" else "_" for c in snippet)
@@ -83,11 +85,13 @@ def _build_metrics_history(
     M1<0.02, monotonic_rise otherwise — both reasonable defaults at
     1M-eval where peak ≈ final by construction.
     """
-    return [{
-        "M1": float(metrics.get("M1_success_rate", 0.0)),
-        "M6": float(metrics.get("M6_coverage_progress", 0.0)),
-        "frame": 0,
-    }]
+    return [
+        {
+            "M1": float(metrics.get("M1_success_rate", 0.0)),
+            "M6": float(metrics.get("M6_coverage_progress", 0.0)),
+            "frame": 0,
+        }
+    ]
 
 
 # ── Main loop ───────────────────────────────────────────────────
@@ -120,6 +124,7 @@ def run_inner_loop(
 
     # Repoint the loop's prompt loader at this metaprompt version
     from ..prompts.loader import PromptLoader
+
     base_loop.prompt_loader = PromptLoader(version=metaprompt_version)
 
     messages = base_loop._build_initial_messages(task_overrides)
@@ -153,8 +158,12 @@ def run_inner_loop(
                 cand = inner_llm.generate(messages, seed_base=seed_base)
                 candidates.append(cand)
             except CandidateGenerationFailed as e:
-                _log.warning("v5 inner gen failed cand=%d/%d: %s",
-                             c_idx + 1, n_candidates_per_iter, e)
+                _log.warning(
+                    "v5 inner gen failed cand=%d/%d: %s",
+                    c_idx + 1,
+                    n_candidates_per_iter,
+                    e,
+                )
 
         if not candidates:
             _log.warning("v5 inner iter %d: no valid candidates", iter_idx)
@@ -168,9 +177,7 @@ def run_inner_loop(
             if cand.obs_source:
                 (iter_dir / f"candidate_{j}_obs.py").write_text(cand.obs_source)
             if cand.reward_source:
-                (iter_dir / f"candidate_{j}_reward.py").write_text(
-                    cand.reward_source
-                )
+                (iter_dir / f"candidate_{j}_reward.py").write_text(cand.reward_source)
 
         # 2b. Evaluate each candidate. v9.1 §2.1: optional pre-eval
         # validator AST-checks mandatory_features (e.g. role_one_hot)
@@ -182,15 +189,18 @@ def run_inner_loop(
                 issues = pre_eval_validator(cand) or []
                 if issues:
                     _log.warning(
-                        "v5 inner cand=%d REJECTED pre-eval "
-                        "(skipping training): %s",
-                        j, issues,
+                        "v5 inner cand=%d REJECTED pre-eval " "(skipping training): %s",
+                        j,
+                        issues,
                     )
                     (iter_dir / f"candidate_{j}_rejected.json").write_text(
-                        json.dumps({
-                            "issues": issues,
-                            "reason": "pre_eval_validator",
-                        }, indent=2)
+                        json.dumps(
+                            {
+                                "issues": issues,
+                                "reason": "pre_eval_validator",
+                            },
+                            indent=2,
+                        )
                     )
                     # Synthetic failure metrics (M1=0, M6=0). The scoring
                     # step assigns fitness=-99 via _build_metrics_history.
@@ -207,8 +217,12 @@ def run_inner_loop(
                     continue
             try:
                 m = base_loop._evaluate_candidate(
-                    cand, task_overrides, algorithm, seed,
-                    iter_dir=iter_dir, candidate_idx=j,
+                    cand,
+                    task_overrides,
+                    algorithm,
+                    seed,
+                    iter_dir=iter_dir,
+                    candidate_idx=j,
                 )
                 evaluated.append((cand, m))
             except Exception as e:  # noqa: BLE001
@@ -241,25 +255,31 @@ def run_inner_loop(
                 code_excerpt=(cand.obs_source or cand.reward_source or "")[:1500],
             )
             registry.add(entry)
-            all_outcomes.append(CandidateOutcome(
-                candidate=cand, metrics=m, fitness=fit,
-                shape=shape, iter_idx=iter_idx,
-            ))
+            all_outcomes.append(
+                CandidateOutcome(
+                    candidate=cand,
+                    metrics=m,
+                    fitness=fit,
+                    shape=shape,
+                    iter_idx=iter_idx,
+                )
+            )
 
         best_fit_this_iter = scored[0][2]
         registry.record_iter_best_fitness(best_fit_this_iter)
 
         _log.info(
             "v5 inner iter %d: best fitness=%+.3f shape=%s M1=%.3f",
-            iter_idx, best_fit_this_iter,
-            scored[0][3], scored[0][1].get("M1_success_rate", 0.0),
+            iter_idx,
+            best_fit_this_iter,
+            scored[0][3],
+            scored[0][1].get("M1_success_rate", 0.0),
         )
 
         # 5. Stagnation check + feedback for next iter
         pivot = registry.stagnated(window=2, eps=0.05)
         if pivot:
-            _log.warning("v5 inner iter %d: STAGNATION → pivot prompt",
-                         iter_idx)
+            _log.warning("v5 inner iter %d: STAGNATION → pivot prompt", iter_idx)
 
         # 6. Build feedback + sliding-window message update
         feedback = build_v5_inner_feedback(
@@ -279,8 +299,9 @@ def run_inner_loop(
         ]
 
     if not all_outcomes:
-        return InnerResult(best=None, worst=None, registry=registry,
-                           did_stagnate=False, n_iters_run=0)
+        return InnerResult(
+            best=None, worst=None, registry=registry, did_stagnate=False, n_iters_run=0
+        )
 
     all_outcomes.sort(key=lambda o: o.fitness, reverse=True)
     return InnerResult(

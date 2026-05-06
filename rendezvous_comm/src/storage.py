@@ -13,6 +13,7 @@ Directory layout per run:
       policy.pt             # Trained policy state dict (for export/import)
     report.md               # Human-readable run summary (markdown)
 """
+
 import json
 import re
 from datetime import datetime
@@ -115,6 +116,7 @@ class RunStorage:
     def save_policy(self, policy):
         """Save trained policy state dict to output/policy.pt."""
         import torch
+
         torch.save(policy.state_dict(), self.output_dir / "policy.pt")
 
     def load_policy_state_dict(self) -> Optional[dict]:
@@ -128,11 +130,13 @@ class RunStorage:
         if not path.exists():
             return None
         import torch
+
         return torch.load(path, map_location="cpu", weights_only=True)
 
     def load_benchmarl_scalars(self) -> dict:
         """Load all BenchMARL CSV scalars as {name: [(step, value), ...]}."""
         import csv as csv_mod
+
         scalars = {}
         for sd in self.benchmarl_dir.glob("**/scalars"):
             for csv_file in sorted(sd.glob("*.csv")):
@@ -166,6 +170,7 @@ class ExperimentStorage:
     def __init__(self, exp_id: str, results_root: Optional[Path] = None):
         if results_root is None:
             from .config import RESULTS_DIR
+
             results_root = RESULTS_DIR
         # Route to family-based structure: results/<family>/runs/
         family = _extract_family(exp_id)
@@ -367,8 +372,10 @@ def append_to_master_csv(
     parts = []
     if task.get("use_agent_lidar", False):
         parts.append("al")
-    if (task.get("shared_reward", False)
-            and task.get("agent_collision_penalty", -0.1) > -0.05):
+    if (
+        task.get("shared_reward", False)
+        and task.get("agent_collision_penalty", -0.1) > -0.05
+    ):
         parts.append("lp_sr")
     elif task.get("shared_reward", False):
         parts.append("sr")
@@ -408,9 +415,7 @@ def append_to_master_csv(
         "agent_lidar": task.get("use_agent_lidar", False),
         "dim_c": dim_c,
         "shared_reward": task.get("shared_reward", False),
-        "collision_penalty": task.get(
-            "agent_collision_penalty", -0.1
-        ),
+        "collision_penalty": task.get("agent_collision_penalty", -0.1),
         "agents_per_target": k,
         "lidar_range": task.get("lidar_range", 0.35),
         "n_agents": task.get("n_agents", 4),
@@ -444,7 +449,9 @@ def append_to_master_csv(
 
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
-            f, fieldnames=fieldnames, extrasaction="ignore",
+            f,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
         )
         if not file_exists:
             writer.writeheader()

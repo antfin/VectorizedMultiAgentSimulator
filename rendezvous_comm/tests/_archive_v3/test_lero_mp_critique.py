@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-from typing import List
 
 import pytest
 
 from src.lero.meta.critique import (
-    CritiqueOutcome,
     critique_and_revise,
     parse_critique,
 )
@@ -27,20 +25,26 @@ def _card():
 
 
 def _critic_json(
-    quality="keep", addresses=True, fairness=False, diverges=True,
-    suggested_edits=None, signal_change="keep",
+    quality="keep",
+    addresses=True,
+    fairness=False,
+    diverges=True,
+    suggested_edits=None,
+    signal_change="keep",
 ):
-    return json.dumps({
-        "addresses_focus": addresses,
-        "addresses_focus_reason": "cites proximity_count by name",
-        "cites_specific_features": ["proximity_count"],
-        "has_fairness_restatement": fairness,
-        "has_fairness_restatement_reason": "no fairness-markers detected",
-        "diverges_from_priors": diverges,
-        "suggested_edits": suggested_edits or [],
-        "suggested_signal_change": signal_change,
-        "overall_quality": quality,
-    })
+    return json.dumps(
+        {
+            "addresses_focus": addresses,
+            "addresses_focus_reason": "cites proximity_count by name",
+            "cites_specific_features": ["proximity_count"],
+            "has_fairness_restatement": fairness,
+            "has_fairness_restatement_reason": "no fairness-markers detected",
+            "diverges_from_priors": diverges,
+            "suggested_edits": suggested_edits or [],
+            "suggested_signal_change": signal_change,
+            "overall_quality": quality,
+        }
+    )
 
 
 def test_parse_critique_valid():
@@ -58,16 +62,18 @@ def test_parse_critique_tolerates_leading_prose():
 
 def test_parse_critique_defaults_missing_optionals():
     # Minimal valid JSON missing suggested_signal_change
-    raw = json.dumps({
-        "addresses_focus": True,
-        "addresses_focus_reason": "x",
-        "cites_specific_features": [],
-        "has_fairness_restatement": False,
-        "has_fairness_restatement_reason": "x",
-        "diverges_from_priors": True,
-        "suggested_edits": [],
-        "overall_quality": "keep",
-    })
+    raw = json.dumps(
+        {
+            "addresses_focus": True,
+            "addresses_focus_reason": "x",
+            "cites_specific_features": [],
+            "has_fairness_restatement": False,
+            "has_fairness_restatement_reason": "x",
+            "diverges_from_priors": True,
+            "suggested_edits": [],
+            "overall_quality": "keep",
+        }
+    )
     c = parse_critique(raw)
     assert c.suggested_signal_change == "keep"
 
@@ -131,7 +137,9 @@ def test_critique_and_revise_revise_then_keep():
 def test_critique_and_revise_reject_raises():
     def critic(messages):
         return _critic_json(
-            quality="reject", addresses=False, fairness=True,
+            quality="reject",
+            addresses=False,
+            fairness=True,
         )
 
     with pytest.raises(ValueError):
@@ -148,9 +156,11 @@ def test_critique_and_revise_reject_raises():
 
 def test_critique_and_revise_respects_max_revisions():
     """If Critic keeps saying revise, we cap at max_revisions."""
+
     def critic(messages):
         return _critic_json(
-            quality="revise", suggested_edits=["do more"],
+            quality="revise",
+            suggested_edits=["do more"],
         )
 
     def editor_revise(critique, current_slot):

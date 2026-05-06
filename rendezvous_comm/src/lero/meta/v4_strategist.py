@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from typing import List, Optional, Sequence
 
@@ -27,7 +26,6 @@ from .v4_schemas import (
     BootstrapCard,
     RoundResult,
     StrategyBundle,
-    StrategyV4,
 )
 
 _log = logging.getLogger("rendezvous.lero.mp.v4.strategist")
@@ -54,8 +52,7 @@ def _format_round_history(history: Sequence[RoundResult]) -> str:
     for r in history:
         parts.append(f"## Round {r.round_idx}")
         parts.append(
-            f"  Strategist's diversity rationale: "
-            f"{r.bundle.diversity_rationale}"
+            f"  Strategist's diversity rationale: " f"{r.bundle.diversity_rationale}"
         )
         parts.append(f"  Cross-strategy summary: {r.cross_round_summary}")
         for s in r.bundle.strategies:
@@ -191,17 +188,13 @@ EACH map to a specific diagnosis-gap>
 def _parse_bundle(raw: str, expected_round: int) -> StrategyBundle:
     """Extract the JSON STRATEGY_BUNDLE section."""
     if "### STRATEGY_BUNDLE" not in raw:
-        raise ValueError(
-            "Strategist response missing '### STRATEGY_BUNDLE' header"
-        )
+        raise ValueError("Strategist response missing '### STRATEGY_BUNDLE' header")
     body = raw.split("### STRATEGY_BUNDLE", 1)[1]
     json_start = body.find("{")
     json_end = body.rfind("}")
     if json_start < 0 or json_end < json_start:
-        raise ValueError(
-            "STRATEGY_BUNDLE section did not contain valid JSON"
-        )
-    blob = body[json_start:json_end + 1]
+        raise ValueError("STRATEGY_BUNDLE section did not contain valid JSON")
+    blob = body[json_start : json_end + 1]
     try:
         data = json.loads(blob)
     except json.JSONDecodeError as e:
@@ -258,7 +251,9 @@ def emit_strategies(
             last_err = e
             _log.warning(
                 "Strategist parse failed on attempt %d/3 (round=%d): %s",
-                attempt, round_idx, e,
+                attempt,
+                round_idx,
+                e,
             )
     if bundle is None:
         raise ValueError(
@@ -280,7 +275,9 @@ def emit_strategies(
         if s.strategy_id != expected_id:
             _log.warning(
                 "Strategist used id '%s' at position %d; renaming to %s.",
-                s.strategy_id, i, expected_id,
+                s.strategy_id,
+                i,
+                expected_id,
             )
             s.strategy_id = expected_id
 
@@ -296,7 +293,9 @@ def emit_strategies(
 
     _log.info(
         "v4 strategist round=%d emitted %d strategies in %.1fs: %s",
-        round_idx, len(bundle.strategies), elapsed,
+        round_idx,
+        len(bundle.strategies),
+        elapsed,
         ", ".join(
             f"{s.strategy_id}({s.target_domain}"
             + (",revert" if s.revert_to_baseline_reward else "")

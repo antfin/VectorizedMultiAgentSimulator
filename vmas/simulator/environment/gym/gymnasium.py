@@ -37,9 +37,7 @@ class GymnasiumWrapper(gym.Env, BaseGymWrapper):
             env.num_envs == 1
         ), "GymnasiumEnv wrapper only supports singleton VMAS environment! For vectorized environments, use vectorized wrapper with `wrapper=gymnasium_vec`."
 
-        assert (
-            self._env.terminated_truncated
-        ), "GymnasiumWrapper is only compatible with termination and truncation flags. Please set `terminated_truncated=True` in the VMAS environment."
+        assert self._env.terminated_truncated, "GymnasiumWrapper is only compatible with termination and truncation flags. Please set `terminated_truncated=True` in the VMAS environment."
         self.observation_space = _convert_space(self._env.observation_space)
         self.action_space = _convert_space(self._env.action_space)
         self.render_mode = render_mode

@@ -27,16 +27,13 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from ..llm_client import LLMClient
 from ..v5.inner_loop import InnerResult
-from .diagnosis import V7Diagnosis, diagnose_inner_result
+from .diagnosis import V7Diagnosis
 from .strategy import (
-    DiagnosisLabel,
     SuccessSignature,
     V7Strategy,
     V7StrategyBundle,
@@ -202,12 +199,13 @@ def enumerate_bundle(
         try:
             js = raw.find("{")
             je = raw.rfind("}")
-            data = json.loads(raw[js:je + 1])
+            data = json.loads(raw[js : je + 1])
             strategies = [_parse_strategy(s) for s in data["strategies"]]
             chosen = int(data.get("chosen_idx", 0))
             chosen = max(0, min(len(strategies) - 1, chosen))
             bundle = V7StrategyBundle(
-                strategies=strategies, chosen_idx=chosen,
+                strategies=strategies,
+                chosen_idx=chosen,
             )
             _log.info(
                 "v7 bundle: %d strategies, chosen='%s' (score=%.1f)",
@@ -227,7 +225,7 @@ def enumerate_bundle(
 
 @dataclass
 class V7ReflectionDecision:
-    next_action: str         # stop | refine_current_strategy | refine_inner_prompt_for_current | switch_to_next_strategy
+    next_action: str  # stop | refine_current_strategy | refine_inner_prompt_for_current | switch_to_next_strategy
     rationale: str
     slot_edits: Dict[str, str] = field(default_factory=dict)
     bundle_demote: List[str] = field(default_factory=list)
@@ -241,9 +239,11 @@ def _build_reflect_prompt(
 ) -> str:
     cur = bundle.current()
     best_code = (inner.best.candidate.obs_source if inner.best else "")[:1500]
-    worst_code = (inner.worst.candidate.obs_source
-                  if inner.worst and inner.worst is not inner.best
-                  else "")[:800]
+    worst_code = (
+        inner.worst.candidate.obs_source
+        if inner.worst and inner.worst is not inner.best
+        else ""
+    )[:800]
     return f"""[ACTIVE STRATEGY]
 name: {cur.name}
 full_solution: {cur.full_solution}
@@ -303,7 +303,7 @@ def reflect_and_decide(
         try:
             js = raw.find("{")
             je = raw.rfind("}")
-            data = json.loads(raw[js:je + 1])
+            data = json.loads(raw[js : je + 1])
             slot_edits = dict(data.get("slot_edits") or {})
             bu = data.get("bundle_update") or {}
             demote = list(bu.get("demote") or [])

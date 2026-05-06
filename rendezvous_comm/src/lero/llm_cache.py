@@ -49,9 +49,7 @@ class LLMCache:
                 )
             mode = env_mode  # type: ignore[assignment]
         if mode not in _VALID_MODES:
-            raise ValueError(
-                f"mode={mode!r} must be one of {_VALID_MODES}"
-            )
+            raise ValueError(f"mode={mode!r} must be one of {_VALID_MODES}")
         self.mode: CacheMode = mode
         self.root = Path(
             root

@@ -1,8 +1,8 @@
 # v9 Phase 6 — full meta-LLM chain-of-thought (strategy + per-outer reflections)
 
-**Date:** 2026-05-03  
-**Source:** `results/lero_v9/lero_v9_rendezvous_k2_2x3/20260502_1912_s0/`  
-**Run:** seed=0, max_outer=5, bundle_size=5, eval_frames=1M, total wall 6h 42min  
+**Date:** 2026-05-03
+**Source:** `results/lero_v9/lero_v9_rendezvous_k2_2x3/20260502_1912_s0/`
+**Run:** seed=0, max_outer=5, bundle_size=5, eval_frames=1M, total wall 6h 42min
 **Model:** gpt-5.4-mini, temperature=0.8
 
 All text below is verbatim from the meta-LLM — `_bundle_init.json`, `outer_*/_decision.json`, and `_meta_memory.jsonl`. No edits.
@@ -200,7 +200,7 @@ Each outer: the meta-LLM receives the analyzer facts (`_facts.json`), the bundle
 - touches_both_lidars: True
 - role_one_hot_present: True
 
-**Diagnosis label:** `translation_failure`  
+**Diagnosis label:** `translation_failure`
 **Next action:** `refine_current`
 
 **memory_recall:**
@@ -248,7 +248,7 @@ Each outer: the meta-LLM receives the analyzer facts (`_facts.json`), the bundle
 - touches_both_lidars: True
 - role_one_hot_present: True
 
-**Diagnosis label:** `partial`  
+**Diagnosis label:** `partial`
 **Next action:** `refine_current`
 
 **memory_recall:**
@@ -296,7 +296,7 @@ Each outer: the meta-LLM receives the analyzer facts (`_facts.json`), the bundle
 - touches_both_lidars: True
 - role_one_hot_present: True
 
-**Diagnosis label:** `partial`  
+**Diagnosis label:** `partial`
 **Next action:** `refine_current`
 
 **memory_recall:**
@@ -345,7 +345,7 @@ Each outer: the meta-LLM receives the analyzer facts (`_facts.json`), the bundle
 - touches_both_lidars: True
 - role_one_hot_present: True
 
-**Diagnosis label:** `partial`  
+**Diagnosis label:** `partial`
 **Next action:** `refine_current`
 
 **memory_recall:**
@@ -394,7 +394,7 @@ Each outer: the meta-LLM receives the analyzer facts (`_facts.json`), the bundle
 - touches_both_lidars: True
 - role_one_hot_present: False
 
-**Diagnosis label:** `translation_failure`  
+**Diagnosis label:** `translation_failure`
 **Next action:** `refine_current`
 
 **memory_recall:**

@@ -63,6 +63,7 @@ def main(argv=None) -> int:
     # OVH-encrypted env decrypt (no-op locally)
     if os.environ.get("LERO_ENCRYPTED"):
         from src.secrets_util import decrypt_and_load_env
+
         n_keys = len(decrypt_and_load_env())
         log.info("Decrypted %d LLM key(s) from LERO_ENCRYPTED", n_keys)
 
@@ -70,6 +71,7 @@ def main(argv=None) -> int:
     import random as _random
     import numpy as _np
     import torch as _torch
+
     _random.seed(args.seed)
     _np.random.seed(args.seed)
     _torch.manual_seed(args.seed)
@@ -122,6 +124,7 @@ def main(argv=None) -> int:
     # Mirror prompts to writable area on OVH (read-only code mount)
     if os.environ.get("RESULTS_DIR"):
         import shutil
+
         src_prompts = _ROOT / "src" / "lero" / "prompts"
         dst_prompts = output_root / "_base_prompts"
         if src_prompts.exists() and not dst_prompts.exists():
@@ -129,26 +132,32 @@ def main(argv=None) -> int:
             log.info("Mirrored read-only prompts %s → %s", src_prompts, dst_prompts)
 
     # Manifest
-    (output_root / "run_manifest.json").write_text(json.dumps({
-        "exp_id": spec.exp_id,
-        "name": spec.name,
-        "config_source": str(cfg_path),
-        "seed": args.seed,
-        "algorithm": args.algorithm,
-        "description_path": spec.v4.description_path,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }, indent=2))
+    (output_root / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "exp_id": spec.exp_id,
+                "name": spec.name,
+                "config_source": str(cfg_path),
+                "seed": args.seed,
+                "algorithm": args.algorithm,
+                "description_path": spec.v4.description_path,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            indent=2,
+        )
+    )
 
     log.info(
         "v4 ready: exp=%s, description=%s, out=%s",
-        spec.exp_id, spec.v4.description_path, output_root,
+        spec.exp_id,
+        spec.v4.description_path,
+        output_root,
     )
 
     if args.dry_run:
         log.info("Dry run — exiting before bootstrap.")
         return 0
 
-    from src.lero.config import LLMConfig
     inner_llm_cfg = spec.llm
     outer = LeroMpV4OuterLoop(
         spec=spec,
@@ -163,8 +172,10 @@ def main(argv=None) -> int:
 
     log.info(
         "=== DONE === final_M1=%.3f peak_M1=%.3f score=%+.3f elapsed=%.0fs",
-        result.final_M1, result.peak_M1,
-        result.final_stability_score, result.elapsed_seconds,
+        result.final_M1,
+        result.peak_M1,
+        result.final_stability_score,
+        result.elapsed_seconds,
     )
     return 0
 

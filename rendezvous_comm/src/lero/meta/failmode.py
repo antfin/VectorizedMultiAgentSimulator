@@ -16,8 +16,8 @@ See docs/lero_metaprompt_plan.md §7.3 for the taxonomy table.
 
 from dataclasses import dataclass
 from enum import Enum
-from statistics import mean, pstdev
-from typing import Any, Dict, List, Optional, Sequence
+from statistics import pstdev
+from typing import Any, Dict, Optional, Sequence
 
 
 class FailMode(str, Enum):
@@ -28,24 +28,24 @@ class FailMode(str, Enum):
     Priority is encoded in ``classify_inner_result`` below, not here.
     """
 
-    HEALTHY = "healthy"                     # none of the below fired
+    HEALTHY = "healthy"  # none of the below fired
     FAIRNESS_VIOLATION = "fairness_violation"
     NAN_CRASH = "nan_crash"
     DIM_MISMATCH = "dim_mismatch"
-    REWARD_HACK = "reward_hack"             # peak-vs-final gap too large
+    REWARD_HACK = "reward_hack"  # peak-vs-final gap too large
     REWARD_MAGNITUDE_INFLATION = "reward_magnitude_inflation"
-    STUCK = "stuck"                          # low M1, low variance, no improvement
+    STUCK = "stuck"  # low M1, low variance, no improvement
 
 
 @dataclass(frozen=True)
 class FailModeThresholds:
     """Knobs for the classifier. Defaults match the plan §6.2, §7.3."""
 
-    peak_vs_final_gap: float = 0.20         # reward-hack trigger
-    low_m1: float = 0.10                     # "stuck" only if best < this
-    stuck_variance: float = 0.05             # across-seed σ(M1) ≤ this → stuck
-    inflation_ratio: float = 2.0             # |M2| growth across iters
-    min_history_for_inflation: int = 2       # need ≥2 iters to see growth
+    peak_vs_final_gap: float = 0.20  # reward-hack trigger
+    low_m1: float = 0.10  # "stuck" only if best < this
+    stuck_variance: float = 0.05  # across-seed σ(M1) ≤ this → stuck
+    inflation_ratio: float = 2.0  # |M2| growth across iters
+    min_history_for_inflation: int = 2  # need ≥2 iters to see growth
     # Inflation baseline floor: when historical |M2| is near zero the
     # growth ratio explodes (anything / ~0 is huge) and the classifier
     # would fire on noise. Require the max prior |M2| to exceed this
@@ -55,6 +55,7 @@ class FailModeThresholds:
 
 
 # ── per-candidate inspection ─────────────────────────────────────
+
 
 def candidate_error_type(metrics: Dict[str, Any]) -> Optional[str]:
     """Return the ``_error_type`` recorded by the inner loop, if any.
@@ -67,6 +68,7 @@ def candidate_error_type(metrics: Dict[str, Any]) -> Optional[str]:
 
 
 # ── outer-loop rollup for one template ───────────────────────────
+
 
 def classify_inner_result(
     candidate_metrics: Sequence[Dict[str, Any]],
@@ -110,12 +112,17 @@ def classify_inner_result(
         if candidate_error_type(m) in {"KeyError", "RuntimeError", "DimMismatch"}:
             return FailMode.DIM_MISMATCH
         err = (m.get("_error") or "").lower()
-        if any(tok in err for tok in ("keyerror", "shape", "dimension", "size mismatch")):
+        if any(
+            tok in err for tok in ("keyerror", "shape", "dimension", "size mismatch")
+        ):
             return FailMode.DIM_MISMATCH
 
     # 4. Reward-magnitude inflation — |M2| grows across templates but
     #    M1 stays flat. Only detectable with history.
-    if template_history and len(template_history) >= thresholds.min_history_for_inflation:
+    if (
+        template_history
+        and len(template_history) >= thresholds.min_history_for_inflation
+    ):
         prev_absM2 = [abs(h["best_M2"]) for h in template_history if "best_M2" in h]
         cur_valid = [m for m in candidate_metrics if "_error" not in m]
         # Guard: if historical |M2| is still near zero (typical for
@@ -124,9 +131,7 @@ def classify_inner_result(
         # until there is a real baseline to grow from.
         max_prev = max(prev_absM2) if prev_absM2 else 0.0
         if cur_valid and max_prev >= thresholds.inflation_m2_floor:
-            cur_absM2 = max(
-                abs(m.get("M2_avg_return", 0.0)) for m in cur_valid
-            )
+            cur_absM2 = max(abs(m.get("M2_avg_return", 0.0)) for m in cur_valid)
             cur_M1 = max(m.get("M1_success_rate", 0.0) for m in cur_valid)
             prev_M1 = max(h.get("best_M1", 0.0) for h in template_history)
             ratio = cur_absM2 / max_prev
@@ -144,8 +149,7 @@ def classify_inner_result(
     # 6. Stuck — best M1 low AND cross-seed variance low (plateau that
     #    is not noise). Needs multi-seed info stored on candidates.
     stuck_candidates = [
-        m for m in candidate_metrics
-        if "_error" not in m and "M1_per_seed" in m
+        m for m in candidate_metrics if "_error" not in m and "M1_per_seed" in m
     ]
     if stuck_candidates:
         best = max(
@@ -168,13 +172,13 @@ def classify_inner_result(
 # See plan §7.3. ``fairness`` is never an edit target — the slot is
 # FROZEN and the meta-prompt optimizer is told so.
 SLOT_POLICY_MAP: Dict[FailMode, str] = {
-    FailMode.FAIRNESS_VIOLATION: "state_schema",           # clarify what IS allowed
-    FailMode.NAN_CRASH: "output_spec",                      # tighten bound on output
-    FailMode.DIM_MISMATCH: "state_schema",                  # clarify shapes
-    FailMode.REWARD_HACK: "guidance",                       # add anti-hack constraint
-    FailMode.REWARD_MAGNITUDE_INFLATION: "guidance",        # cap magnitudes
-    FailMode.STUCK: "examples",                             # rotate / add examples
-    FailMode.HEALTHY: "guidance",                           # round-robin default
+    FailMode.FAIRNESS_VIOLATION: "state_schema",  # clarify what IS allowed
+    FailMode.NAN_CRASH: "output_spec",  # tighten bound on output
+    FailMode.DIM_MISMATCH: "state_schema",  # clarify shapes
+    FailMode.REWARD_HACK: "guidance",  # add anti-hack constraint
+    FailMode.REWARD_MAGNITUDE_INFLATION: "guidance",  # cap magnitudes
+    FailMode.STUCK: "examples",  # rotate / add examples
+    FailMode.HEALTHY: "guidance",  # round-robin default
 }
 
 
@@ -196,7 +200,11 @@ def pick_slot_to_edit(
         return SLOT_POLICY_MAP[fail_mode]
     if policy == "round_robin":
         order = [
-            "guidance", "examples", "output_spec", "state_schema", "task_context",
+            "guidance",
+            "examples",
+            "output_spec",
+            "state_schema",
+            "task_context",
         ]
         if not history:
             return order[0]

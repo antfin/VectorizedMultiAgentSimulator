@@ -17,7 +17,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from ..llm_client import LLMClient
 from .inner_loop import InnerResult
@@ -59,9 +59,7 @@ def _format_inner_trajectory(inner: InnerResult) -> str:
         return "(no inner iterations completed)"
     parts = ["Inner-loop fitness trajectory (one value per inner iter):"]
     parts.append(
-        "  " + " → ".join(
-            f"{f:+.3f}" for f in inner.registry.fitness_trajectory
-        )
+        "  " + " → ".join(f"{f:+.3f}" for f in inner.registry.fitness_trajectory)
     )
     if inner.best:
         parts.append(
@@ -151,7 +149,7 @@ def _parse_slot_edits(raw: str) -> Dict[str, str]:
     json_end = body.rfind("}")
     if json_start < 0 or json_end < json_start:
         raise ValueError("SLOT_EDITS section did not contain valid JSON")
-    blob = body[json_start:json_end + 1]
+    blob = body[json_start : json_end + 1]
     data = json.loads(blob)
     edits = {}
     for k, v in data.items():
@@ -179,6 +177,7 @@ def refine_metaprompt(
     Returns the dict of slot edits the meta-LLM produced.
     """
     import shutil
+
     if next_prompt_dir.exists():
         shutil.rmtree(next_prompt_dir)
     shutil.copytree(prev_prompt_dir, next_prompt_dir)
@@ -209,8 +208,7 @@ def refine_metaprompt(
             break
         except (ValueError, json.JSONDecodeError) as e:
             last_err = e
-            _log.warning("meta-refiner parse failed attempt %d/3: %s",
-                         attempt, e)
+            _log.warning("meta-refiner parse failed attempt %d/3: %s", attempt, e)
 
     if edits is None:
         raise ValueError(
@@ -223,8 +221,7 @@ def refine_metaprompt(
         (next_prompt_dir / f"{slot}.txt").write_text(normalized)
 
     (next_prompt_dir / "_refiner_response.txt").write_text(raw)
-    diagnosis_match = re.search(r"### DIAGNOSIS\s*\n(.*?)(?=### |$)",
-                                raw, re.DOTALL)
+    diagnosis_match = re.search(r"### DIAGNOSIS\s*\n(.*?)(?=### |$)", raw, re.DOTALL)
     if diagnosis_match:
         (next_prompt_dir / "_refiner_diagnosis.md").write_text(
             diagnosis_match.group(1).strip()
@@ -232,6 +229,8 @@ def refine_metaprompt(
 
     _log.info(
         "v5 meta-refiner edited %d slots in %.1fs: %s",
-        len(edits), elapsed, ", ".join(edits.keys()),
+        len(edits),
+        elapsed,
+        ", ".join(edits.keys()),
     )
     return edits

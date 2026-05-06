@@ -1,7 +1,6 @@
 """Tests for the metrics module (M1-M9)."""
+
 import csv
-import tempfile
-from pathlib import Path
 
 import pytest
 import torch
@@ -28,7 +27,9 @@ def _make_info(n_envs, covering_reward=0.0, collision_rew=0.0, targets_covered=0
     }
 
 
-def _make_agent_info_list(n_agents, n_envs, covering_rewards=None, collision_rew=0.0, targets_covered=0):
+def _make_agent_info_list(
+    n_agents, n_envs, covering_rewards=None, collision_rew=0.0, targets_covered=0
+):
     """Build a list of per-agent info dicts."""
     if covering_rewards is None:
         covering_rewards = [0.0] * n_agents
@@ -52,9 +53,15 @@ class TestMetricKeys:
         m = EpisodeMetrics().init(4, n_targets=3, n_agents=2)
         result = m.compute(max_steps=100)
         expected = {
-            "M1_success_rate", "M2_avg_return", "M3_avg_steps",
-            "M4_avg_collisions", "M5_avg_tokens", "M6_coverage_progress",
-            "M8_agent_utilization", "M9_spatial_spread", "n_envs",
+            "M1_success_rate",
+            "M2_avg_return",
+            "M3_avg_steps",
+            "M4_avg_collisions",
+            "M5_avg_tokens",
+            "M6_coverage_progress",
+            "M8_agent_utilization",
+            "M9_spatial_spread",
+            "n_envs",
         }
         assert set(result.keys()) == expected
 
@@ -105,9 +112,11 @@ class TestM1SuccessRate:
             tc = torch.zeros(n_envs)
             tc[:5] = 1
             info = [
-                {"covering_reward": torch.zeros(n_envs),
-                 "collision_rew": torch.zeros(n_envs),
-                 "targets_covered": tc},
+                {
+                    "covering_reward": torch.zeros(n_envs),
+                    "collision_rew": torch.zeros(n_envs),
+                    "targets_covered": tc,
+                },
             ] * 2
             m.update_step(rewards, dones, info, step)
         result = m.compute(max_steps=100)
@@ -122,9 +131,9 @@ class TestM1SuccessRate:
         info = _make_agent_info_list(2, n_envs, targets_covered=0)
         m.update_step(rewards, dones, info, step=5)
         result = m.compute(max_steps=100)
-        assert result["M1_success_rate"] == pytest.approx(0.0), (
-            "dones=True without target coverage was counted as success"
-        )
+        assert result["M1_success_rate"] == pytest.approx(
+            0.0
+        ), "dones=True without target coverage was counted as success"
 
 
 # ── Test M2: Average Return ──────────────────────────────────────
@@ -194,9 +203,11 @@ class TestM3Steps:
             if step < n_targets:
                 tc[:2] = 1  # first 2 envs cover 1 target per step
             info = [
-                {"covering_reward": torch.zeros(n_envs),
-                 "collision_rew": torch.zeros(n_envs),
-                 "targets_covered": tc},
+                {
+                    "covering_reward": torch.zeros(n_envs),
+                    "collision_rew": torch.zeros(n_envs),
+                    "targets_covered": tc,
+                },
             ] * 2
             m.update_step(rewards, dones, info, step)
 
@@ -292,7 +303,9 @@ class TestM7SampleEfficiency:
         scalars = self._make_csv_dir(tmp_path)
 
         # Write eval reward CSV
-        with open(scalars / "eval_reward_episode_reward_mean.csv", "w", newline="") as f:
+        with open(
+            scalars / "eval_reward_episode_reward_mean.csv", "w", newline=""
+        ) as f:
             w = csv.writer(f)
             w.writerow(["step", "value"])
             w.writerows([(0, 1.0), (10, 5.0), (20, 8.0), (30, 10.0)])
@@ -310,7 +323,9 @@ class TestM7SampleEfficiency:
     def test_never_reaches_threshold(self, tmp_path):
         scalars = self._make_csv_dir(tmp_path)
 
-        with open(scalars / "eval_reward_episode_reward_mean.csv", "w", newline="") as f:
+        with open(
+            scalars / "eval_reward_episode_reward_mean.csv", "w", newline=""
+        ) as f:
             w = csv.writer(f)
             w.writerow(["step", "value"])
             w.writerows([(0, -10.0), (10, -5.0)])
@@ -331,7 +346,9 @@ class TestM7SampleEfficiency:
     def test_immediate_threshold(self, tmp_path):
         scalars = self._make_csv_dir(tmp_path)
 
-        with open(scalars / "eval_reward_episode_reward_mean.csv", "w", newline="") as f:
+        with open(
+            scalars / "eval_reward_episode_reward_mean.csv", "w", newline=""
+        ) as f:
             w = csv.writer(f)
             w.writerow(["step", "value"])
             w.writerows([(0, 10.0), (5, 10.0)])
@@ -360,7 +377,8 @@ class TestM8AgentUtilization:
 
         # All agents get equal covering reward
         info = _make_agent_info_list(
-            n_agents, n_envs,
+            n_agents,
+            n_envs,
             covering_rewards=[1.0, 1.0, 1.0],
         )
         for step in range(10):
@@ -379,7 +397,8 @@ class TestM8AgentUtilization:
 
         # Only agent 0 covers targets
         info = _make_agent_info_list(
-            n_agents, n_envs,
+            n_agents,
+            n_envs,
             covering_rewards=[1.0, 0.0, 0.0],
         )
         for step in range(10):
@@ -415,10 +434,12 @@ class TestM9SpatialSpread:
         info = _make_agent_info_list(n_agents, n_envs)
 
         # Agents at (-1,0), (0,0), (1,0) — spread 1.0 apart
-        positions = torch.tensor([
-            [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
-            [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
-        ])
+        positions = torch.tensor(
+            [
+                [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
+                [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
+            ]
+        )
         m.update_step(rewards, dones, info, step=0, agent_positions=positions)
         result = m.compute(max_steps=200)
         # Pairwise distances: (1, 1, 2) → mean = 4/3 ≈ 1.333
@@ -445,20 +466,27 @@ class TestM9SpatialSpread:
 
         # Spread case
         m_spread = EpisodeMetrics().init(n_envs, n_targets=7, n_agents=n_agents)
-        positions_spread = torch.tensor([
-            [[-1, -1], [1, -1], [-1, 1], [1, 1]],
-        ], dtype=torch.float).expand(n_envs, -1, -1)
+        positions_spread = torch.tensor(
+            [
+                [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+            ],
+            dtype=torch.float,
+        ).expand(n_envs, -1, -1)
         dones = torch.zeros(n_envs, dtype=torch.bool)
         rewards = [torch.zeros(n_envs)] * n_agents
         info = _make_agent_info_list(n_agents, n_envs)
-        m_spread.update_step(rewards, dones, info, step=0, agent_positions=positions_spread)
+        m_spread.update_step(
+            rewards, dones, info, step=0, agent_positions=positions_spread
+        )
         r_spread = m_spread.compute(max_steps=200)
 
         # Clumped case
         m_clump = EpisodeMetrics().init(n_envs, n_targets=7, n_agents=n_agents)
         positions_clump = torch.zeros(n_envs, n_agents, 2)
         positions_clump += torch.randn_like(positions_clump) * 0.01
-        m_clump.update_step(rewards, dones, info, step=0, agent_positions=positions_clump)
+        m_clump.update_step(
+            rewards, dones, info, step=0, agent_positions=positions_clump
+        )
         r_clump = m_clump.compute(max_steps=200)
 
         assert r_spread["M9_spatial_spread"] > r_clump["M9_spatial_spread"]
@@ -494,10 +522,13 @@ class TestCrossExperimentUtils:
         assert compute_transfer_score(source, target) == pytest.approx(0.75)
 
     def test_transfer_score_zero_source(self):
-        assert compute_transfer_score(
-            {"M1_success_rate": 0.0},
-            {"M1_success_rate": 0.5},
-        ) == 0.0
+        assert (
+            compute_transfer_score(
+                {"M1_success_rate": 0.0},
+                {"M1_success_rate": 0.5},
+            )
+            == 0.0
+        )
 
     def test_ate(self):
         baseline = {"M1_success_rate": 0.8, "M2_avg_return": 50.0}
@@ -512,10 +543,13 @@ class TestCrossExperimentUtils:
         assert compute_delta_return_per_msg(with_comm, no_comm) == pytest.approx(0.2)
 
     def test_delta_return_zero_tokens(self):
-        assert compute_delta_return_per_msg(
-            {"M2_avg_return": 60.0, "M5_avg_tokens": 0.0},
-            {"M2_avg_return": 40.0},
-        ) == 0.0
+        assert (
+            compute_delta_return_per_msg(
+                {"M2_avg_return": 60.0, "M5_avg_tokens": 0.0},
+                {"M2_avg_return": 40.0},
+            )
+            == 0.0
+        )
 
 
 # ── Test multi-step episode ──────────────────────────────────────
@@ -531,7 +565,9 @@ class TestMultiStepEpisode:
         max_steps = 50
 
         m = EpisodeMetrics().init(
-            n_envs, n_targets=n_targets, n_agents=n_agents,
+            n_envs,
+            n_targets=n_targets,
+            n_agents=n_agents,
         )
 
         for step in range(max_steps):
@@ -542,7 +578,8 @@ class TestMultiStepEpisode:
             tc = 1 if step < n_targets else 0
             cov_rewards = [1.0 if step < n_targets else 0.0] * n_agents
             info = _make_agent_info_list(
-                n_agents, n_envs,
+                n_agents,
+                n_envs,
                 covering_rewards=cov_rewards,
                 collision_rew=-0.1 if step % 5 == 0 else 0.0,
                 targets_covered=tc,
@@ -550,9 +587,10 @@ class TestMultiStepEpisode:
 
             # Agent positions moving outward over time
             scale = min(step / 20.0, 1.0)
-            positions = torch.tensor([
-                [-1, -1], [1, -1], [-1, 1], [1, 1]
-            ], dtype=torch.float) * scale
+            positions = (
+                torch.tensor([[-1, -1], [1, -1], [-1, 1], [1, 1]], dtype=torch.float)
+                * scale
+            )
             positions = positions.unsqueeze(0).expand(n_envs, -1, -1)
 
             m.update_step(rewards, dones, info, step, agent_positions=positions)
@@ -567,6 +605,8 @@ class TestMultiStepEpisode:
         assert result["M3_avg_steps"] == pytest.approx(4.0)
         assert result["M4_avg_collisions"] > 0  # We injected collisions
         assert result["M6_coverage_progress"] == pytest.approx(1.0)  # 5/5 covered
-        assert result["M8_agent_utilization"] == pytest.approx(0.0, abs=1e-6)  # All equal
+        assert result["M8_agent_utilization"] == pytest.approx(
+            0.0, abs=1e-6
+        )  # All equal
         assert result["M9_spatial_spread"] > 0  # Agents were spread out
         assert result["n_envs"] == n_envs

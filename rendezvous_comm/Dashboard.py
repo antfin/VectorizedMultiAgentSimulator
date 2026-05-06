@@ -2,6 +2,7 @@
 
 Launch: streamlit run Dashboard.py
 """
+
 import streamlit as st
 import sys
 from pathlib import Path
@@ -17,17 +18,20 @@ st.set_page_config(
 sys.path.insert(0, str(Path(__file__).parent))
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 from src.theme import apply_theme
 from src.config import RESULTS_DIR
 from src.storage import ExperimentStorage
 from src.consolidate import load_latest_csv, list_experiments_with_data
 from src.plotting import (
-    set_style, POLIMI_DARK_BLUE, POLIMI_LIGHT_BLUE,
-    POLIMI_GREEN, POLIMI_RED, POLIMI_ORANGE,
+    set_style,
+    POLIMI_DARK_BLUE,
+    POLIMI_GREEN,
+    POLIMI_RED,
+    POLIMI_ORANGE,
 )
 
 apply_theme(title="Multi-Robot Discovery K-N Experiment")
@@ -49,6 +53,7 @@ for eid in exp_ids:
             sweep_df = df
         else:
             import pandas as pd
+
             sweep_df = pd.concat([sweep_df, df], ignore_index=True)
 
 # Fallback to ExperimentStorage
@@ -62,6 +67,7 @@ if sweep_df is None:
                 sweep_df = df
             else:
                 import pandas as pd
+
                 sweep_df = pd.concat([sweep_df, df], ignore_index=True)
 
 if sweep_df is None or sweep_df.empty:
@@ -98,16 +104,22 @@ with col_left:
 
         if "n_agents" in sweep_df.columns and "n_targets" in sweep_df.columns:
             sweep_df["config"] = (
-                "N=" + sweep_df["n_agents"].astype(str)
-                + " T=" + sweep_df["n_targets"].astype(str)
+                "N="
+                + sweep_df["n_agents"].astype(str)
+                + " T="
+                + sweep_df["n_targets"].astype(str)
             )
             grouped = sweep_df.groupby("config")["M1_success_rate"]
             means = grouped.mean().sort_values(ascending=False)
             stds = grouped.std().reindex(means.index).fillna(0)
 
             bars = ax.bar(
-                range(len(means)), means, yerr=stds,
-                capsize=4, color=POLIMI_DARK_BLUE, alpha=0.85,
+                range(len(means)),
+                means,
+                yerr=stds,
+                capsize=4,
+                color=POLIMI_DARK_BLUE,
+                alpha=0.85,
             )
             ax.set_xticks(range(len(means)))
             ax.set_xticklabels(means.index, rotation=30, ha="right")
@@ -116,12 +128,17 @@ with col_left:
                 ax.text(
                     bar.get_x() + bar.get_width() / 2,
                     bar.get_height() + 0.02,
-                    f"{m:.0%}", ha="center", va="bottom", fontsize=10,
+                    f"{m:.0%}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=10,
                 )
         else:
             ax.bar(
-                range(len(sweep_df)), sweep_df["M1_success_rate"],
-                color=POLIMI_DARK_BLUE, alpha=0.85,
+                range(len(sweep_df)),
+                sweep_df["M1_success_rate"],
+                color=POLIMI_DARK_BLUE,
+                alpha=0.85,
             )
 
         ax.set_ylabel("M1: Success Rate")
@@ -133,10 +150,7 @@ with col_left:
 
 with col_right:
     st.subheader("M1 vs M3: Success vs Speed")
-    if (
-        "M1_success_rate" in sweep_df.columns
-        and "M3_avg_steps" in sweep_df.columns
-    ):
+    if "M1_success_rate" in sweep_df.columns and "M3_avg_steps" in sweep_df.columns:
         set_style()
         fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -148,13 +162,21 @@ with col_right:
             ax.scatter(
                 sweep_df["M1_success_rate"],
                 sweep_df["M3_avg_steps"],
-                c=colors, s=80, alpha=0.8, edgecolors="white",
+                c=colors,
+                s=80,
+                alpha=0.8,
+                edgecolors="white",
             )
             from matplotlib.lines import Line2D
+
             handles = [
                 Line2D(
-                    [0], [0], marker="o", color="w",
-                    markerfacecolor=cmap(norm(n)), markersize=8,
+                    [0],
+                    [0],
+                    marker="o",
+                    color="w",
+                    markerfacecolor=cmap(norm(n)),
+                    markersize=8,
                     label=f"N={n}",
                 )
                 for n in agents_vals
@@ -164,7 +186,10 @@ with col_right:
             ax.scatter(
                 sweep_df["M1_success_rate"],
                 sweep_df["M3_avg_steps"],
-                c=POLIMI_DARK_BLUE, s=80, alpha=0.8, edgecolors="white",
+                c=POLIMI_DARK_BLUE,
+                s=80,
+                alpha=0.8,
+                edgecolors="white",
             )
 
         ax.set_xlabel("M1: Success Rate")
@@ -196,7 +221,9 @@ with col_left2:
                 ax.scatter(
                     sub["M1_success_rate"],
                     sub["M4_avg_collisions"],
-                    s=90, alpha=0.8, edgecolors="white",
+                    s=90,
+                    alpha=0.8,
+                    edgecolors="white",
                     marker=markers.get(k, "o"),
                     label=f"K={k}",
                 )
@@ -205,7 +232,10 @@ with col_left2:
             ax.scatter(
                 sweep_df["M1_success_rate"],
                 sweep_df["M4_avg_collisions"],
-                c=POLIMI_DARK_BLUE, s=80, alpha=0.8, edgecolors="white",
+                c=POLIMI_DARK_BLUE,
+                s=80,
+                alpha=0.8,
+                edgecolors="white",
             )
 
         ax.set_xlabel("M1: Success Rate")
@@ -225,22 +255,26 @@ with col_right2:
         if "n_agents" in sweep_df.columns and "n_targets" in sweep_df.columns:
             if "config" not in sweep_df.columns:
                 sweep_df["config"] = (
-                    "N=" + sweep_df["n_agents"].astype(str)
-                    + " T=" + sweep_df["n_targets"].astype(str)
+                    "N="
+                    + sweep_df["n_agents"].astype(str)
+                    + " T="
+                    + sweep_df["n_targets"].astype(str)
                 )
             grouped = sweep_df.groupby("config")["M6_coverage_progress"]
             means = grouped.mean().sort_values(ascending=False)
             stds = grouped.std().reindex(means.index).fillna(0)
 
             bar_colors = [
-                POLIMI_GREEN if m >= 0.8
-                else POLIMI_ORANGE if m >= 0.5
-                else POLIMI_RED
+                POLIMI_GREEN if m >= 0.8 else POLIMI_ORANGE if m >= 0.5 else POLIMI_RED
                 for m in means
             ]
             bars = ax.bar(
-                range(len(means)), means, yerr=stds,
-                capsize=4, color=bar_colors, alpha=0.85,
+                range(len(means)),
+                means,
+                yerr=stds,
+                capsize=4,
+                color=bar_colors,
+                alpha=0.85,
             )
             ax.set_xticks(range(len(means)))
             ax.set_xticklabels(means.index, rotation=30, ha="right")
@@ -249,18 +283,24 @@ with col_right2:
                 ax.text(
                     bar.get_x() + bar.get_width() / 2,
                     bar.get_height() + 0.02,
-                    f"{m:.0%}", ha="center", va="bottom", fontsize=10,
+                    f"{m:.0%}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=10,
                 )
         else:
             ax.bar(
-                range(len(sweep_df)), sweep_df["M6_coverage_progress"],
-                color=POLIMI_GREEN, alpha=0.85,
+                range(len(sweep_df)),
+                sweep_df["M6_coverage_progress"],
+                color=POLIMI_GREEN,
+                alpha=0.85,
             )
 
         ax.set_ylabel("M6: Coverage Progress")
         ax.set_ylim(0, 1.15)
-        ax.axhline(y=1.0, color=POLIMI_DARK_BLUE, linestyle="--",
-                    alpha=0.4, linewidth=1)
+        ax.axhline(
+            y=1.0, color=POLIMI_DARK_BLUE, linestyle="--", alpha=0.4, linewidth=1
+        )
         ax.grid(True, alpha=0.2, axis="y")
         fig.tight_layout()
         st.pyplot(fig)
@@ -271,15 +311,27 @@ st.markdown("---")
 st.subheader("Top Runs")
 
 display_cols = ["run_id"]
-for c in ["n_agents", "n_targets", "agents_per_target",
-           "M1_success_rate", "M2_avg_return", "M3_avg_steps",
-           "M4_avg_collisions", "M6_coverage_progress"]:
+for c in [
+    "n_agents",
+    "n_targets",
+    "agents_per_target",
+    "M1_success_rate",
+    "M2_avg_return",
+    "M3_avg_steps",
+    "M4_avg_collisions",
+    "M6_coverage_progress",
+]:
     if c in sweep_df.columns:
         display_cols.append(c)
 
-top_df = sweep_df[display_cols].sort_values(
-    "M1_success_rate", ascending=False,
-).head(10)
+top_df = (
+    sweep_df[display_cols]
+    .sort_values(
+        "M1_success_rate",
+        ascending=False,
+    )
+    .head(10)
+)
 
 # Format percentages
 format_dict = {}

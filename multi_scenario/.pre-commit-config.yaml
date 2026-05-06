@@ -1,0 +1,30 @@
+# Scope all hooks to multi_scenario/ — this folder is nested inside the VMAS repo
+# during development. Pre-commit operates on the whole git repo regardless of CWD,
+# so without this filter it would lint VMAS files too.
+# Remove this line when extracting multi_scenario/ to its own repo (F10.4).
+files: '^multi_scenario/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.43.0
+    hooks:
+      - id: markdownlint
+        # Path is repo-root-relative because pre-commit runs hooks from the
+        # git toplevel (VMAS root). On extraction (F10.4) drop the prefix
+        # and use ".markdownlint.json".
+        args: ["--config", "multi_scenario/.markdownlint.json"]

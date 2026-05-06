@@ -1,4 +1,5 @@
 """Experiment config browser and run status."""
+
 import streamlit as st
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.theme import apply_theme
 from src.config import CONFIGS_DIR, load_experiment
 from src.storage import ExperimentStorage
-from src.provenance import check_freshness, Freshness
+from src.provenance import check_freshness
 
 st.set_page_config(page_title="Experiments", layout="wide")
 apply_theme(title="Experiment Setup")
@@ -74,13 +75,15 @@ for run_id, overrides, algo, seed in spec.iter_runs():
     else:
         badge = "NEW"
 
-    status_rows.append({
-        "Run ID": run_id,
-        "Status": "DONE" if complete else "PENDING",
-        "Freshness": badge,
-        "Policy": "Yes" if has_policy else "No",
-        **{k: v for k, v in overrides.items()},
-    })
+    status_rows.append(
+        {
+            "Run ID": run_id,
+            "Status": "DONE" if complete else "PENDING",
+            "Freshness": badge,
+            "Policy": "Yes" if has_policy else "No",
+            **{k: v for k, v in overrides.items()},
+        }
+    )
 
 if status_rows:
     st.dataframe(status_rows, use_container_width=True)

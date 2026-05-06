@@ -6,6 +6,7 @@ Verifies that:
   3. A restored model produces identical outputs for the same input
   4. BenchMARL experiment policy survives export/import (integration)
 """
+
 import torch
 import torch.nn as nn
 import pytest
@@ -220,9 +221,9 @@ class TestPolicyDeviceMapping:
 
         loaded = rs.load_policy_state_dict()
         for key, tensor in loaded.items():
-            assert tensor.device == torch.device("cpu"), (
-                f"{key} not on CPU: {tensor.device}"
-            )
+            assert tensor.device == torch.device(
+                "cpu"
+            ), f"{key} not on CPU: {tensor.device}"
 
 
 # ── Multiple saves (overwrite) ───────────────────────────────────
@@ -252,7 +253,8 @@ class TestPolicyOverwrite:
         loaded = rs.load_policy_state_dict()
         for key in loaded:
             assert torch.allclose(
-                loaded[key], policy2.state_dict()[key],
+                loaded[key],
+                policy2.state_dict()[key],
             ), "Should load the latest saved policy"
 
 
@@ -262,13 +264,15 @@ class TestPolicyOverwrite:
 def _has_benchmarl():
     try:
         import benchmarl  # noqa: F401
+
         return True
     except ImportError:
         return False
 
 
 @pytest.mark.skipif(
-    not _has_benchmarl(), reason="BenchMARL not installed",
+    not _has_benchmarl(),
+    reason="BenchMARL not installed",
 )
 class TestBenchMARLPolicyExport:
     """Test export/import with a real BenchMARL experiment policy."""
@@ -315,13 +319,11 @@ class TestBenchMARLPolicyExport:
             orig = original_sd[key]
             loaded = loaded_sd[key]
             if isinstance(orig, torch.Tensor):
-                assert torch.equal(orig, loaded), (
-                    f"BenchMARL policy mismatch in {key}"
-                )
+                assert torch.equal(orig, loaded), f"BenchMARL policy mismatch in {key}"
             else:
-                assert orig == loaded, (
-                    f"Non-tensor mismatch in {key}: {orig} vs {loaded}"
-                )
+                assert (
+                    orig == loaded
+                ), f"Non-tensor mismatch in {key}: {orig} vs {loaded}"
 
     def test_benchmarl_policy_reload_produces_same_actions(self, tmp_path):
         """Verify reloaded policy produces identical actions."""
@@ -339,7 +341,10 @@ class TestBenchMARLPolicyExport:
 
         # Build, save policy
         exp1 = build_experiment(
-            task_config, train_config, "mappo", seed=0,
+            task_config,
+            train_config,
+            "mappo",
+            seed=0,
             save_folder=str(rs.benchmarl_dir),
         )
         rs.save_policy(exp1.policy)
@@ -357,7 +362,10 @@ class TestBenchMARLPolicyExport:
         run2_benchmarl = tmp_path / "run2" / "benchmarl"
         run2_benchmarl.mkdir(parents=True)
         exp2 = build_experiment(
-            task_config, train_config, "mappo", seed=0,
+            task_config,
+            train_config,
+            "mappo",
+            seed=0,
             save_folder=str(run2_benchmarl),
         )
         loaded_sd = rs.load_policy_state_dict()
@@ -372,5 +380,6 @@ class TestBenchMARLPolicyExport:
             action_key = (group, "action")
             if action_key in td_orig.keys(True):
                 assert torch.equal(
-                    td_orig[action_key], td_rest[action_key],
+                    td_orig[action_key],
+                    td_rest[action_key],
                 ), f"Action mismatch for group {group}"

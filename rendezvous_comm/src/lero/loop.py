@@ -14,15 +14,14 @@ import inspect
 import json
 import logging
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from ..config import ExperimentSpec, TaskConfig, TrainConfig
+from ..config import ExperimentSpec
 from ..storage import ExperimentStorage
-from .codegen import CandidateCode, build_feedback, extract_candidates
+from .codegen import CandidateCode, build_feedback
 from .config import LeroConfig, LLMConfig
 from .inner_llm import CandidateGenerationFailed, InnerLLM
 from .llm_client import LLMClient
@@ -49,11 +48,12 @@ def _derive_seed(
     """
     key = f"{run_id}|{seed}|{iteration}|{candidate_idx}|{level}"
     h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
-    return int(h, 16) % (2 ** 31)
+    return int(h, 16) % (2**31)
 
 
 def _build_experiment_context(
-    spec: ExperimentSpec, task_params: Dict[str, Any],
+    spec: ExperimentSpec,
+    task_params: Dict[str, Any],
 ) -> Dict[str, str]:
     """Build dynamic context strings for prompt templates.
 
@@ -352,6 +352,7 @@ class _ScenarioEnvFunFactory:
 
         def make_env():
             from torchrl.envs.libs.vmas import VmasEnv
+
             # Each env creates a FRESH scenario instance
             return VmasEnv(
                 scenario=ScenarioClass(),
@@ -403,7 +404,8 @@ def _build_patched_experiment(
 
     # Create patched scenario class
     PatchedScenario = make_patched_scenario_class(
-        reward_source, obs_source,
+        reward_source,
+        obs_source,
         reward_mode=reward_mode,
         obs_state_mode=obs_state_mode,
         bonus_scale=bonus_scale,
@@ -415,15 +417,15 @@ def _build_patched_experiment(
     config = task_config.to_dict()
     if task_overrides:
         config.update(task_overrides)
-    if (train_config.model_type == "gnn"
-            and train_config.gnn_topology == "from_pos"):
+    if train_config.model_type == "gnn" and train_config.gnn_topology == "from_pos":
         config["dict_obs"] = True
     task.config.update(config)
 
     # Override the env factory to use our patched scenario CLASS
     # Each env creates a fresh instance of the patched class
     task.get_env_fun = _ScenarioEnvFunFactory(
-        PatchedScenario, config,
+        PatchedScenario,
+        config,
     )
 
     # Algorithm
@@ -443,6 +445,7 @@ def _build_patched_experiment(
         critic_model_config.num_cells = train_config.hidden_layers
     if train_config.activation is not None:
         import torch.nn as nn
+
         act_map = {"tanh": nn.Tanh, "relu": nn.ReLU, "gelu": nn.GELU}
         act_cls = act_map.get(train_config.activation.lower())
         if act_cls is not None:
@@ -462,9 +465,7 @@ def _build_patched_experiment(
     experiment_config.on_policy_n_minibatch_iters = (
         train_config.on_policy_n_minibatch_iters
     )
-    experiment_config.on_policy_minibatch_size = (
-        train_config.on_policy_minibatch_size
-    )
+    experiment_config.on_policy_minibatch_size = train_config.on_policy_minibatch_size
     experiment_config.train_device = train_config.train_device
     experiment_config.sampling_device = train_config.sampling_device
     experiment_config.share_policy_params = train_config.share_policy_params
@@ -474,7 +475,8 @@ def _build_patched_experiment(
     batch_size = train_config.on_policy_collected_frames_per_batch
     if eval_interval % batch_size != 0:
         eval_interval = max(
-            batch_size, (eval_interval // batch_size) * batch_size,
+            batch_size,
+            (eval_interval // batch_size) * batch_size,
         )
     experiment_config.evaluation_interval = eval_interval
     experiment_config.evaluation_episodes = train_config.evaluation_episodes
@@ -539,7 +541,8 @@ class LeroLoop:
         """
         _log.info(
             "=== LERO START === %d iterations, %d candidates/iter",
-            self.lero.n_iterations, self.lero.n_candidates,
+            self.lero.n_iterations,
+            self.lero.n_candidates,
         )
 
         # Build initial LLM conversation
@@ -560,7 +563,8 @@ class LeroLoop:
 
             _log.info(
                 "--- Iteration %d/%d ---",
-                iteration + 1, self.lero.n_iterations,
+                iteration + 1,
+                self.lero.n_iterations,
             )
 
             # 1. Generate candidates from LLM (v3: retry loop per candidate)
@@ -586,7 +590,9 @@ class LeroLoop:
                 except CandidateGenerationFailed as e:
                     _log.warning(
                         "Candidate %d/%d: retries exhausted — %s",
-                        cand_idx + 1, self.lero.n_candidates, e,
+                        cand_idx + 1,
+                        self.lero.n_candidates,
+                        e,
                     )
 
             if not candidates:
@@ -599,7 +605,8 @@ class LeroLoop:
 
             _log.info(
                 "Generated %d valid candidates from %d attempts",
-                len(candidates), self.lero.n_candidates,
+                len(candidates),
+                self.lero.n_candidates,
             )
 
             # Save candidate source code + retry metadata (v3)
@@ -609,17 +616,14 @@ class LeroLoop:
                         cand.reward_source
                     )
                 if cand.obs_source:
-                    (iter_dir / f"candidate_{j}_obs.py").write_text(
-                        cand.obs_source
-                    )
-                (iter_dir / f"candidate_{j}_response.txt").write_text(
-                    cand.raw_response
-                )
+                    (iter_dir / f"candidate_{j}_obs.py").write_text(cand.obs_source)
+                (iter_dir / f"candidate_{j}_response.txt").write_text(cand.raw_response)
                 attempts_n = getattr(cand, "attempts", 1)
                 if attempts_n > 1:
                     _log.info(
                         "  candidate %d required %d attempts",
-                        j, attempts_n,
+                        j,
+                        attempts_n,
                     )
                 records = getattr(cand, "attempt_records", None)
                 self._save_json(
@@ -642,18 +646,24 @@ class LeroLoop:
             for j, cand in enumerate(candidates):
                 _log.info(
                     "  Evaluating candidate %d/%d ...",
-                    j + 1, len(candidates),
+                    j + 1,
+                    len(candidates),
                 )
                 try:
                     metrics = self._evaluate_candidate(
-                        cand, task_overrides, algorithm, seed,
-                        iter_dir=iter_dir, candidate_idx=j,
+                        cand,
+                        task_overrides,
+                        algorithm,
+                        seed,
+                        iter_dir=iter_dir,
+                        candidate_idx=j,
                     )
                     results.append((cand, metrics))
                     # Save metrics
                     self._save_json(
                         str(iter_dir / f"candidate_{j}_metrics.json"),
-                        metrics, absolute=True,
+                        metrics,
+                        absolute=True,
                     )
                     _log.info(
                         "    M1=%.3f  M2=%.2f  M6=%.3f",
@@ -663,7 +673,9 @@ class LeroLoop:
                     )
                 except Exception as e:
                     _log.warning(
-                        "  Candidate %d failed: %s", j, e,
+                        "  Candidate %d failed: %s",
+                        j,
+                        e,
                     )
                     # Tag the error type so the outer LERO-MP fail-mode
                     # classifier can distinguish fairness violations,
@@ -684,19 +696,16 @@ class LeroLoop:
                     if iter_dir is not None:
                         self._save_json(
                             str(iter_dir / f"candidate_{j}_metrics.json"),
-                            err_entry, absolute=True,
+                            err_entry,
+                            absolute=True,
                         )
 
-            if not any(
-                "_error" not in r[1] for r in results
-            ):
+            if not any("_error" not in r[1] for r in results):
                 _log.warning("All candidates failed in iteration %d", iteration)
                 continue
 
             # 3. Rank by fitness (M1 primary, M2 secondary)
-            valid_results = [
-                (c, m) for c, m in results if "_error" not in m
-            ]
+            valid_results = [(c, m) for c, m in results if "_error" not in m]
             # Accumulate cross-iteration list for fallback ranking
             for c, m in valid_results:
                 all_valid.append((c, m, iteration))
@@ -724,10 +733,14 @@ class LeroLoop:
                 iter_best_metrics.get("M2_avg_return", -1e9),
             )
             global_fitness = (
-                (best_metrics or {}).get("M1_success_rate", -1),
-                (best_metrics or {}).get("M6_coverage_progress", -1),
-                (best_metrics or {}).get("M2_avg_return", -1e9),
-            ) if best_metrics else (-1, -1, -1e9)
+                (
+                    (best_metrics or {}).get("M1_success_rate", -1),
+                    (best_metrics or {}).get("M6_coverage_progress", -1),
+                    (best_metrics or {}).get("M2_avg_return", -1e9),
+                )
+                if best_metrics
+                else (-1, -1, -1e9)
+            )
             iter_m1 = iter_fitness[0]
             global_m1 = global_fitness[0]
             if iter_fitness > global_fitness:
@@ -783,14 +796,16 @@ class LeroLoop:
             (iter_dir / "feedback.txt").write_text(feedback)
 
             # Record iteration history
-            self.history.append({
-                "iteration": iteration,
-                "n_candidates": len(candidates),
-                "n_valid": len(valid_results),
-                "best_M1": best_metrics.get("M1_success_rate", 0),
-                "best_M2": best_metrics.get("M2_avg_return", 0),
-                "best_M6": best_metrics.get("M6_coverage_progress", 0),
-            })
+            self.history.append(
+                {
+                    "iteration": iteration,
+                    "n_candidates": len(candidates),
+                    "n_valid": len(valid_results),
+                    "best_M1": best_metrics.get("M1_success_rate", 0),
+                    "best_M2": best_metrics.get("M2_avg_return", 0),
+                    "best_M6": best_metrics.get("M6_coverage_progress", 0),
+                }
+            )
 
         # Save full conversation history
         self._save_json("messages_final.json", messages)
@@ -817,9 +832,7 @@ class LeroLoop:
                     best_candidate.reward_source
                 )
             if best_candidate.obs_source:
-                (self.output_dir / "best_obs.py").write_text(
-                    best_candidate.obs_source
-                )
+                (self.output_dir / "best_obs.py").write_text(best_candidate.obs_source)
             shortcut_metrics["lero_iterations"] = self.lero.n_iterations
             shortcut_metrics["lero_candidates_per_iter"] = self.lero.n_candidates
             shortcut_metrics["llm_model"] = self.llm_config.model
@@ -850,35 +863,46 @@ class LeroLoop:
                 f"eval M1={eval_metrics.get('M1_success_rate', 0):.3f})"
             )
             _log.info(
-                "=== FULL TRAINING with candidate %s ===", label,
+                "=== FULL TRAINING with candidate %s ===",
+                label,
             )
             try:
                 final_result = self._full_training(
-                    cand, task_overrides, algorithm, seed,
+                    cand,
+                    task_overrides,
+                    algorithm,
+                    seed,
                 )
                 chosen_candidate = cand
-                fallback_chain.append({
-                    "rank": rank, "iter": src_iter,
-                    "eval_M1": eval_metrics.get("M1_success_rate", 0),
-                    "eval_M2": eval_metrics.get("M2_avg_return", 0),
-                    "eval_M6": eval_metrics.get("M6_coverage_progress", 0),
-                    "outcome": "success",
-                })
+                fallback_chain.append(
+                    {
+                        "rank": rank,
+                        "iter": src_iter,
+                        "eval_M1": eval_metrics.get("M1_success_rate", 0),
+                        "eval_M2": eval_metrics.get("M2_avg_return", 0),
+                        "eval_M6": eval_metrics.get("M6_coverage_progress", 0),
+                        "outcome": "success",
+                    }
+                )
                 break
             except Exception as e:
                 err = f"{type(e).__name__}: {e}"
                 _log.warning(
                     "Full training failed for %s: %s. Trying next candidate.",
-                    label, err[:200],
+                    label,
+                    err[:200],
                 )
-                fallback_chain.append({
-                    "rank": rank, "iter": src_iter,
-                    "eval_M1": eval_metrics.get("M1_success_rate", 0),
-                    "eval_M2": eval_metrics.get("M2_avg_return", 0),
-                    "eval_M6": eval_metrics.get("M6_coverage_progress", 0),
-                    "outcome": "crashed",
-                    "error": err[:200],
-                })
+                fallback_chain.append(
+                    {
+                        "rank": rank,
+                        "iter": src_iter,
+                        "eval_M1": eval_metrics.get("M1_success_rate", 0),
+                        "eval_M2": eval_metrics.get("M2_avg_return", 0),
+                        "eval_M6": eval_metrics.get("M6_coverage_progress", 0),
+                        "outcome": "crashed",
+                        "error": err[:200],
+                    }
+                )
                 continue
 
         if final_result is None:
@@ -901,9 +925,7 @@ class LeroLoop:
                 best_candidate.reward_source
             )
         if best_candidate.obs_source:
-            (self.output_dir / "best_obs.py").write_text(
-                best_candidate.obs_source
-            )
+            (self.output_dir / "best_obs.py").write_text(best_candidate.obs_source)
 
         final_result["lero_iterations"] = self.lero.n_iterations
         final_result["lero_candidates_per_iter"] = self.lero.n_candidates
@@ -920,7 +942,8 @@ class LeroLoop:
     # ── internal methods ─────────────────────────────────────────
 
     def _build_initial_messages(
-        self, task_overrides: Optional[Dict] = None,
+        self,
+        task_overrides: Optional[Dict] = None,
     ) -> List[Dict[str, str]]:
         """Build the initial LLM conversation with full experiment context."""
         task_params = self._effective_task_params(task_overrides)
@@ -977,7 +1000,8 @@ class LeroLoop:
         ]
 
     def _effective_task_params(
-        self, task_overrides: Optional[Dict] = None,
+        self,
+        task_overrides: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Get effective task parameters with overrides applied."""
         params = self.spec.task.to_dict()
@@ -995,8 +1019,7 @@ class LeroLoop:
         candidate_idx: int = 0,
     ) -> Dict[str, float]:
         """Short training run with patched scenario to evaluate a candidate."""
-        from ..runner import build_experiment, evaluate_trained
-        from benchmarl.environments import VmasTask
+        from ..runner import evaluate_trained
 
         short_train = copy.copy(self.spec.train)
         short_train.max_n_frames = self.lero.eval_frames
@@ -1010,8 +1033,12 @@ class LeroLoop:
         # to patch the task's env factory BEFORE the Experiment is built.
         # So we replicate the task setup here and pass the patched task.
         experiment = _build_patched_experiment(
-            self.spec.task, short_train, algorithm, seed,
-            task_overrides, save_folder,
+            self.spec.task,
+            short_train,
+            algorithm,
+            seed,
+            task_overrides,
+            save_folder,
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
             reward_mode=self.lero.reward_mode,
@@ -1023,7 +1050,9 @@ class LeroLoop:
 
         experiment.run()
         metrics = evaluate_trained(
-            self.spec, experiment, task_overrides,
+            self.spec,
+            experiment,
+            task_overrides,
             n_eval_episodes=self.lero.eval_episodes,
         )
         return metrics
@@ -1044,7 +1073,8 @@ class LeroLoop:
         """
         from ..runner import _BenchMARLCallback, _EvalMetricsCallback, evaluate_trained
         from .meta.peak_checkpoint import (
-            PeakM1Tracker, make_peak_m1_callback,
+            PeakM1Tracker,
+            make_peak_m1_callback,
         )
 
         full_train = copy.copy(self.spec.train)
@@ -1067,8 +1097,12 @@ class LeroLoop:
         )
 
         experiment = _build_patched_experiment(
-            self.spec.task, full_train, algorithm, seed,
-            task_overrides, save_folder,
+            self.spec.task,
+            full_train,
+            algorithm,
+            seed,
+            task_overrides,
+            save_folder,
             reward_source=candidate.reward_source,
             obs_source=candidate.obs_source,
             reward_mode=self.lero.reward_mode,
@@ -1095,7 +1129,8 @@ class LeroLoop:
         if tracker.save_peak_policy(self.output_dir / "best_policy_peak.pt"):
             _log.info(
                 "Saved peak-M1 policy (M1=%.3f @ frame %d) to %s",
-                tracker.peak_M1, tracker.peak_at_frame,
+                tracker.peak_M1,
+                tracker.peak_at_frame,
                 self.output_dir / "best_policy_peak.pt",
             )
         metrics.update(tracker.summary())
@@ -1107,7 +1142,10 @@ class LeroLoop:
     # ── helpers ───────────────────────────────────────────────────
 
     def _save_json(
-        self, filename: str, data: Any, absolute: bool = False,
+        self,
+        filename: str,
+        data: Any,
+        absolute: bool = False,
     ):
         path = Path(filename) if absolute else self.output_dir / filename
         path.parent.mkdir(parents=True, exist_ok=True)

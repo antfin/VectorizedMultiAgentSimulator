@@ -19,7 +19,6 @@ Usage:
 """
 
 import base64
-import hashlib
 import json
 import os
 from typing import Dict, Optional
@@ -57,11 +56,10 @@ def encrypt_env(
 
     # Filter to only LLM-related keys
     llm_keys = {
-        k: v for k, v in env_dict.items()
-        if v and any(
-            pat in k.upper()
-            for pat in ["API_KEY", "ACCESS_TOKEN", "ENDPOINTS"]
-        )
+        k: v
+        for k, v in env_dict.items()
+        if v
+        and any(pat in k.upper() for pat in ["API_KEY", "ACCESS_TOKEN", "ENDPOINTS"])
     }
 
     if not llm_keys:
@@ -109,9 +107,7 @@ def decrypt_and_load_env(
     try:
         decrypted = f.decrypt(encrypted.encode())
     except InvalidToken:
-        raise ValueError(
-            "Failed to decrypt LERO_ENCRYPTED — wrong passphrase?"
-        )
+        raise ValueError("Failed to decrypt LERO_ENCRYPTED — wrong passphrase?")
 
     env_dict = json.loads(decrypted)
     for k, v in env_dict.items():

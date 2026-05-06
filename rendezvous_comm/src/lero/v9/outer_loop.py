@@ -17,7 +17,7 @@ import logging
 import pickle
 import shutil
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -33,7 +33,6 @@ from ..v6_prompt_lab.analyzer import (
 )
 from .memory import MemoryRow, MemoryStore
 from .meta_strategist import (
-    V9ReflectDecision,
     enumerate_bundle_v9,
     reflect_decide_v9,
 )
@@ -94,6 +93,7 @@ _V9_SLOT_NAMES = ("inferable_hints", "examples", "feedback")
 
 def _redirect_prompt_loader(prompts_root: Path) -> None:
     from ..prompts import loader as _l
+
     prompts_root.mkdir(parents=True, exist_ok=True)
     _l._PROMPTS_DIR = prompts_root
 
@@ -197,14 +197,10 @@ def detect_pathological_refine(
     if len(memory_rows) < n or n < 1:
         return False
     last_n = memory_rows[-n:]
-    if not all(
-        r.get("strategy_name") == current_strategy_name for r in last_n
-    ):
+    if not all(r.get("strategy_name") == current_strategy_name for r in last_n):
         return False
     m6_seq = [float((r.get("actual") or {}).get("M6", 0.0)) for r in last_n]
-    return all(
-        m6_seq[i + 1] <= m6_seq[i] for i in range(len(m6_seq) - 1)
-    )
+    return all(m6_seq[i + 1] <= m6_seq[i] for i in range(len(m6_seq) - 1))
 
 
 def make_pre_eval_validator(
@@ -316,16 +312,13 @@ def detect_falsification_failure(
     if expected_M1 <= 0 or n_attempts < 1:
         return False
     same_strategy_rows = [
-        r for r in memory_rows
-        if r.get("strategy_name") == current_strategy_name
+        r for r in memory_rows if r.get("strategy_name") == current_strategy_name
     ]
     if len(same_strategy_rows) < n_attempts:
         return False
     target = threshold_factor * expected_M1
     recent = same_strategy_rows[-n_attempts:]
-    actual_m1s = [
-        float((r.get("actual") or {}).get("M1", 0.0)) for r in recent
-    ]
+    actual_m1s = [float((r.get("actual") or {}).get("M1", 0.0)) for r in recent]
     return all(m < target for m in actual_m1s)
 
 
@@ -386,6 +379,7 @@ def run_v9_outer_loop(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     from ..prompts import loader as _l_mod
+
     _orig_prompts_dir = Path(_l_mod.__file__).parent
     base_src = _orig_prompts_dir / cfg.base_prompt_version
     if not base_src.exists():
@@ -414,7 +408,8 @@ def run_v9_outer_loop(
             (loader.task_domain() or {}).get("name", "?"),
         )
         bundle, raw_bundle = enumerate_bundle_v9(
-            meta_llm, loader,
+            meta_llm,
+            loader,
             cfg.task_summary or spec.description or "",
         )
         (output_dir / "_bundle_init.json").write_text(
@@ -428,23 +423,17 @@ def run_v9_outer_loop(
         if seed_prompt_dir.exists():
             shutil.rmtree(seed_prompt_dir)
         shutil.copytree(base_src, seed_prompt_dir)
-        _write_slots(
-            seed_prompt_dir, _strategy_to_slots(bundle.current())
-        )
+        _write_slots(seed_prompt_dir, _strategy_to_slots(bundle.current()))
         ckpt = V9Checkpoint(seed=seed, bundle=bundle)
         _save_ckpt(output_dir, ckpt)
     else:
-        _log.info(
-            "v9 RESUME — outer_done=%d", ckpt.outer_idx_completed
-        )
+        _log.info("v9 RESUME — outer_done=%d", ckpt.outer_idx_completed)
 
     bundle = ckpt.bundle
     assert bundle is not None
     bundle_size = len(bundle.strategies)
     max_outer = (
-        cfg.max_outer_override
-        if cfg.max_outer_override is not None
-        else bundle_size
+        cfg.max_outer_override if cfg.max_outer_override is not None else bundle_size
     )
 
     t_start = time.monotonic()
@@ -463,15 +452,14 @@ def run_v9_outer_loop(
             cur_name = bundle.current().name
             recent = mem.read_recent(2)
             if detect_pathological_refine(recent, cur_name, n=2):
-                m6_seq = [
-                    float((r.get("actual") or {}).get("M6", 0.0))
-                    for r in recent
-                ]
+                m6_seq = [float((r.get("actual") or {}).get("M6", 0.0)) for r in recent]
                 _log.warning(
                     "v9 outer %d: FORCED SWITCH — strategy '%s' "
                     "showed M6=%s across last 2 outers (monotonic "
                     "non-increasing). Marking excluded.",
-                    outer_idx, cur_name, m6_seq,
+                    outer_idx,
+                    cur_name,
+                    m6_seq,
                 )
                 bundle.current().excluded = True
                 nb = bundle.next_pending_idx()
@@ -498,12 +486,15 @@ def run_v9_outer_loop(
                 )
                 _log.info(
                     "v9 outer %d: switched to '%s' via fail-safe",
-                    outer_idx, bundle.current().name,
+                    outer_idx,
+                    bundle.current().name,
                 )
 
         _log.info(
             "=== v9 OUTER ITER %d/%d (strategy=%s) ===",
-            outer_idx + 1, max_outer, bundle.current().name,
+            outer_idx + 1,
+            max_outer,
+            bundle.current().name,
         )
 
         outer_dir = output_dir / f"outer_{outer_idx:02d}"
@@ -543,14 +534,16 @@ def run_v9_outer_loop(
 
         # Compute analyzer facts locally (replaces v8 diagnose).
         facts = _compute_facts(inner_result)
-        (outer_dir / "_facts.json").write_text(
-            json.dumps(facts, indent=2, default=str)
-        )
+        (outer_dir / "_facts.json").write_text(json.dumps(facts, indent=2, default=str))
         _log.info(
             "v9 outer %d facts: M1=%.3f M6=%.3f n_feat=%d gated=%d "
             "dense=%d role_one_hot=%s",
-            outer_idx, facts["M1"], facts["M6"],
-            facts["n_features"], facts["n_gated"], facts["n_dense"],
+            outer_idx,
+            facts["M1"],
+            facts["M6"],
+            facts["n_features"],
+            facts["n_gated"],
+            facts["n_dense"],
             facts["role_one_hot_present"],
         )
 
@@ -559,7 +552,11 @@ def run_v9_outer_loop(
 
         # Combined diagnose+reflect+decide single LLM call
         decision, raw_reflect = reflect_decide_v9(
-            meta_llm, loader, bundle, facts, memory_rows,
+            meta_llm,
+            loader,
+            bundle,
+            facts,
+            memory_rows,
         )
         (outer_dir / "_reflection_response.txt").write_text(raw_reflect)
 
@@ -573,10 +570,12 @@ def run_v9_outer_loop(
         original_action = decision.next_action
         gate_fired = False
         if decision.next_action == "refine_current":
-            recent_with_current_facts = list(memory_rows) + [{
-                "strategy_name": active.name,
-                "actual": {"M1": facts["M1"]},
-            }]
+            recent_with_current_facts = list(memory_rows) + [
+                {
+                    "strategy_name": active.name,
+                    "actual": {"M1": facts["M1"]},
+                }
+            ]
             if detect_falsification_failure(
                 memory_rows=recent_with_current_facts,
                 current_strategy_name=active.name,
@@ -589,33 +588,43 @@ def run_v9_outer_loop(
                     "expected_M1=%.3f but actual M1 stayed below "
                     "0.5×expected for ≥2 attempts. Flipping "
                     "refine_current → switch_to_next.",
-                    outer_idx, active.name,
+                    outer_idx,
+                    active.name,
                     active.success_signature.expected_M1_at_1M,
                 )
                 decision.next_action = "switch_to_next"
                 decision.rationale = (
-                    "[v9.1 §2.7 override] " + decision.rationale
+                    "[v9.1 §2.7 override] "
+                    + decision.rationale
                     + " — falsification gate fired (≥2 attempts below "
                     f"0.5×expected_M1={active.success_signature.expected_M1_at_1M:.3f})"
                 )
                 gate_fired = True
 
-        (outer_dir / "_decision.json").write_text(json.dumps({
-            "next_action": decision.next_action,
-            "next_action_original_from_llm": original_action,
-            "falsification_gate_fired": gate_fired,
-            "label": decision.label,
-            "rationale": decision.rationale,
-            "memory_recall": decision.memory_recall,
-            "diff_vs_predicted": decision.diff_vs_predicted,
-            "reflection_chain_of_thought": decision.reflection_cot,
-            "slot_edits_keys": list(decision.slot_edits.keys()),
-            "bundle_demote": decision.bundle_demote,
-            "bundle_add_names": [s.name for s in decision.bundle_add],
-        }, indent=2, default=str))
+        (outer_dir / "_decision.json").write_text(
+            json.dumps(
+                {
+                    "next_action": decision.next_action,
+                    "next_action_original_from_llm": original_action,
+                    "falsification_gate_fired": gate_fired,
+                    "label": decision.label,
+                    "rationale": decision.rationale,
+                    "memory_recall": decision.memory_recall,
+                    "diff_vs_predicted": decision.diff_vs_predicted,
+                    "reflection_chain_of_thought": decision.reflection_cot,
+                    "slot_edits_keys": list(decision.slot_edits.keys()),
+                    "bundle_demote": decision.bundle_demote,
+                    "bundle_add_names": [s.name for s in decision.bundle_add],
+                },
+                indent=2,
+                default=str,
+            )
+        )
         _log.info(
             "v9 outer %d decision: label=%s action=%s%s",
-            outer_idx, decision.label, decision.next_action,
+            outer_idx,
+            decision.label,
+            decision.next_action,
             " (overridden from refine_current)" if gate_fired else "",
         )
 
@@ -624,49 +633,50 @@ def run_v9_outer_loop(
         active.last_M1 = facts["M1"]
         active.last_M6 = facts["M6"]
         active.last_pattern_present = facts["touches_both_lidars"]
-        bundle.history.append({
-            "outer_idx": outer_idx,
-            "strategy_name": active.name,
-            "label": decision.label,
-            "M1": facts["M1"],
-            "M6": facts["M6"],
-            "pattern_present": facts["touches_both_lidars"],
-            "role_one_hot_present": facts["role_one_hot_present"],
-        })
-
-        # Append to memory
-        mem.append(MemoryRow(
-            outer_idx=outer_idx,
-            ts=time.strftime("%Y-%m-%dT%H:%M:%S"),
-            strategy_name=active.name,
-            predicted={
-                "M1": active.success_signature.expected_M1_at_1M,
-                "M6": active.success_signature.expected_M6_at_1M_min,
-                "what_is_needed": active.chain_of_thought.what_is_needed,
-            },
-            actual={
+        bundle.history.append(
+            {
+                "outer_idx": outer_idx,
+                "strategy_name": active.name,
+                "label": decision.label,
                 "M1": facts["M1"],
                 "M6": facts["M6"],
-                "diagnosis_label": decision.label,
-                "n_features": facts["n_features"],
+                "pattern_present": facts["touches_both_lidars"],
                 "role_one_hot_present": facts["role_one_hot_present"],
-            },
-            delta={
-                "M1": (
-                    facts["M1"] - active.success_signature.expected_M1_at_1M
-                ),
-                "M6": (
-                    facts["M6"]
-                    - active.success_signature.expected_M6_at_1M_min
-                ),
-            },
-            chain_of_thought={
-                "why_it_works": active.chain_of_thought.why_it_works,
-                "what_is_needed": active.chain_of_thought.what_is_needed,
-                "failure_modes": active.chain_of_thought.failure_modes,
-            },
-            post_hoc_reflection=decision.reflection_cot,
-        ))
+            }
+        )
+
+        # Append to memory
+        mem.append(
+            MemoryRow(
+                outer_idx=outer_idx,
+                ts=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                strategy_name=active.name,
+                predicted={
+                    "M1": active.success_signature.expected_M1_at_1M,
+                    "M6": active.success_signature.expected_M6_at_1M_min,
+                    "what_is_needed": active.chain_of_thought.what_is_needed,
+                },
+                actual={
+                    "M1": facts["M1"],
+                    "M6": facts["M6"],
+                    "diagnosis_label": decision.label,
+                    "n_features": facts["n_features"],
+                    "role_one_hot_present": facts["role_one_hot_present"],
+                },
+                delta={
+                    "M1": (facts["M1"] - active.success_signature.expected_M1_at_1M),
+                    "M6": (
+                        facts["M6"] - active.success_signature.expected_M6_at_1M_min
+                    ),
+                },
+                chain_of_thought={
+                    "why_it_works": active.chain_of_thought.why_it_works,
+                    "what_is_needed": active.chain_of_thought.what_is_needed,
+                    "failure_modes": active.chain_of_thought.failure_modes,
+                },
+                post_hoc_reflection=decision.reflection_cot,
+            )
+        )
 
         # Apply bundle updates (demote / add)
         for name in decision.bundle_demote:
@@ -717,12 +727,16 @@ def run_v9_outer_loop(
             if not (arts.inferable_hints_text and arts.examples_text):
                 _log.info(
                     "v9 outer %d: §2.10 lazy-authoring artifacts for '%s'",
-                    outer_idx, new_active.name,
+                    outer_idx,
+                    new_active.name,
                 )
                 from .meta_strategist import author_artifacts_for_strategy
+
                 try:
                     new_arts = author_artifacts_for_strategy(
-                        meta_llm, loader, new_active,
+                        meta_llm,
+                        loader,
+                        new_active,
                     )
                     new_active.artifacts = new_arts
                 except Exception as e:  # noqa: BLE001
@@ -730,14 +744,15 @@ def run_v9_outer_loop(
                         "v9 outer %d: §2.10 artifact authoring failed "
                         "for '%s': %s — falling back to prior outer's "
                         "slot text",
-                        outer_idx, new_active.name, e,
+                        outer_idx,
+                        new_active.name,
+                        e,
                     )
                     # Fallback: copy the prior outer's slot files into
                     # the new strategy's artifacts so something works.
                     prev_slots = _read_slot_files(prompt_dir)
                     new_active.artifacts = V9Artifacts(
-                        inferable_hints_text=prev_slots.get(
-                            "inferable_hints", ""),
+                        inferable_hints_text=prev_slots.get("inferable_hints", ""),
                         examples_text=prev_slots.get("examples", ""),
                         feedback_template=prev_slots.get("feedback", ""),
                     )
@@ -748,13 +763,15 @@ def run_v9_outer_loop(
             )
             _log.info(
                 "v9 outer %d: SWITCHED to '%s'",
-                outer_idx, new_active.name,
+                outer_idx,
+                new_active.name,
             )
         elif decision.next_action == "refine_current":
             # v9.1 §2.3: validate slot_edits structurally before
             # applying. Reject prose-only edits that drop python
             # examples or strip the inferable_concepts list.
             from .slot_validator import validate_slot_edits
+
             current_slots = _read_slot_files(prompt_dir)
             td_for_validate = loader.task_domain() or {}
             validation_results = validate_slot_edits(
@@ -774,21 +791,26 @@ def run_v9_outer_loop(
                 if vr is not None and not vr.passed:
                     rejection_log[k] = vr.issues
                     _log.warning(
-                        "v9 outer %d: REJECTING slot_edit '%s' "
-                        "(keeping prev) — %s",
-                        outer_idx, k, "; ".join(vr.issues),
+                        "v9 outer %d: REJECTING slot_edit '%s' " "(keeping prev) — %s",
+                        outer_idx,
+                        k,
+                        "; ".join(vr.issues),
                     )
                     continue
                 new_slots[k] = v
                 applied_edits[k] = v
             (outer_dir / "_slot_edit_validation.json").write_text(
-                json.dumps({
-                    "rejected": rejection_log,
-                    "applied": list(applied_edits.keys()),
-                    "validator_metrics": {
-                        k: vr.metrics for k, vr in validation_results.items()
+                json.dumps(
+                    {
+                        "rejected": rejection_log,
+                        "applied": list(applied_edits.keys()),
+                        "validator_metrics": {
+                            k: vr.metrics for k, vr in validation_results.items()
+                        },
                     },
-                }, indent=2, default=str)
+                    indent=2,
+                    default=str,
+                )
             )
             _write_slots(next_prompt_dir, new_slots)
             # Persist only APPLIED edits back onto the strategy artifacts
@@ -802,7 +824,8 @@ def run_v9_outer_loop(
         else:
             _log.warning(
                 "v9 outer %d: unknown next_action %r — defaulting to refine",
-                outer_idx, decision.next_action,
+                outer_idx,
+                decision.next_action,
             )
             current_slots = _read_slot_files(prompt_dir)
             _write_slots(next_prompt_dir, current_slots)
@@ -822,15 +845,11 @@ def run_v9_outer_loop(
         "early_stopped": ckpt.early_stopped,
         "outer_iters_completed": ckpt.outer_idx_completed + 1,
         "bundle_size": bundle_size,
-        "bundle_chosen_at_end": (
-            bundle.current().name if bundle.strategies else None
-        ),
+        "bundle_chosen_at_end": (bundle.current().name if bundle.strategies else None),
         "bundle_history": bundle.history,
         "bundle_final": _bundle_dict(bundle),
         "memory_rows": len(mem),
-        "elapsed_s_total": ckpt.elapsed_s_so_far + (
-            time.monotonic() - t_start
-        ),
+        "elapsed_s_total": ckpt.elapsed_s_so_far + (time.monotonic() - t_start),
     }
     (output_dir / "v9_summary.json").write_text(
         json.dumps(summary, indent=2, default=str)
@@ -839,7 +858,8 @@ def run_v9_outer_loop(
     _save_ckpt(output_dir, ckpt)
     _log.info(
         "=== v9 DONE === outers=%d/%d early=%s strategy=%s",
-        ckpt.outer_idx_completed + 1, max_outer,
+        ckpt.outer_idx_completed + 1,
+        max_outer,
         ckpt.early_stopped,
         bundle.current().name if bundle.strategies else None,
     )

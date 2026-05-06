@@ -59,7 +59,9 @@ def _initial_messages() -> List[Dict[str, str]]:
 def test_retry_passes_on_first_attempt():
     stub = _StubLLMClient([_VALID_OBS])
     inner = InnerLLM(
-        stub, evolve_reward=False, evolve_observation=True,
+        stub,
+        evolve_reward=False,
+        evolve_observation=True,
         max_attempts=3,
     )
     cand = inner.generate(_initial_messages())
@@ -72,7 +74,9 @@ def test_retry_passes_on_first_attempt():
 def test_retry_recovers_after_bad_syntax():
     stub = _StubLLMClient([_BAD_SYNTAX, _VALID_OBS])
     inner = InnerLLM(
-        stub, evolve_reward=False, evolve_observation=True,
+        stub,
+        evolve_reward=False,
+        evolve_observation=True,
         max_attempts=3,
     )
     cand = inner.generate(_initial_messages())
@@ -88,7 +92,9 @@ def test_retry_recovers_after_bad_syntax():
 def test_retry_exhausts_after_max_attempts():
     stub = _StubLLMClient([_WRONG_FUNC, _BAD_SYNTAX, _WRONG_FUNC])
     inner = InnerLLM(
-        stub, evolve_reward=False, evolve_observation=True,
+        stub,
+        evolve_reward=False,
+        evolve_observation=True,
         max_attempts=3,
     )
     with pytest.raises(CandidateGenerationFailed):
@@ -100,7 +106,9 @@ def test_retry_conversation_includes_error_feedback():
     """After a failure, the retry message should include the error."""
     stub = _StubLLMClient([_WRONG_FUNC, _VALID_OBS])
     inner = InnerLLM(
-        stub, evolve_reward=False, evolve_observation=True,
+        stub,
+        evolve_reward=False,
+        evolve_observation=True,
         max_attempts=3,
     )
 
@@ -132,7 +140,9 @@ def test_per_candidate_seed_derivation():
 
     stub = _SeedRecorderStub([_VALID_OBS, _VALID_OBS])
     inner = InnerLLM(
-        stub, evolve_reward=False, evolve_observation=True,
+        stub,
+        evolve_reward=False,
+        evolve_observation=True,
         max_attempts=3,
     )
     inner.generate(_initial_messages(), seed_base=42)
