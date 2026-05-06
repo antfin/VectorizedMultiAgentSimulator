@@ -6,10 +6,17 @@
 # few public methods (that's what makes them incomplete). Suppress for this file.
 # pylint: disable=missing-function-docstring,unused-argument,too-few-public-methods
 
+from pathlib import Path
 from typing import Any
 
-from multi_scenario.domain.models import ExperimentConfig, ScenarioSection
-from multi_scenario.domain.ports import Algorithm, MetricsBundle, Scenario
+from multi_scenario.domain.models import (
+    ExperimentConfig,
+    ExperimentResult,
+    Provenance,
+    RunStateRecord,
+    ScenarioSection,
+)
+from multi_scenario.domain.ports import Algorithm, MetricsBundle, Scenario, Storage
 
 
 class _FakeScenario:
@@ -119,3 +126,70 @@ def test_fake_metrics_bundle_implements_protocol():
 def test_incomplete_metrics_bundle_fails_protocol_check():
     """Missing the protocol member → isinstance returns False."""
     assert not isinstance(_IncompleteMetricsBundle(), MetricsBundle)
+
+
+class _FakeStorage:
+    """A complete fake storage covering every member of the Storage protocol."""
+
+    name = "fake"
+
+    def save_config(self, run_dir: Path, config: ExperimentConfig) -> None:
+        pass
+
+    def save_provenance(self, run_dir: Path, provenance: Provenance) -> None:
+        pass
+
+    def save_result(self, run_dir: Path, result: ExperimentResult) -> None:
+        pass
+
+    def save_run_state(self, run_dir: Path, state: RunStateRecord) -> None:
+        pass
+
+    def load_config(self, run_dir: Path) -> ExperimentConfig:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+    def load_provenance(self, run_dir: Path) -> Provenance:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+    def load_result(self, run_dir: Path) -> ExperimentResult:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+    def load_run_state(self, run_dir: Path) -> RunStateRecord:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+
+class _IncompleteStorage:
+    """Missing `load_run_state` — should fail isinstance."""
+
+    name = "incomplete"
+
+    def save_config(self, run_dir: Path, config: ExperimentConfig) -> None:
+        pass
+
+    def save_provenance(self, run_dir: Path, provenance: Provenance) -> None:
+        pass
+
+    def save_result(self, run_dir: Path, result: ExperimentResult) -> None:
+        pass
+
+    def save_run_state(self, run_dir: Path, state: RunStateRecord) -> None:
+        pass
+
+    def load_config(self, run_dir: Path) -> ExperimentConfig:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+    def load_provenance(self, run_dir: Path) -> Provenance:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+    def load_result(self, run_dir: Path) -> ExperimentResult:  # type: ignore[empty-body]
+        return None  # type: ignore[return-value]
+
+
+def test_fake_storage_implements_protocol():
+    """A class exposing every protocol member passes isinstance(Storage)."""
+    assert isinstance(_FakeStorage(), Storage)
+
+
+def test_incomplete_storage_fails_protocol_check():
+    """Missing one protocol member → isinstance returns False."""
+    assert not isinstance(_IncompleteStorage(), Storage)

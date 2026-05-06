@@ -11,5 +11,6 @@ Public surface re-exports each Protocol so callers say
 from .algorithm import Algorithm
 from .metrics import MetricsBundle
 from .scenario import Scenario
+from .storage import Storage
 
-__all__ = ["Algorithm", "MetricsBundle", "Scenario"]
+__all__ = ["Algorithm", "MetricsBundle", "Scenario", "Storage"]

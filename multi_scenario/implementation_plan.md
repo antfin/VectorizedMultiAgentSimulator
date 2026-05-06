@@ -306,7 +306,11 @@ Each feature lists its **demo command** + **expected output**.
 
 #### F1.9 — `Storage` port — XS
 
-- `Protocol`: `save_config`, `save_result`, `save_run_state`, `save_provenance`, `load_results`, `load_run_state`.
+- Runtime-checkable `Protocol` with 4 save + 4 load methods covering the per-run JSON files: `save_config` / `load_config`, `save_provenance` / `load_provenance`, `save_result` / `load_result`, `save_run_state` / `load_run_state`. Each takes a `run_dir: Path`.
+- **Run-level only.** Cross-run aggregations (`runs.csv` / `runs.json`) live with the consolidator at F5.2/F5.3 — different concern, different lifecycle.
+- **Optional artefacts** (`eval_episodes`, `report`, `videos`, `log`) are added on the concrete adapter when each writer feature lands (F2.5 / F2.10 / F2.11 / F2.7); they're not in the Protocol surface to keep it minimal.
+- Adapters: `LocalStorageAdapter` (fs) at F2.5, `S3StorageAdapter` at F6.3. When S3 lands we generalise `Path` → `str | Path` if needed.
+- TDD: a fake storage implementing all 8 methods passes `isinstance(_, Storage)`; an incomplete fake (missing one) fails.
 
 #### F1.10 — `Logger` port + `Determinism` utilities — S
 
