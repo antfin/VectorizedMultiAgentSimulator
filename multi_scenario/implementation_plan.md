@@ -325,8 +325,11 @@ Each feature lists its **demo command** + **expected output**.
 
 #### F1.11 — `Runner` port + `ExperimentService` skeleton — S
 
-- `Runner.run(cfg) -> ExperimentResult`. `ExperimentService` orchestrates: build deps → seed → write provenance → write run_state(RUNNING) → train → evaluate → compute metrics → save → write run_state(DONE).
-- TDD: full use-case test with fakes only — no VMAS, no BenchMARL. <1s.
+- **`Runner` Protocol** (`domain/ports/runner.py`) — `run(cfg, run_dir) -> ExperimentResult`. Concrete adapters: `LocalRunner` at F2.6 (wraps `ExperimentService`), `OvhRunner` at F6.2 (submits to cloud).
+- **`ExperimentService`** (`application/experiment_service.py`) — in-process orchestrator. Constructor takes the five domain ports (`scenario`, `algorithm`, `metrics`, `storage`, `logger`). `run(cfg, run_dir, provenance) -> ExperimentResult` runs the full lifecycle: `INITIALIZING` → save config + provenance → `make_env` → `RUNNING` → train → evaluate → metric bundle → `ExperimentResult` → save result → `DONE`. Returns the result.
+- **Provenance is injected**, not built inside the service — keeps the orchestrator free of git / package-version I/O. F2.7 supplies a real `ProvenanceWriter` to callers.
+- **Crash handling deferred to F5.7.** F1.11 is happy-path only.
+- TDD: full use-case test with port fakes only — no VMAS, no BenchMARL. <1s.
 - **Demo:** `pytest tests/unit/application/test_experiment_service.py -v` → green, full pipeline executed against fakes.
 
 #### F1.12 — Domain isolation enforcement — XS

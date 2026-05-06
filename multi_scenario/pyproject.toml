@@ -45,4 +45,7 @@ addopts = "-q"
 init-hook = 'import sys; sys.path.insert(0, "src")'
 
 [tool.pylint."messages control"]
-disable = []
+# duplicate-code (R0801) is noisy for test fakes that intentionally mirror the
+# same Protocol's structural shape. Suppressing globally; its signal value is
+# low for this codebase shape.
+disable = ["duplicate-code"]

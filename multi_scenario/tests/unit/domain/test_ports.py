@@ -20,6 +20,7 @@ from multi_scenario.domain.ports import (
     Algorithm,
     Logger,
     MetricsBundle,
+    Runner,
     Scenario,
     Storage,
 )
@@ -238,3 +239,30 @@ def test_fake_logger_implements_protocol():
 def test_incomplete_logger_fails_protocol_check():
     """Missing one protocol member → isinstance returns False."""
     assert not isinstance(_IncompleteLogger(), Logger)
+
+
+class _FakeRunner:
+    """A complete fake runner covering every member of the Runner protocol."""
+
+    name = "fake"
+
+    def run(  # type: ignore[empty-body]
+        self, cfg: ExperimentConfig, run_dir: Path
+    ) -> ExperimentResult:
+        return None  # type: ignore[return-value]
+
+
+class _IncompleteRunner:
+    """No `run` method — should fail isinstance."""
+
+    name = "incomplete"
+
+
+def test_fake_runner_implements_protocol():
+    """A class exposing every protocol member passes isinstance(Runner)."""
+    assert isinstance(_FakeRunner(), Runner)
+
+
+def test_incomplete_runner_fails_protocol_check():
+    """Missing the protocol member → isinstance returns False."""
+    assert not isinstance(_IncompleteRunner(), Runner)

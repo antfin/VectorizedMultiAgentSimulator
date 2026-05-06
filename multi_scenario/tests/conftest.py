@@ -21,22 +21,20 @@ def repo_root() -> Path:
 
 @pytest.fixture
 def fake_config_builder():
-    """Factory: builds minimal experiment config dicts for tests.
+    """Factory: builds minimal valid ExperimentConfig dicts for tests.
 
-    Sections mirror the F1.1 ExperimentConfig schema; update when that lands.
-    Pass keyword overrides to replace whole sections.
+    Sections mirror the v5 schema (§3.5 in implementation_plan.md). Pass
+    keyword overrides to replace whole sections.
     """
 
     def _build(**overrides) -> dict:
-        """Return a minimal config dict; ``overrides`` replace whole sections."""
+        """Return a minimal valid config dict; ``overrides`` replace whole sections."""
         cfg = {
             "experiment": {"id": "test", "seed": 0},
-            "scenario": {"name": "discovery"},
-            "algorithm": {"name": "mappo"},
-            "training": {"max_iters": 1},
-            "runner": {"name": "local"},
-            "metrics": {"set": "common"},
-            "storage": {"name": "local"},
+            "scenario": {"type": "discovery", "params": {}},
+            "algorithm": {"type": "mappo", "params": {}},
+            "training": {"max_iters": 1, "num_envs": 1, "device": "cpu"},
+            "evaluation": {"interval_iters": 1, "episodes": 1},
         }
         cfg.update(overrides)
         return cfg
