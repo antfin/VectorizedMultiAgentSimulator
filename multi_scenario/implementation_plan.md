@@ -374,6 +374,67 @@ Each feature lists its **demo command** + **expected output**.
 - **Port from rendezvous_comm:** BenchMARL wiring from `src/runner.py` (the working bits, not the LERO callbacks).
 - TDD: 1-env, 2-iteration smoke training (slow, marked `@pytest.mark.slow`).
 
+#### F2.4.1 — Propagate BenchMARL training knobs from config — S
+
+Background: F2.4 hard-coded several BenchMARL `ExperimentConfig` fields (`on_policy_collected_frames_per_batch=100`, `on_policy_minibatch_size=50`) and didn't propagate `lr` / `gamma` / `share_policy_params` / `n_minibatch_iters` at all. Worse, `lr` / `gamma` live on BenchMARL's `ExperimentConfig` but the `docs/example_config.yaml` (v5) routed them through `cfg.algorithm.params` where the strict-validating `MappoConfig` setattr loop would reject them. The F2.4 smoke test only passed because `algorithm.params` was empty.
+
+Schema change — extend `TrainingSection` with the universal training-loop knobs BenchMARL puts on its `ExperimentConfig`:
+
+- `lr: float = 3e-4`
+- `gamma: float = 0.99`
+- `frames_per_batch: int = 6000`
+- `minibatch_size: int = 400`
+- `n_minibatch_iters: int = 45`
+- `share_policy_params: bool = True`
+
+All have sensible defaults so the F1.1 round-trip and `fake_config_builder` tests stay green without edits.
+
+Wiring change — `BenchmarlBaseAdapter._experiment_config(cfg)` reads from `cfg.training` instead of hard-coding. `evaluation_interval` set to `cfg.evaluation.interval_iters * cfg.training.frames_per_batch` (cadence in iters from the user's POV; frames internally). `render=False` set explicitly to avoid the BenchMARL default `True` (causes pyglet crashes in headless / OVH).
+
+Algorithm-specific knobs (`lmbda`, `entropy_coef`, `clip_epsilon`) stay in `cfg.algorithm.params` — those genuinely live on `MappoConfig` / `IppoConfig` / etc.
+
+`docs/example_config.yaml` updated: move `lr` / `gamma` from `algorithm.params` to `training`; keep `lmbda` in `algorithm.params`.
+
+TDD:
+
+- New unit test: building `_experiment_config(cfg)` produces a BenchMARL `ExperimentConfig` with our cfg's `lr` / `gamma` / batch sizes propagated.
+- F2.4 smoke test still passes — config sets explicit small batch sizes for fast smoke runs.
+
+#### F2.4.2 — Model arch + critic config (deferred placeholder)
+
+**Trigger:** lift this into a real feature **before F8.3 (Run the matrix)** — that's when ER1-comparable training is queued and needs non-default MLP architecture / a separate critic. Or earlier if any production config explicitly requires custom `num_cells` / `activation_class` / critic shape.
+
+Scope when activated:
+
+- `num_cells` (MLP hidden layers) and `activation_class` plumbed from cfg.
+- Independent `critic_model_config` (rendezvous_comm passes a separate `MlpConfig` for the critic).
+- Model-type override (`"gnn"` topology) — Phase 9 LERO scope, not Phase 2.
+
+Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int] | None` and `algorithm.params.activation: str | None` (these are model knobs that vary by algorithm config in practice, so live in algorithm.params not training).
+
+#### F2.4.3 — Real rollout aggregation in `evaluate()` — S
+
+**Background:** F2.4 wired up `train()` but `evaluate()` returns zero-filled tensors. F2.4.3 populates them with real per-episode data so `CommonMetricsBundle.compute(rollout, scenario)` produces meaningful M1–M6 numbers after a training run.
+
+**Approach:** port the proven pattern from `rendezvous_comm/src/runner.py::evaluate_trained`. Inside `BenchmarlBaseAdapter.evaluate(artifact, env, cfg)`:
+
+1. Pull `experiment.test_env`, `experiment.policy`, `experiment.max_steps`, `experiment.group_map` from the artifact.
+2. Wrap in `torch.no_grad()` + `set_exploration_type(ExplorationType.DETERMINISTIC)`.
+3. Run `test_env.rollout(max_steps, policy, auto_cast_to_device=True, break_when_any_done=False)` — enough times to gather `cfg.evaluation.episodes` total.
+4. Extract per-env from the resulting TensorDict using path tuples:
+   - `episode_returns` — sum of `("next", group, "reward")` over T per env.
+   - `episode_lengths` — T (rollout length; refined later when episodes terminate naturally).
+   - `episode_collisions` — count of `("next", group, "info", "collision_rew") < 0` per env.
+5. **Discovery-specific:** `("next", group, "info", "targets_covered")` per-step → `cumsum(dim=1)` → `targets_covered: Tensor[n_episodes, T]`. Project memory invariant: cumsum of newly-covered counts (NOT terminated signal) — same logic as `VmasDiscoveryAdapter.success_predicate`.
+
+**Tests:** the F2.4 smoke test now asserts that `evaluate()` returns non-zero `episode_returns` and `episode_lengths > 0`; for discovery, asserts `targets_covered` is a Tensor of the right shape and `n_targets` is set.
+
+**Out of scope (later):**
+
+- Per-step length detection (currently uses constant T — fine for `break_when_any_done=False` but loses info when episodes end early).
+- Episode-truncation handling at iteration boundaries.
+- Token-extraction for comm scenarios (M5 — when comm scenarios land).
+
 #### F2.5 — `LocalStorageAdapter` — S
 
 - All run-level files we own are JSON: `input/config.json`, `output/metrics.json`, `output/eval_episodes.json`, `run_state.json`. BenchMARL's native CSVs in `benchmarl/` are preserved untouched. Per-run-summary CSV append is at the cross-run level (§3.5.3), not per-run. Writes to the §3.5.2 layout.
@@ -559,9 +620,11 @@ Each feature lists its **demo command** + **expected output**.
 #### F8.2 — Ablation matrix definition — S
 
 - 4 scenarios × 6 algorithms × N seeds + heuristic baseline. YAML matrix file + a script that fans it out into individual YAMLs.
+- **Prerequisite check:** if any matrix entry needs non-default MLP `num_cells`, `activation_class`, or a separate critic config, **F2.4.2 must be implemented first** (it's a deferred placeholder until that need is real).
 
 #### F8.3 — Run the matrix — M (compute-bound)
 
+- **Prerequisite:** verify **F2.4.2** is done if matrix configs use any non-default model architecture knobs. F2.4.2 is a deferred placeholder; without it, BenchMARL will use its built-in MLP defaults (which may or may not match your matrix definition).
 - Locally for tiny smoke; OVH for real. Collect to one master CSV.
 
 #### F8.4 — Comparison report — S

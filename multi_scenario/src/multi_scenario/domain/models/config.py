@@ -43,13 +43,26 @@ class AlgorithmSection(BaseModel):
 
 
 class TrainingSection(BaseModel):
-    """Training-loop orchestration: algorithm-agnostic knobs (iters, envs, device)."""
+    """Training-loop orchestration: algorithm-agnostic knobs.
+
+    Includes the universal knobs BenchMARL puts on its ExperimentConfig
+    (``lr``, ``gamma``, ``frames_per_batch``, ``minibatch_size``,
+    ``n_minibatch_iters``, ``share_policy_params``). Algorithm-specific
+    knobs (``lmbda`` for PPO, ``entropy_coef``, ``clip_epsilon``, …) stay
+    in ``cfg.algorithm.params``.
+    """
 
     model_config = STRICT
 
     max_iters: int
     num_envs: int = 1
     device: str = "cpu"
+    lr: float = 3e-4
+    gamma: float = 0.99
+    frames_per_batch: int = 6000
+    minibatch_size: int = 400
+    n_minibatch_iters: int = 45
+    share_policy_params: bool = True
 
 
 class EvaluationSection(BaseModel):

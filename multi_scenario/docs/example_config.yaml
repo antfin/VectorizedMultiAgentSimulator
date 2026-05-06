@@ -20,14 +20,18 @@ scenario:
 algorithm:
   type: mappo
   params:
-    lr: 0.0003
-    gamma: 0.99
-    lmbda: 0.95
+    lmbda: 0.95   # PPO-specific (lives on MappoConfig)
 
 training:
   max_iters: 2
   num_envs: 1
   device: cpu
+  lr: 0.0003                # universal — BenchMARL ExperimentConfig
+  gamma: 0.99               # universal — BenchMARL ExperimentConfig
+  frames_per_batch: 6000
+  minibatch_size: 400
+  n_minibatch_iters: 45
+  share_policy_params: true
 
 evaluation:
   interval_iters: 1
