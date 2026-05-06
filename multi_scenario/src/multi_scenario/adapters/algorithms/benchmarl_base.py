@@ -203,6 +203,7 @@ class BenchmarlBaseAdapter:
         all_returns: list[float] = []
         all_lengths: list[int] = []
         all_collisions: list[float] = []
+        all_terminated: list[bool] = []
         all_targets_covered: list[torch.Tensor] = []
 
         with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
@@ -219,6 +220,7 @@ class BenchmarlBaseAdapter:
                 self._extract_returns(rollout_td, ne, experiment.group_map, all_returns)
                 all_lengths.extend([rollout_t] * ne)
                 self._extract_collisions(rollout_td, ne, experiment.group_map, all_collisions)
+                self._extract_terminated(rollout_td, ne, all_terminated)
 
                 if cfg.scenario.type == "discovery":
                     self._extract_targets_covered(
@@ -229,6 +231,7 @@ class BenchmarlBaseAdapter:
             "episode_returns": torch.tensor(all_returns[:n_episodes], dtype=torch.float),
             "episode_lengths": torch.tensor(all_lengths[:n_episodes], dtype=torch.long),
             "episode_collisions": torch.tensor(all_collisions[:n_episodes], dtype=torch.float),
+            "episode_terminated": torch.tensor(all_terminated[:n_episodes], dtype=torch.bool),
         }
         if cfg.scenario.type == "discovery":
             rollout_dict["n_targets"] = cfg.scenario.params.get(
@@ -250,15 +253,38 @@ class BenchmarlBaseAdapter:
 
     @staticmethod
     def _extract_collisions(rollout_td: Any, ne: int, group_map: Any, out: list[float]) -> None:
+        # Different scenarios surface collisions under different info keys:
+        # discovery uses ``collision_rew``, navigation uses ``agent_collisions``.
+        # Both encode collisions as negative rewards; same aggregation logic.
         for group in group_map:
-            key = ("next", group, "info", "collision_rew")
-            if key in rollout_td.keys(include_nested=True):
-                coll = rollout_td[key]
-                per_env = (coll < 0).reshape(ne, -1).sum(dim=1).float()
-                out.extend(per_env.tolist())
-                return
-        # collision_rew not exposed → record zeros so episode_collisions matches len.
+            for info_key in ("collision_rew", "agent_collisions"):
+                key = ("next", group, "info", info_key)
+                if key in rollout_td.keys(include_nested=True):
+                    coll = rollout_td[key]
+                    per_env = (coll < 0).reshape(ne, -1).sum(dim=1).float()
+                    out.extend(per_env.tolist())
+                    return
+        # No collision signal exposed → record zeros so episode_collisions matches len.
         out.extend([0.0] * ne)
+
+    @staticmethod
+    def _extract_terminated(rollout_td: Any, ne: int, out: list[bool]) -> None:
+        """Per-episode natural termination flag — True if env terminated at any step.
+
+        Universal across scenarios. For navigation, ``terminated=True`` =
+        all agents reached goals. For discovery (``targets_respawn=False``),
+        ``terminated=True`` = all targets covered. The ``targets_covered``
+        cumsum-based path stays the discovery success metric (project memory:
+        cumsum, NOT terminated, due to a rendezvous_comm bug); this flag is
+        the natural success signal for scenarios that don't expose richer info.
+        """
+        key = ("next", "terminated")
+        if key in rollout_td.keys(include_nested=True):
+            term = rollout_td[key]
+            per_env = term.reshape(ne, -1).any(dim=1)
+            out.extend(per_env.tolist())
+            return
+        out.extend([False] * ne)
 
     @staticmethod
     def _extract_targets_covered(rollout_td: Any, group_map: Any, out: list[torch.Tensor]) -> None:

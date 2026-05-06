@@ -529,7 +529,12 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 > One scenario per feature; each adds scenario adapter + scenario metric set + at least one MAPPO smoke run.
 
-- **F4.1 — Navigation adapter + metrics** (S). Proposed success metric: fraction of agents within `goal_radius` at episode end. **User confirms before merge.**
+- **F4.1 — Navigation adapter + metrics** (S) ✅ — `VmasNavigationAdapter`. **M1 revised after user confirmation:** binary "all agents reached their goals during the episode" via the universal `episode_terminated` rollout key (mirrors discovery's all-or-nothing semantics; "fraction at goal" is semantically a coverage metric, not a success rate). Bundled changes:
+  - `BenchmarlBaseAdapter._extract_terminated` — universal extraction of `("next", "terminated")` per episode → `episode_terminated: Tensor[n_eps, bool]`. Available to any scenario.
+  - `_extract_collisions` — falls back to `("next", group, "info", "agent_collisions")` (navigation's key) if `collision_rew` not present (discovery's key still tried first).
+  - `_EVAL_EPISODES_SCHEMA` extended with `episode_terminated` so the new universal key surfaces in `eval_episodes.json`.
+  - `experiments/navigation/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_navigation.py`. End-to-end via `LocalRunner` confirmed.
+  - **Out of scope (deferred):** sharper M6 (per-agent on-goal fraction at episode end) — needs per-agent position extraction into the rollout dict; stub `None` for now.
 - **F4.2 — Flocking adapter + metrics** (S). Proposed: fraction of timesteps where inter-agent distance ∈ [desired ± tol] AND |v − v*| < tol.
 - **F4.3 — Transport adapter + metrics** (S). Proposed: package-at-goal flag + final distance.
 - **F4.4 — Scenario registry refactor** (XS).

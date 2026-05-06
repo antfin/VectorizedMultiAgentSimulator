@@ -29,6 +29,7 @@ _EVAL_EPISODES_SCHEMA = (
     "episode_returns",
     "episode_lengths",
     "episode_collisions",
+    "episode_terminated",
     "targets_covered",
     "n_targets",
 )
