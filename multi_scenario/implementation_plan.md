@@ -359,9 +359,13 @@ Each feature lists its **demo command** + **expected output**.
 - **Rollout shape contract** (documented in the bundle's docstring): `{"episode_returns": Tensor[n], "episode_lengths": Tensor[n], "episode_collisions": Tensor[n]}`. BenchMARL adapter (F2.4) aggregates its TensorDict into this dict.
 - **Port from rendezvous_comm:** logic from `src/metrics.py`.
 
-#### F2.3 — `DiscoveryMetricSet` (M1, M6) — S
+#### F2.3 — Discovery DI primitives (M1, M6) — S
 
-- M1 from `targets_covered` cumsum (NOT `terminated` — that bug is documented).
+- Renamed from "DiscoveryMetricSet" — sets are gone. F2.3 implements the discovery-specific DI primitives on `VmasDiscoveryAdapter` (M1 / M6); the always-on `CommonMetricsBundle` from F2.2 picks them up automatically.
+- `success_predicate(rollout)` — M1 from `targets_covered` cumsum max **(NOT from the `terminated` signal — documented bug from rendezvous_comm)**. Returns Tensor[n_episodes] of bools, or None when the rollout lacks `targets_covered` / `n_targets`.
+- `coverage_progress(rollout)` — M6 = `max-over-T(targets_covered) / n_targets` per episode. Returns Tensor[n_episodes] of floats, or None when data missing.
+- `utilization_predicate` — M8 stays stubbed at this stage; lands when needed.
+- **Rollout-shape extension (documented in adapter docstring):** discovery rollouts carry `rollout["targets_covered"]: Tensor[n_episodes, T]` and `rollout["n_targets"]: int` on top of F2.2's universal contract. F2.4 (BenchMARL) populates these from VMAS info dicts.
 
 #### F2.4 — `BenchmarlBaseAdapter` + `MappoAdapter` — M
 

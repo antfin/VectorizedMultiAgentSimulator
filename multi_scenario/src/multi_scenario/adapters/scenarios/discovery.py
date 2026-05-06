@@ -1,14 +1,23 @@
 """VMAS discovery scenario adapter — implements the Scenario port.
 
-The four DI metric primitives (``success_predicate``, ``coverage_progress``,
-``utilization_predicate``) are stubbed as ``None``-returners here; F2.3
-fills them in once the metrics bundle lands. ``has_comm`` defaults False
-(no comm channel); flip via ``cfg.params['dim_c']`` if/when comm scenarios
-are added.
+``success_predicate`` (M1) and ``coverage_progress`` (M6) are wired up;
+``utilization_predicate`` (M8) is still stubbed and lands later.
+``has_comm`` defaults False (no comm channel); flip via
+``cfg.params['dim_c']`` if/when comm-enabled discovery scenarios are added.
+
+Rollout-shape contract (extends F2.2's universal contract):
+
+- ``rollout["targets_covered"]``: ``Tensor[n_episodes, T]`` — per-step covered count.
+- ``rollout["n_targets"]``: ``int`` — used both as the success threshold (M1)
+  and as the normaliser for coverage progress (M6).
+
+The BenchMARL adapter (F2.4) is responsible for populating these from VMAS
+info dicts.
 """
 
 from typing import Any
 
+import torch
 import vmas
 
 from multi_scenario.domain.models import ScenarioSection
@@ -50,13 +59,32 @@ class VmasDiscoveryAdapter:
         return False
 
     def success_predicate(self, rollout: Any) -> Any:
-        """Per-episode success Boolean — wired up at F2.3."""
-        return None
+        """M1: True per episode if all targets were covered at any step.
+
+        Project memory: derived from ``targets_covered`` cumsum max — *not*
+        from the ``terminated`` signal (documented bug from rendezvous_comm).
+        Returns None when the rollout lacks the required keys.
+        """
+        targets_covered = rollout.get("targets_covered")
+        n_targets = rollout.get("n_targets")
+        if targets_covered is None or n_targets is None:
+            return None
+        max_per_episode = torch.as_tensor(targets_covered).max(dim=-1).values
+        return max_per_episode >= n_targets
 
     def coverage_progress(self, rollout: Any) -> Any | None:
-        """Per-episode coverage scalar — wired up at F2.3."""
-        return None
+        """M6: max fraction of targets ever covered, per episode.
+
+        ``= (targets_covered.max(dim=-1).values / n_targets)``. Returns None
+        when the rollout lacks the required keys.
+        """
+        targets_covered = rollout.get("targets_covered")
+        n_targets = rollout.get("n_targets")
+        if targets_covered is None or n_targets is None:
+            return None
+        max_per_episode = torch.as_tensor(targets_covered).float().max(dim=-1).values
+        return max_per_episode / float(n_targets)
 
     def utilization_predicate(self, state: Any) -> Any:
-        """Per-(env, agent) utilization Boolean — wired up at F2.3."""
+        """M8: per-(env, agent) utilization — stub, lands in a later feature."""
         return None
