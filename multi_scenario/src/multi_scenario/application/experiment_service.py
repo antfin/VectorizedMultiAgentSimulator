@@ -4,10 +4,16 @@ Wires the five domain ports (Scenario, Algorithm, MetricsBundle, Storage,
 Logger) together to execute one experiment run end-to-end. Provenance is
 *injected* by the caller so this class stays free of git / package-version
 I/O. Crash handling lands at F5.7.
+
+The optional ``eval_episodes_writer`` callable is the F2.10.1 escape hatch:
+``LocalRunner`` injects ``LocalStorageAdapter.save_eval_episodes`` so the
+service can persist the raw eval rollout without growing the ``Storage``
+Protocol surface (consistent with the F1.9 minimalism rule).
 """
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable
 
 from multi_scenario.domain.models import (
     ExperimentConfig,
@@ -29,9 +35,9 @@ from multi_scenario.domain.ports import (
 class ExperimentService:
     """In-process orchestrator for one experiment run."""
 
-    # Five injected ports (DI) → 6 ctor args; single public `run` method is the
-    # whole point of a use-case orchestrator. Pylint's defaults don't fit this
-    # pattern.
+    # Five injected ports (DI) + the optional eval-episodes writer → 7 ctor args;
+    # single public `run` method is the whole point of a use-case orchestrator.
+    # Pylint's defaults don't fit this pattern.
     # pylint: disable=too-many-arguments,too-many-positional-arguments,too-few-public-methods
 
     def __init__(
@@ -41,12 +47,14 @@ class ExperimentService:
         metrics: MetricsBundle,
         storage: Storage,
         logger: Logger,
+        eval_episodes_writer: Callable[[Path, Any], None] | None = None,
     ) -> None:
         self._scenario = scenario
         self._algorithm = algorithm
         self._metrics = metrics
         self._storage = storage
         self._logger = logger
+        self._eval_episodes_writer = eval_episodes_writer
 
     def run(
         self,
@@ -73,6 +81,11 @@ class ExperimentService:
 
         self._logger.info(f"evaluating {run_id}")
         rollout = self._algorithm.evaluate(artifact, env, cfg, run_dir=run_dir)
+
+        # F2.10.1: persist raw per-episode eval data when an opt-in writer is
+        # wired (LocalRunner does this). Off the Storage Protocol per F1.9.
+        if self._eval_episodes_writer is not None:
+            self._eval_episodes_writer(run_dir, rollout)
 
         metric_dict = self._metrics.compute(rollout, self._scenario)
 

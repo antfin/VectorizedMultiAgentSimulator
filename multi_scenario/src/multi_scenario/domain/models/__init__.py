@@ -17,6 +17,7 @@ from .config import (
     TrainingSection,
 )
 from .provenance import LibraryVersions, Provenance
+from .report import ReportLinks, ReportVideos, RunReport
 from .result import ExperimentResult, MetricRecord
 from .rng_state import RngState
 from .run_id import RunId
@@ -31,8 +32,11 @@ __all__ = [
     "LibraryVersions",
     "MetricRecord",
     "Provenance",
+    "ReportLinks",
+    "ReportVideos",
     "RngState",
     "RunId",
+    "RunReport",
     "RunState",
     "RunStateRecord",
     "RunStateTransition",

@@ -14,7 +14,7 @@ import pytest
 
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
-from multi_scenario.domain.models import ExperimentConfig, RunId
+from multi_scenario.domain.models import ExperimentConfig, RunId, RunReport
 
 # Sibling to this file's repo: the canonical smoke config under experiments/.
 _SMOKE_YAML = (
@@ -31,9 +31,10 @@ _SMOKE_YAML = (
 def test_discovery_mappo_smoke_completes(tmp_path: Path) -> None:
     """Phase 2 milestone: full §3.5.2 layout produced with real metrics + provenance."""
     # The test legitimately inspects many distinct §3.5.2 artefacts (state /
-    # config / provenance / metrics / benchmarl / log); named path variables
-    # keep the assertions readable.
-    # pylint: disable=too-many-locals
+    # config / provenance / metrics / eval_episodes / report / benchmarl /
+    # log); named path variables keep the assertions readable. Splitting this
+    # into multiple tests would re-run the slow training each time.
+    # pylint: disable=too-many-locals,too-many-statements
     cfg = ExperimentConfig.from_yaml(_SMOKE_YAML)
     # Redirect storage so the test never pollutes the real experiments folder.
     assert cfg.runtime is not None
@@ -93,3 +94,33 @@ def test_discovery_mappo_smoke_completes(tmp_path: Path) -> None:
     log_path = run_dir / "logs" / "run.log"
     assert log_path.is_file()
     assert log_path.stat().st_size > 0
+
+    # F2.10.1: eval_episodes.json with the universal rollout fields, sized to
+    # cfg.evaluation.episodes; discovery rollouts also carry targets_covered + n_targets.
+    eval_path = run_dir / "output" / "eval_episodes.json"
+    assert eval_path.is_file()
+    eval_episodes = json.loads(eval_path.read_text(encoding="utf-8"))
+    n_eps = cfg.evaluation.episodes
+    assert len(eval_episodes["episode_returns"]) == n_eps
+    assert len(eval_episodes["episode_lengths"]) == n_eps
+    assert len(eval_episodes["episode_collisions"]) == n_eps
+    assert eval_episodes["n_targets"] == cfg.scenario.params["n_targets"]
+    assert len(eval_episodes["targets_covered"]) == n_eps
+
+    # F2.10: report.json manifest with status=DONE; every non-None link resolves.
+    report_path = run_dir / "output" / "report.json"
+    assert report_path.is_file()
+    report = RunReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+    assert report.status == "DONE"
+    assert report.duration_seconds >= 0
+    for rel in (
+        report.links.config,
+        report.links.provenance,
+        report.links.log,
+        report.links.metrics,
+        report.links.eval_episodes,  # populated now (F2.10.1)
+        report.links.benchmarl_dir,
+        report.links.benchmarl_scalars,
+    ):
+        assert rel is not None
+        assert (run_dir / rel).exists()

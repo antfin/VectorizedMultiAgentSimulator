@@ -481,9 +481,20 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 #### F2.10 — `report.json` writer — XS
 
-- At run end (after metrics aggregation, before run_state→DONE), emit `output/report.json` per §3.5.2: a manifest with status, started/finished timestamps, duration, headline summary (a few key metrics), and relative-path links to every relevant artefact (`config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy` inside `benchmarl/`, `videos.before_training`, `videos.after_training`, `benchmarl_dir`, `benchmarl_scalars`).
+- At run end, emit `output/report.json` per §3.5.2: a manifest with status, started/finished timestamps, duration, headline summary (M1–M4), and relative-path links to every relevant artefact (`config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy` inside `benchmarl/`, `videos.before_training`, `videos.after_training`, `benchmarl_dir`, `benchmarl_scalars`).
+- **Wiring:** built and saved by `LocalRunner` *after* `ExperimentService.run()` returns (not inside the service) so the report's `status` reflects the on-disk run state. Keeps the `Storage` Protocol surface minimal — `save_report` lives on the concrete `LocalStorageAdapter` only (per F1.9 design note).
 - The exact `<bm_run>` directory name (BenchMARL-assigned) is captured in the manifest so consumers don't glob.
+- **Out of scope:** `eval_episodes.json` writer — link is `null` until F2.10.1 lands. Video paths — `null` until F2.11 lands.
 - TDD: given a fully-populated run folder, the writer produces a manifest whose every linked path resolves to an existing file (or is `null` if opt-in artefact wasn't generated).
+
+#### F2.10.1 — `eval_episodes.json` writer — XS ✅
+
+- `LocalStorageAdapter.save_eval_episodes(run_dir, rollout)` — serialises the rollout dict from `Algorithm.evaluate()` to `output/eval_episodes.json`. Tensors → lists via `.tolist()`. Schema: `{"episode_returns": [...], "episode_lengths": [...], "episode_collisions": [...], "targets_covered"?: [[...]], "n_targets"?: int}`. Discovery-specific fields included only when present; unknown keys silently dropped to keep schema stable.
+- **Wiring:** `ExperimentService` accepts an optional `eval_episodes_writer: Callable[[Path, Any], None] | None = None` constructor arg; when set, called after `evaluate()` and before `metrics.compute()`. `LocalRunner` injects `LocalStorageAdapter().save_eval_episodes` (isinstance-narrowed to the concrete adapter, mirroring the F2.10 pattern). Off the `Storage` Protocol surface (F1.9 minimalism).
+- `RunReport.links.eval_episodes` now resolves automatically via `ReportBuilder._optional_rel`.
+- Tests: storage round-trip (universal + discovery + unknown-key drop), service wiring (writer called with correct args), F2.9 smoke extended with eval_episodes.json + report link assertions.
+
+**Out of scope:** mid-training intermediate eval samples (only the final eval is captured here; the per-iter eval rows in F5.2 will need a different hook).
 
 #### F2.11 — Before/after training videos — S
 

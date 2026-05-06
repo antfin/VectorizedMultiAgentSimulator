@@ -171,3 +171,28 @@ def test_run_completes_full_pipeline_with_fakes(fake_config_builder, tmp_path: P
     info_msgs = [m for level, m in logger.messages if level == "info"]
     assert any("training" in m for m in info_msgs)
     assert any("evaluating" in m for m in info_msgs)
+
+
+def test_eval_episodes_writer_called_with_rollout(fake_config_builder, tmp_path: Path):
+    """When ``eval_episodes_writer`` is provided, it receives the rollout from evaluate()."""
+    captured: list[tuple[Path, object]] = []
+
+    def writer(run_dir: Path, rollout: object) -> None:
+        captured.append((run_dir, rollout))
+
+    service = ExperimentService(
+        scenario=_FakeScenario(),
+        algorithm=_FakeAlgorithm(),
+        metrics=_FakeMetricsBundle(),
+        storage=_InMemoryStorage(),
+        logger=_ListLogger(),
+        eval_episodes_writer=writer,
+    )
+    cfg = ExperimentConfig.model_validate(fake_config_builder())
+    service.run(cfg, run_dir=tmp_path, provenance=_stub_provenance())
+
+    # _FakeAlgorithm.evaluate returns the rollout dict {"rollout": True}.
+    assert len(captured) == 1
+    received_run_dir, received_rollout = captured[0]
+    assert received_run_dir == tmp_path
+    assert received_rollout == {"rollout": True}
