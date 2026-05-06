@@ -297,9 +297,12 @@ Each feature lists its **demo command** + **expected output**.
 
 - `Protocol`: `name`, `train(env, cfg) -> TrainArtifact`, `evaluate(artifact, env, cfg) -> Rollout`.
 
-#### F1.8 — `MetricSet` port — XS
+#### F1.8 — `MetricsBundle` port + `ports/` package refactor — S
 
-- `Protocol`: `compute(rollout, scenario_info) -> dict[str, float]`.
+- Renamed from "MetricSet" — we retired metric *sets* during the §3.5.3 redesign in favour of a single always-on bundle producing M1–M9 with `null` for non-applicable metrics.
+- Runtime-checkable `Protocol` with one method: `compute(rollout, scenario) -> dict[str, float | None]`. Receives the rollout from `Algorithm.evaluate` plus the `Scenario` adapter (used for the four DI primitives feeding scenario-specific calculations). Returns the M1–M9 dict directly.
+- **Rule-of-three refactor:** with three Protocols (Scenario, Algorithm, MetricsBundle) the single-file `ports.py` becomes a package: `ports/{__init__.py, scenario.py, algorithm.py, metrics.py}` mirroring `models/`. The `__init__.py` re-exports public names; existing imports unchanged.
+- TDD: a fake bundle implementing `compute` passes `isinstance(_, MetricsBundle)`; one without fails.
 
 #### F1.9 — `Storage` port — XS
 

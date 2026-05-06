@@ -9,7 +9,7 @@
 from typing import Any
 
 from multi_scenario.domain.models import ExperimentConfig, ScenarioSection
-from multi_scenario.domain.ports import Algorithm, Scenario
+from multi_scenario.domain.ports import Algorithm, MetricsBundle, Scenario
 
 
 class _FakeScenario:
@@ -96,3 +96,26 @@ def test_fake_algorithm_implements_protocol():
 def test_incomplete_algorithm_fails_protocol_check():
     """Missing one protocol member → isinstance returns False."""
     assert not isinstance(_IncompleteAlgorithm(), Algorithm)
+
+
+class _FakeMetricsBundle:
+    """A complete fake bundle covering every member of the MetricsBundle protocol."""
+
+    def compute(self, rollout: Any, scenario: Scenario) -> dict[str, float | None]:
+        return {"M1_success_rate": 0.4, "M5_tokens": None}
+
+
+class _IncompleteMetricsBundle:
+    """No `compute` method — should fail isinstance."""
+
+    name = "incomplete"
+
+
+def test_fake_metrics_bundle_implements_protocol():
+    """A class exposing every protocol member passes isinstance(MetricsBundle)."""
+    assert isinstance(_FakeMetricsBundle(), MetricsBundle)
+
+
+def test_incomplete_metrics_bundle_fails_protocol_check():
+    """Missing the protocol member → isinstance returns False."""
+    assert not isinstance(_IncompleteMetricsBundle(), MetricsBundle)

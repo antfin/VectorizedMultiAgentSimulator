@@ -1,13 +1,8 @@
-"""Domain ports — Protocols that adapters must satisfy.
-
-Every Protocol here is torch/vmas/benchmarl-agnostic. Tensor-shaped values
-appear as ``Any`` so the domain doesn't pull in those libraries (enforced by
-F1.12). Concrete adapters in ``adapters/`` know the real types.
-"""
+"""Scenario port — Protocol that scenario adapters must satisfy."""
 
 from typing import Any, Protocol, runtime_checkable
 
-from .models import ExperimentConfig, ScenarioSection
+from multi_scenario.domain.models import ScenarioSection
 
 
 @runtime_checkable
@@ -41,23 +36,3 @@ class Scenario(Protocol):
 
     def utilization_predicate(self, state: Any) -> Any:
         """Per-(env, agent) Boolean indicating 'doing useful work' (drives M8)."""
-
-
-@runtime_checkable
-class Algorithm(Protocol):
-    """Domain port for MARL algorithms.
-
-    Implementations live in ``adapters/algorithms/`` (typically wrapping a
-    BenchMARL ``Experiment``). ``env`` is whatever ``Scenario.make_env``
-    produced; ``artifact`` is whatever ``train`` returned (the algorithm
-    decides its own state representation). The Protocol stays
-    torch/benchmarl-agnostic by typing both as ``Any``.
-    """
-
-    name: str
-
-    def train(self, env: Any, cfg: ExperimentConfig) -> Any:
-        """Train and return a serialisable artifact (policy state + metadata)."""
-
-    def evaluate(self, artifact: Any, env: Any, cfg: ExperimentConfig) -> Any:
-        """Run evaluation episodes; return rollout data for metric computation."""
