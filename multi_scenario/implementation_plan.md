@@ -519,9 +519,9 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - **F3.3 — IDDPG adapter** (S) ✅ — `IddpgAdapter` (off-policy, same fields as MADDPG); smoke yaml + tests; no base changes (off_policy_* knobs already wired in F3.2).
 - **F3.4 — ISAC adapter** (S) ✅ — `IsacAdapter` (off-policy SAC with alpha temperature / num_qvalue_nets / etc); smoke yaml + tests; same template as IDDPG.
 - **F3.5 — MASAC adapter** (S) ✅ — `MasacAdapter` (off-policy multi-agent SAC, centralised critics); smoke yaml + tests; same template as ISAC.
-- **F3.6 — Algorithm registry refactor** (XS) — extract common BenchMARL boilerplate into `benchmarl_base.py`. Refactor only after the 6th adapter, not before (rule of three). **Trigger reached: 6 adapters (mappo/ippo/maddpg/iddpg/isac/masac) all share the same `_algorithm_config` setattr loop.**
+- **F3.6 — Algorithm registry refactor** (XS) ✅ — `BenchmarlBaseAdapter` gained a `_config_class` class attribute + a default `_algorithm_config` that instantiates from YAML and applies `cfg.algorithm.params` overrides with strict field validation. Each of the 6 adapters shrank to ~12 lines of declarative metadata (name + _config_class). Subclasses can still override `_algorithm_config` directly if a custom build path is needed. Behavior-preserving — all 12 algorithm tests + 109 others still green.
 
-**Phase 3 milestone demo:** loop over 6 yaml configs, all produce CSV rows in the same `results/`.
+**Phase 3 milestone demo:** loop over 6 yaml configs, all produce CSV rows in the same `results/`. (Per-algorithm smoke configs ready: `experiments/discovery/baseline/configs/{mappo,ippo,maddpg,iddpg,isac,masac}_smoke.yaml`. Cross-run CSV writer lands in F5.2.)
 
 ---
 

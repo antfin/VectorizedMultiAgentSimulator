@@ -37,16 +37,36 @@ _TASK_BY_TYPE: dict[str, VmasTask] = {
 
 
 class BenchmarlBaseAdapter:
-    """Shared scaffolding for BenchMARL-backed algorithm adapters."""
+    """Shared scaffolding for BenchMARL-backed algorithm adapters.
 
-    # Subclasses override `name` and `_algorithm_config`.
+    Concrete subclasses set ``name`` and ``_config_class`` (the BenchMARL
+    ``AlgorithmConfig`` to instantiate via ``get_from_yaml()``). The default
+    ``_algorithm_config`` constructs that config and applies any
+    ``cfg.algorithm.params`` overrides with strict field validation. Override
+    ``_algorithm_config`` directly only when a custom build path is needed
+    (e.g. multi-step config wiring not expressible as flat setattr).
+    """
+
+    # Subclasses override `name` and `_config_class`.
     # pylint: disable=too-few-public-methods,unused-argument
 
     name: str = "benchmarl_base"
+    _config_class: type | None = None  # subclass sets this
 
     def _algorithm_config(self, cfg: ExperimentConfig) -> Any:
-        """Return the BenchMARL AlgorithmConfig (subclass responsibility)."""
-        raise NotImplementedError
+        """Default: instantiate ``_config_class`` from YAML + apply param overrides."""
+        if self._config_class is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} must set _config_class or override _algorithm_config"
+            )
+        bm = self._config_class.get_from_yaml()
+        # cfg.algorithm.params overrides on the AlgorithmConfig dataclass; only
+        # set fields that exist there to fail loudly on typos.
+        for key, value in cfg.algorithm.params.items():
+            if not hasattr(bm, key):
+                raise ValueError(f"unknown {type(bm).__name__} field: {key}")
+            setattr(bm, key, value)
+        return bm
 
     def _task(self, cfg: ExperimentConfig) -> Any:
         scenario_type = cfg.scenario.type
