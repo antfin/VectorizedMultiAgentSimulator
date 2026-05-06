@@ -348,9 +348,15 @@ Each feature lists its **demo command** + **expected output**.
 - **Port from rendezvous_comm:** discovery params from `src/config.py`; the `targets_respawn=False` invariant.
 - TDD: env builds; observation/action spaces match for `n_agents=2, n_targets=2`.
 
-#### F2.2 — Common metric adapters (M2, M3, M4) — S
+#### F2.2 — `CommonMetricsBundle` — S
 
-- Pure functions: `m2_avg_return`, `m3_steps`, `m4_collisions`. Bundled into `CommonMetricSet`.
+- Renamed from "CommonMetricSet" — the always-on bundle replaced metric sets at the §3.5.3 redesign.
+- `CommonMetricsBundle` (in `adapters/metrics/common.py`) implements `MetricsBundle.compute(rollout, scenario) -> dict[str, float | None]`. Routing:
+  - **Universal**, computed here: M2 (return), M3 (steps), M4 (collisions) — means over per-episode tensors in the rollout.
+  - **Scenario-DI**: M1 / M6 / M8 — delegated to `scenario.success_predicate` / `coverage_progress` / `utilization_predicate`. Return None when the scenario returns None (F2.1 stub case).
+  - **Comm-gated**: M5 — None when `scenario.has_comm()` is False.
+  - **Stubbed (None)**: M7 (sample-efficiency, end-of-run from eval-curve data) and M9 (spatial spread, needs position field in rollout). Filled in later features.
+- **Rollout shape contract** (documented in the bundle's docstring): `{"episode_returns": Tensor[n], "episode_lengths": Tensor[n], "episode_collisions": Tensor[n]}`. BenchMARL adapter (F2.4) aggregates its TensorDict into this dict.
 - **Port from rendezvous_comm:** logic from `src/metrics.py`.
 
 #### F2.3 — `DiscoveryMetricSet` (M1, M6) — S
