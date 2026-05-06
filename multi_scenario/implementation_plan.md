@@ -445,10 +445,13 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - In-process runner. `factories.py` registers names → adapters.
 - TDD: registry round-trip; unknown name raises clean error.
 
-#### F2.7 — `FileLogger` + provenance + run_state writers — S
+#### F2.7 — `FileLogger` + `ConsoleLogger` + `ProvenanceWriter` — S
 
-- `FileLogger` writes to `logs/run.log`. `ProvenanceWriter` computes hashes & writes `input/provenance.json` (JSON, with `hashed_source_files` and `library_versions` per §3.5.5). `RunStateWriter` updates `run_state.json` at lifecycle transitions.
-- Wire all three into `ExperimentService`.
+- `FileLogger(log_path)` — appends `<UTC ISO ts> <LEVEL> <msg>\n` to `logs/run.log`; auto-creates parent dirs.
+- `ConsoleLogger(debug=False)` — info/debug → stdout, warning/error → stderr; debug suppressed by default.
+- `ProvenanceWriter(hashed_source_files=(), git_root=None)` — callable building a `Provenance` for one run: `config_hash` from F1.5's `compute_config_hash`, `code_hash` from `compute_code_hash` (or `"sha256:empty"` when no files supplied), `git_sha` / `git_dirty` via `git rev-parse HEAD` and `git diff-index --quiet HEAD` with safe fallbacks (`"unknown"` / `False`), `library_versions` via `importlib.metadata` + `multi_scenario.__version__`.
+- **Wiring:** `LocalRunner.__init__(provenance_factory=...)` becomes optional and defaults to `ProvenanceWriter()` — callers can omit it for the common case. The logger is still mandatory because it's run-dir-scoped (FileLogger needs the run_dir, only known at run time); a `make_local_runner(run_dir)` helper can land later if useful.
+- **`RunStateWriter` is not a separate class.** Its role — writing `run_state.json` at every lifecycle transition — is fulfilled by `Storage.save_run_state` + `RunStateRecord.transition_to` + the explicit transitions inside `ExperimentService.run`. No new code needed for that part.
 - **Port from rendezvous_comm:** `logging_setup.py`, `provenance.py`.
 
 #### F2.8 — CLI `multi-scenario run <yaml>` — S

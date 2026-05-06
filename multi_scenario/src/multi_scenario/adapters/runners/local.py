@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from multi_scenario.adapters.metrics.common import CommonMetricsBundle
+from multi_scenario.adapters.provenance.writer import ProvenanceWriter
 from multi_scenario.application.experiment_service import ExperimentService
 from multi_scenario.application.factories import (
     make_algorithm,
@@ -36,11 +37,13 @@ class LocalRunner:
     def __init__(
         self,
         logger: Logger,
-        provenance_factory: Callable[[ExperimentConfig], Provenance],
+        provenance_factory: Callable[[ExperimentConfig], Provenance] | None = None,
         metrics: MetricsBundle | None = None,
     ) -> None:
         self._logger = logger
-        self._provenance_factory = provenance_factory
+        self._provenance_factory: Callable[[ExperimentConfig], Provenance] = (
+            provenance_factory or ProvenanceWriter()
+        )
         self._metrics: MetricsBundle = metrics or CommonMetricsBundle()
 
     def run(self, cfg: ExperimentConfig, run_dir: Path) -> ExperimentResult:
