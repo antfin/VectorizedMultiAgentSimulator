@@ -76,11 +76,17 @@ class _FakeAlgorithm:
 
     name = "fake"
 
-    def train(self, env: Any, cfg: ExperimentConfig) -> Any:
-        return ("artifact", env, cfg)
+    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
+        return ("artifact", env, cfg, run_dir)
 
-    def evaluate(self, artifact: Any, env: Any, cfg: ExperimentConfig) -> Any:
-        return ("rollout", artifact, env, cfg)
+    def evaluate(
+        self,
+        artifact: Any,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+    ) -> Any:
+        return ("rollout", artifact, env, cfg, run_dir)
 
 
 class _IncompleteAlgorithm:
@@ -88,7 +94,7 @@ class _IncompleteAlgorithm:
 
     name = "incomplete"
 
-    def train(self, env: Any, cfg: ExperimentConfig) -> Any:
+    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
         return None
 
 

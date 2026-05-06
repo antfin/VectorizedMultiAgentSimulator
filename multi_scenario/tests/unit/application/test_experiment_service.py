@@ -44,10 +44,16 @@ class _FakeScenario:
 class _FakeAlgorithm:
     name = "mappo"
 
-    def train(self, env: Any, cfg: ExperimentConfig) -> Any:
+    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
         return {"trained": True}
 
-    def evaluate(self, artifact: Any, env: Any, cfg: ExperimentConfig) -> Any:
+    def evaluate(
+        self,
+        artifact: Any,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+    ) -> Any:
         return {"rollout": True}
 
 

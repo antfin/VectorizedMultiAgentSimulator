@@ -69,10 +69,10 @@ class ExperimentService:
         self._storage.save_run_state(run_dir, state)
 
         self._logger.info(f"training {run_id}")
-        artifact = self._algorithm.train(env, cfg)
+        artifact = self._algorithm.train(env, cfg, run_dir=run_dir)
 
         self._logger.info(f"evaluating {run_id}")
-        rollout = self._algorithm.evaluate(artifact, env, cfg)
+        rollout = self._algorithm.evaluate(artifact, env, cfg, run_dir=run_dir)
 
         metric_dict = self._metrics.compute(rollout, self._scenario)
 

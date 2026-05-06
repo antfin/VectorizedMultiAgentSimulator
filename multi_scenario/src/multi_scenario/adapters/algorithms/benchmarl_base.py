@@ -15,6 +15,7 @@ BenchMARL's ``test_env.rollout()`` — pattern ported from
 ``rendezvous_comm/src/runner.py::evaluate_trained``.
 """
 
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -89,9 +90,20 @@ class BenchmarlBaseAdapter:
             bm.save_folder = save_folder
         return bm
 
-    def train(self, env: Any, cfg: ExperimentConfig) -> Experiment:
-        """Build the BenchMARL Experiment, run training, return the Experiment."""
-        save_folder = cfg.runtime.storage.path if cfg.runtime is not None else None
+    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Experiment:
+        """Build the BenchMARL Experiment, run training, return the Experiment.
+
+        BenchMARL's native scalars / checkpoints land at ``run_dir/output/benchmarl/``
+        when run_dir is supplied (per the §3.5.2 layout). Falls back to the
+        BenchMARL default (cwd) when run_dir is None.
+        """
+        save_folder: str | None
+        if run_dir is not None:
+            save_folder_path = run_dir / "output" / "benchmarl"
+            save_folder_path.mkdir(parents=True, exist_ok=True)
+            save_folder = str(save_folder_path)
+        else:
+            save_folder = None
         bm_cfg = self._experiment_config(cfg, save_folder=save_folder)
         experiment = Experiment(
             task=self._task(cfg),
@@ -103,12 +115,21 @@ class BenchmarlBaseAdapter:
         experiment.run()
         return experiment
 
-    def evaluate(self, artifact: Experiment, env: Any, cfg: ExperimentConfig) -> dict[str, Any]:
+    def evaluate(
+        self,
+        artifact: Experiment,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+    ) -> dict[str, Any]:
         """Run eval episodes through the trained policy; aggregate to our rollout dict."""
         # The aggregation loop legitimately tracks several per-rollout
         # accumulators (returns / lengths / collisions / targets_covered);
         # extracting them into a separate state class would be more noise.
+        # `run_dir` is part of the protocol but unused here — BenchMARL's eval
+        # writes through the same save_folder set in `train`.
         # pylint: disable=too-many-locals
+        del run_dir
         experiment = artifact
         test_env = experiment.test_env
         policy = experiment.policy

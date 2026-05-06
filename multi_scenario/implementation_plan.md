@@ -456,8 +456,16 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 #### F2.8 — CLI `multi-scenario run <yaml>` — S
 
-- Typer command. Provide `experiments/discovery/baseline/configs/mappo_smoke.yaml` (1 env, 2 iters).
-- **Demo:** `multi-scenario run experiments/discovery/baseline/configs/mappo_smoke.yaml` → returns 0; writes the §3.5.2 run-folder layout (`<run_id>__<ts>/{input/config.json, input/provenance.json, output/metrics.json, output/eval_episodes.json, output/report.json, output/benchmarl/..., logs/run.log, run_state.json}`) and a row in `sweep_results_<ts>.csv`.
+- Typer multi-command app (`version` + `run`). Provide `experiments/discovery/baseline/configs/mappo_smoke.yaml` (1 env, 1 iter, `max_steps=10`).
+- **Actual deliverables (implemented):** `run_dir/<run_id>__<ts>/` containing:
+  `input/config.json`, `input/provenance.json`, `output/metrics.json`, `output/benchmarl/...`, `logs/run.log`, `run_state.json`.
+- **Not yet produced at this stage** (deferred to later features):
+  - `output/eval_episodes.json` → F2.10 (report.json writer)
+  - `output/report.json` → F2.10
+  - `runs.csv` / `runs.json` → F5.2 / F5.3
+- **Also fixed (F2.8 sub-fix):** Algorithm Protocol updated to accept `run_dir: Path | None = None` on both `train` and `evaluate`; `BenchmarlBaseAdapter.train` uses it to place BenchMARL output at `run_dir/output/benchmarl/` (creates dir before passing to BenchMARL).
+- **Demo:** `multi-scenario run experiments/discovery/baseline/configs/mappo_smoke.yaml` → exit 0; run folder produced with all §3.5.2 files listed above.
+- **Test:** `tests/integration/cli/test_run.py::test_run_command_succeeds` (slow) — verifies folder layout end-to-end.
 
 #### F2.9 — Smoke integration test — XS
 

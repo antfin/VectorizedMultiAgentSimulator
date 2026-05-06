@@ -25,6 +25,9 @@ dev = [
     "pylint",
 ]
 
+[project.scripts]
+multi-scenario = "multi_scenario.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/multi_scenario"]
 
