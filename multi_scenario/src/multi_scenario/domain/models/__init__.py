@@ -18,6 +18,7 @@ from .config import (
 )
 from .provenance import LibraryVersions, Provenance
 from .result import ExperimentResult, MetricRecord
+from .rng_state import RngState
 from .run_id import RunId
 from .run_state import RunState, RunStateRecord, RunStateTransition
 
@@ -30,6 +31,7 @@ __all__ = [
     "LibraryVersions",
     "MetricRecord",
     "Provenance",
+    "RngState",
     "RunId",
     "RunState",
     "RunStateRecord",

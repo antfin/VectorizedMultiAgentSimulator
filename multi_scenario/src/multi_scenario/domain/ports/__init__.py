@@ -9,8 +9,9 @@ Public surface re-exports each Protocol so callers say
 """
 
 from .algorithm import Algorithm
+from .logger import Logger
 from .metrics import MetricsBundle
 from .scenario import Scenario
 from .storage import Storage
 
-__all__ = ["Algorithm", "MetricsBundle", "Scenario", "Storage"]
+__all__ = ["Algorithm", "Logger", "MetricsBundle", "Scenario", "Storage"]

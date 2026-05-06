@@ -16,7 +16,13 @@ from multi_scenario.domain.models import (
     RunStateRecord,
     ScenarioSection,
 )
-from multi_scenario.domain.ports import Algorithm, MetricsBundle, Scenario, Storage
+from multi_scenario.domain.ports import (
+    Algorithm,
+    Logger,
+    MetricsBundle,
+    Scenario,
+    Storage,
+)
 
 
 class _FakeScenario:
@@ -193,3 +199,42 @@ def test_fake_storage_implements_protocol():
 def test_incomplete_storage_fails_protocol_check():
     """Missing one protocol member → isinstance returns False."""
     assert not isinstance(_IncompleteStorage(), Storage)
+
+
+class _FakeLogger:
+    """A complete fake logger covering every member of the Logger protocol."""
+
+    def info(self, msg: str) -> None:
+        pass
+
+    def debug(self, msg: str) -> None:
+        pass
+
+    def warning(self, msg: str) -> None:
+        pass
+
+    def error(self, msg: str) -> None:
+        pass
+
+
+class _IncompleteLogger:
+    """Missing `error` — should fail isinstance."""
+
+    def info(self, msg: str) -> None:
+        pass
+
+    def debug(self, msg: str) -> None:
+        pass
+
+    def warning(self, msg: str) -> None:
+        pass
+
+
+def test_fake_logger_implements_protocol():
+    """A class exposing every protocol member passes isinstance(Logger)."""
+    assert isinstance(_FakeLogger(), Logger)
+
+
+def test_incomplete_logger_fails_protocol_check():
+    """Missing one protocol member → isinstance returns False."""
+    assert not isinstance(_IncompleteLogger(), Logger)

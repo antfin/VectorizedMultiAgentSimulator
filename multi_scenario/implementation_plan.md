@@ -312,11 +312,16 @@ Each feature lists its **demo command** + **expected output**.
 - Adapters: `LocalStorageAdapter` (fs) at F2.5, `S3StorageAdapter` at F6.3. When S3 lands we generalise `Path` → `str | Path` if needed.
 - TDD: a fake storage implementing all 8 methods passes `isinstance(_, Storage)`; an incomplete fake (missing one) fails.
 
-#### F1.10 — `Logger` port + `Determinism` utilities — S
+#### F1.10 — `Logger` port + `RngState` model — S (domain part only)
 
-- `Logger` Protocol (`info`, `debug`, `warning`, `error`, with file+console adapters).
-- `Determinism` helpers as pure functions: `seed_all(seed) -> RngState`, `save_rng_state() -> dict`, `load_rng_state(state)`. Wraps `torch`, `numpy`, `random` — but the *module* lives in adapters layer (not domain) since it imports torch. The domain has only the `RngState` model.
-- TDD: same seed → same first 100 numbers from each RNG.
+- **Domain (this PR):**
+  - `Logger` Protocol with `info`, `debug`, `warning`, `error`. Lives in `domain/ports/logger.py`.
+  - `RngState` model with `seed: int` and `captures: dict[str, str]` (opaque encoded states keyed by RNG name — `"python.random"`, `"numpy"`, `"torch.cpu"`, `"torch.cuda"`). Encoding format is the adapter's choice; the model stays format-agnostic. Lives in `domain/models/rng_state.py`.
+  - TDD: protocol fakes (full + incomplete) for Logger; round-trip for RngState.
+- **Adapters (Phase 2+):**
+  - `FileLogger` (writes `logs/run.log`) and `ConsoleLogger` — adapter implementations of `Logger`. Land at F2.7.
+  - `seed_all(seed) -> RngState`, `save_rng_state() -> RngState`, `load_rng_state(state)` — pure functions wrapping `torch` / `numpy` / `random`. Land in `adapters/runtime/determinism.py` when ExperimentService first wires up determinism.
+  - TDD for adapter functions: same seed → same first 100 numbers from each RNG.
 
 #### F1.11 — `Runner` port + `ExperimentService` skeleton — S
 
