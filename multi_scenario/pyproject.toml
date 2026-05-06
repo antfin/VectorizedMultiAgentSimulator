@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "multi-scenario"
+version = "0.0.1"
+description = "Multi-scenario cooperative MARL framework (placeholder name; renamed at F10.4)."
+requires-python = ">=3.11"
+dependencies = [
+    "torch",
+    "vmas",
+    "benchmarl",
+    "pyyaml",
+    "pydantic",
+    "pandas",
+    "typer",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/multi_scenario"]
