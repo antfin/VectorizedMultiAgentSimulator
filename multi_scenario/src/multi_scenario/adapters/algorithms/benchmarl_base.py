@@ -72,6 +72,13 @@ class BenchmarlBaseAdapter:
         bm.on_policy_collected_frames_per_batch = cfg.training.frames_per_batch
         bm.on_policy_minibatch_size = cfg.training.minibatch_size
         bm.on_policy_n_minibatch_iters = cfg.training.n_minibatch_iters
+        # Off-policy mirrors of the same training knobs. BenchMARL only reads
+        # the family that matches the algorithm at runtime, so wiring both
+        # keeps the base adapter algorithm-agnostic (PPO uses on_policy_*;
+        # MADDPG / DDPG / SAC families use off_policy_*).
+        bm.off_policy_collected_frames_per_batch = cfg.training.frames_per_batch
+        bm.off_policy_train_batch_size = cfg.training.minibatch_size
+        bm.off_policy_n_optimizer_steps = cfg.training.n_minibatch_iters
         bm.lr = cfg.training.lr
         bm.gamma = cfg.training.gamma
         bm.share_policy_params = cfg.training.share_policy_params
