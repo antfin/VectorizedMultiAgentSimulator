@@ -16,6 +16,7 @@ from .config import (
     StorageSection,
     TrainingSection,
 )
+from .provenance import LibraryVersions, Provenance
 from .result import ExperimentResult, MetricRecord
 from .run_id import RunId
 from .run_state import RunState, RunStateRecord, RunStateTransition
@@ -26,7 +27,9 @@ __all__ = [
     "ExperimentConfig",
     "ExperimentResult",
     "ExperimentSection",
+    "LibraryVersions",
     "MetricRecord",
+    "Provenance",
     "RunId",
     "RunState",
     "RunStateRecord",
