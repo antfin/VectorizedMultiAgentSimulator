@@ -57,10 +57,12 @@ def test_smoke_training_2_iter(tmp_path: Path):
     adapter = MappoAdapter()
     cfg = _smoke_config(tmp_path)
 
-    artifact = adapter.train(env=None, cfg=cfg)
+    # Pass run_dir so BenchMARL's native output stays inside tmp_path (else it
+    # leaks to CWD — see §3.5.2). Pytest auto-cleans tmp_path after the test.
+    artifact = adapter.train(env=None, cfg=cfg, run_dir=tmp_path)
     assert artifact is not None
 
-    rollout = adapter.evaluate(artifact, env=None, cfg=cfg)
+    rollout = adapter.evaluate(artifact, env=None, cfg=cfg, run_dir=tmp_path)
 
     # Universal rollout fields, sized to evaluation.episodes, with real values.
     assert rollout["episode_returns"].shape[0] == cfg.evaluation.episodes

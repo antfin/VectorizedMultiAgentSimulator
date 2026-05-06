@@ -469,8 +469,15 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 #### F2.9 — Smoke integration test — XS
 
-- `tests/integration/smoke/test_discovery_mappo.py` runs the same YAML through the runner and asserts: CSV row exists, run_state=DONE, provenance fields populated.
-- **Validation gate (Phase 2 milestone):** discovery + MAPPO produces a real CSV row locally with full lifecycle artifacts.
+- `tests/integration/smoke/test_discovery_mappo.py` loads the real `experiments/discovery/baseline/configs/mappo_smoke.yaml` from disk, redirects `runtime.storage.path` to `tmp_path`, runs through `LocalRunner` (default `ProvenanceWriter`), and asserts the §3.5.2 milestone:
+  - `run_state.json` → `state == "DONE"`.
+  - `input/config.json` round-trips back to `ExperimentConfig`.
+  - `input/provenance.json` has non-empty `git_sha` and populated `library_versions` (real, not stub).
+  - `output/metrics.json` → `M1_success_rate`, `M2_avg_return`, `M3_steps` are real `float`s — proves F2.3 (discovery DI primitives) + F2.4.3 (rollout aggregation) are wired through.
+  - `output/benchmarl/` directory exists and is non-empty.
+  - `logs/run.log` exists and non-empty.
+- **CSV row assertion deferred to F5.2** (was in the original wording; `runs.csv` writer doesn't exist yet at this stage).
+- **Validation gate (Phase 2 milestone):** discovery + MAPPO produces a full §3.5.2 run-folder layout locally with non-stub metrics, provenance, and BenchMARL native output. ✅
 
 #### F2.10 — `report.json` writer — XS
 

@@ -33,3 +33,12 @@ Thumbs.db
 # Experiment outputs — keep the directory tree (.gitkeep markers) but not the runs
 experiments/**/results/*
 !experiments/**/results/.gitkeep
+
+# BenchMARL native output that leaks to CWD when run_dir isn't passed.
+# Tests should always pass run_dir=tmp_path; this rule is a safety net.
+/mappo_*/
+/ippo_*/
+/maddpg_*/
+/iddpg_*/
+/isac_*/
+/masac_*/
