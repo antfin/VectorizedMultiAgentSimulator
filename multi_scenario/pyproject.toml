@@ -22,6 +22,7 @@ dev = [
     "pytest",
     "ruff",
     "pre-commit",
+    "pylint",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -38,3 +39,10 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.pylint.main]
+# Tell pylint where the package source is so it can resolve imports.
+init-hook = 'import sys; sys.path.insert(0, "src")'
+
+[tool.pylint."messages control"]
+disable = []

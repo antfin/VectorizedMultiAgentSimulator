@@ -1,0 +1,45 @@
+experiment:
+  id: disc_baseline_smoke
+  name: "Discovery / MAPPO baseline / smoke"
+  description: >
+    Smoke run: 2 agents, 2 targets, k=2, 2 training iters.
+    Used by tests/integration/smoke/test_discovery_mappo.py (lands in F2.9).
+  seed: 0
+
+scenario:
+  type: discovery
+  params:
+    n_agents: 2
+    n_targets: 2
+    agents_per_target: 2
+    covering_range: 0.25
+    targets_respawn: false
+    shared_reward: true
+    max_steps: 100
+
+algorithm:
+  type: mappo
+  params:
+    lr: 0.0003
+    gamma: 0.99
+    lmbda: 0.95
+
+training:
+  max_iters: 2
+  num_envs: 1
+  device: cpu
+
+evaluation:
+  interval_iters: 1
+  episodes: 10
+
+# `runtime` is optional. If omitted, ExperimentService picks runner=local + storage=fs
+# with path derived from the scenario type. Specify here only to override.
+runtime:
+  runner:
+    type: local
+    params: {}
+  storage:
+    type: fs
+    path: experiments/discovery/baseline/results
+    params: {}

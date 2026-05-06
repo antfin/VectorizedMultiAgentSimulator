@@ -14,6 +14,12 @@ def tmp_results_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def repo_root() -> Path:
+    """Path to the multi_scenario package root (contains docs/, src/, tests/)."""
+    return Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
 def fake_config_builder():
     """Factory: builds minimal experiment config dicts for tests.
 
@@ -22,6 +28,7 @@ def fake_config_builder():
     """
 
     def _build(**overrides) -> dict:
+        """Return a minimal config dict; ``overrides`` replace whole sections."""
         cfg = {
             "experiment": {"id": "test", "seed": 0},
             "scenario": {"name": "discovery"},

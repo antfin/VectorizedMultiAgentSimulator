@@ -4,4 +4,5 @@ import multi_scenario
 
 
 def test_import():
+    """Package imports and exposes the expected version."""
     assert multi_scenario.__version__ == "0.0.1"
