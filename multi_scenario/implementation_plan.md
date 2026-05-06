@@ -288,8 +288,10 @@ Each feature lists its **demo command** + **expected output**.
 
 #### F1.6 — `Scenario` port — XS
 
-- `Protocol` with: `name`, `make_env(cfg)`, `default_params()`, `success_metric_name()`, `short_id_for(cfg)`.
-- TDD: a fake scenario implements the protocol; runtime-checkable.
+- Runtime-checkable `Protocol` exposing: `name`, `make_env(cfg, num_envs, seed)`, `default_params()`, plus the four DI primitives that feed the always-on metric bundle (§3.5.3) — `has_comm()` (M5 applicability), `success_predicate(rollout)` (M1), `coverage_progress(rollout)` returning None when not applicable (M6), `utilization_predicate(state)` (M8).
+- Domain stays torch/vmas-agnostic: tensor-shaped values are typed `Any` on the Protocol; concrete adapters in `adapters/scenarios/` know the real types.
+- Single-file `domain/ports.py` for now. Refactor to a `ports/` package mirroring `models/` after the third Protocol lands (rule of three — F1.7 + F1.8 trigger the split).
+- TDD: a fake scenario covering every member passes `isinstance(impl, Scenario)`; an incomplete fake fails the check.
 
 #### F1.7 — `Algorithm` port — XS
 
