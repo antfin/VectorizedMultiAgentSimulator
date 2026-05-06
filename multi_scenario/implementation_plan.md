@@ -271,8 +271,10 @@ Each feature lists its **demo command** + **expected output**.
 
 #### F1.3 — `RunId` + parametric naming — S
 
-- Pure value object. Constructed from `(exp_id, algo, scenario_short_id, seed)`. Stable string repr.
-- Tests: identical inputs produce identical id; different seed → different id; uniqueness across a sweep.
+- Pure value object — frozen, hashable. Constructed from `(exp_id, seed)` per the §3.5.1 simplification (algo / scenario disambiguation is encoded in `exp_id` by the user; not synthesised). Stable string repr `<exp_id>_s<seed>`. Folder name helper `folder_name(timestamp) -> "<run_id>__<timestamp>"`.
+- Reverse parsers: `RunId.from_string("..._sN")` and `RunId.from_folder_name("..._sN__YYYYMMDD_HHMM")` for reading existing run folders (Streamlit, consolidator).
+- Validation: non-empty exp_id, no `__` in exp_id (collides with the timestamp separator), alphanumerics + `_-` only, non-negative seed.
+- Tests: identical inputs produce identical id and identical hash; different seed → different id; folder-name round-trip; greedy-regex parser handles exp_ids that themselves end with `_sN`-shaped substrings; invalid inputs raise.
 
 #### F1.4 — `RunState` enum + persisted shape — XS
 
