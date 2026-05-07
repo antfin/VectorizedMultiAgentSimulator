@@ -25,6 +25,7 @@ from .rng_state import RngState
 from .run_id import RunId
 from .run_state import RunState, RunStateRecord, RunStateTransition
 from .runs_manifest import ManifestRunEntry, ManifestScope, RankingEntry, RunsManifest
+from .s3_storage_config import S3StorageConfig
 
 __all__ = [
     "AlgorithmSection",
@@ -53,6 +54,7 @@ __all__ = [
     "RunnerSection",
     "RuntimeSection",
     "RunsManifest",
+    "S3StorageConfig",
     "ScenarioSection",
     "StorageSection",
     "TrainingSection",

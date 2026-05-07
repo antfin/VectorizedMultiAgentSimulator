@@ -16,6 +16,7 @@ dependencies = [
     "pandas",
     "typer",
     "cryptography>=41",
+    "boto3>=1.30",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ dev = [
     "ruff",
     "pre-commit",
     "pylint",
+    "moto>=5.0",
 ]
 
 [project.scripts]

@@ -700,9 +700,17 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
   - **S3 result sync** back to local `run_dir` → F6.3 (`S3StorageAdapter`).
   - **OVH resume** → not implemented; capability flag refuses cleanly.
 
-#### F6.3 — `S3StorageAdapter` — S
+#### F6.3 — `S3StorageAdapter` — S ✅
 
-- Mirror local layout under `s3://<bucket>/<prefix>/experiments/...`. TDD with `moto` (mocked S3).
+- `S3StorageConfig` (`domain/models/s3_storage_config.py`) — Pydantic strict: `bucket`, `prefix`, `region`, optional `endpoint_url` (set to OVH Object Storage endpoint when targeting OVH; left None for AWS S3). `from_yaml` loader.
+- `S3StorageAdapter` (`adapters/storage/s3.py`) — implements the 8-method `Storage` Protocol via boto3. Keys map to `<prefix>/<run_dir.name>/<rel>` so the §3.5.2 layout is preserved one-to-one under S3.
+- **Sync helpers** (off-Protocol per F1.9):
+  - `sync_to_local(run_dir, local_dir)` — paginated `list_objects_v2` + per-key `get_object` writes; recreates the per-run folder tree locally.
+  - `sync_from_local(local_dir, run_dir)` — symmetric upload (used by F6.4 code uploader).
+- **`OvhRunner` extension:** new optional `s3_storage: S3StorageAdapter | None` constructor arg. When wired, `run()` calls `s3_storage.sync_to_local(run_dir, run_dir)` before reading `metrics.json`. Without it, behaviour is unchanged from F6.2 (user hand-syncs).
+- **Deps:** added `boto3>=1.30` (runtime), `moto>=5.0` (dev) to `pyproject.toml`.
+- Tests (`tests/integration/storage/test_s3.py`, 9): protocol satisfaction, key construction, round-trip per artefact, sync-to-local + sync-from-local, YAML round-trip. All moto-mocked S3 — no AWS calls.
+- **Out of scope:** multipart upload (run-folder files are small); `make_storage("s3")` factory wiring (direct construction only); `save_report` / `save_eval_episodes` etc. on S3 (same F1.9 minimalism rule — add when needed).
 
 #### F6.4 — Code uploader — S
 

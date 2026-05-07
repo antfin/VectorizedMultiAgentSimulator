@@ -17,6 +17,7 @@ from pathlib import Path
 from multi_scenario.adapters.runners.ovh_cli import OvhClient, OvhCliError
 from multi_scenario.adapters.secrets.fernet import FernetSecretsAdapter
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
+from multi_scenario.adapters.storage.s3 import S3StorageAdapter
 from multi_scenario.domain.models import (
     ExperimentConfig,
     ExperimentResult,
@@ -49,6 +50,7 @@ class OvhRunner:
         secrets: FernetSecretsAdapter,
         logger: Logger,
         storage: LocalStorageAdapter | None = None,
+        s3_storage: S3StorageAdapter | None = None,
         secret_env: dict[str, str] | None = None,
         secret_passphrase: str | None = None,
         sleep: callable = time.sleep,
@@ -58,6 +60,9 @@ class OvhRunner:
         self._secrets = secrets
         self._logger = logger
         self._storage = storage or LocalStorageAdapter()
+        # When supplied, F6.3 sync_to_local pulls the run-folder back from S3
+        # before we read metrics.json. Without it, the user must hand-sync.
+        self._s3_storage = s3_storage
         # Optional encrypted secrets to ship as env vars on the OVH job.
         self._secret_env = secret_env or {}
         self._secret_passphrase = secret_passphrase
@@ -86,8 +91,12 @@ class OvhRunner:
             tail = _safe_logs_tail(self._client, job_id)
             raise OvhJobError(f"OVH job {job_id} ended in state={info.state}; last logs:\n{tail}")
         self._logger.info(f"OVH job {job_id} DONE; loading result from {run_dir}")
-        # Result loading assumes results have been synced back to ``run_dir``
-        # (F6.3 handles the S3 sync; until then it's the user's responsibility).
+        # F6.3: when an S3 storage adapter is wired, pull the whole run-folder
+        # back from S3 before reading metrics.json locally. Without it, the
+        # user must hand-sync (status quo until F6.3 wired into the call site).
+        if self._s3_storage is not None:
+            self._logger.info(f"syncing {run_dir.name} from S3 → {run_dir}")
+            self._s3_storage.sync_to_local(run_dir, run_dir)
         return self._storage.load_result(run_dir)
 
     def _build_submit_args(self, cfg: ExperimentConfig, run_dir: Path) -> list[str]:
