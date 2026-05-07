@@ -554,9 +554,12 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 ### Phase 5 — Configs, sweeps, three CSVs, eval-only, resume
 
-#### F5.1 — YAML schema polish + `multi-scenario validate` — S
+#### F5.1 — YAML schema polish + `multi-scenario validate` — S ✅
 
-- Hardened error messages. Optional `multi-scenario schema` command emits JSON Schema from the Pydantic model.
+- New `multi-scenario validate <yaml>` typer command. Parses the YAML through `ExperimentConfig.from_yaml`, exits 0 with `OK <path>` on success, exits 1 on any validation error with one readable line per issue: `<dotted.field.path>: <message>`. Uses Pydantic v2's multi-error reporting so all field issues surface in a single run (typos, missing fields, wrong types).
+- **Pre-flight goal:** catch config errors before submitting OVH jobs (which would waste credits) or kicking off long local sweeps.
+- Tests: valid YAML → exit 0; missing required field / unknown field / wrong type → exit 1 with the offending field path in the error output; missing file → typer's standard non-zero exit.
+- **Scope drop after user review:** `multi-scenario schema` (JSON Schema export for IDE autocomplete) skipped — YAMLs are mostly template copies and validation alone covers the realistic use cases. Re-add later if hand-editing volume justifies it.
 
 #### F5.2 — `runs.csv` writer (long-format, single file) — S
 
