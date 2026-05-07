@@ -606,11 +606,35 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - **User signs off** before any defaults change. Sign-off boxes embedded at the bottom of the doc.
 - **Post-review schema rev** (after first user pass): collapsed report's separate `benchmarl_dir` + `benchmarl_scalars` (single string) into a single `benchmarl: {dir, scalars: [...]}` block, with `dir` pointing at the *inner* BenchMARL run root and `scalars[i]` relative to `dir` (typically `scalars/<name>.csv`). Cleaner enumeration of every native CSV in one place; one resolve idiom (`run_dir / dir / scalars[i]`); no duplicated `<bm_run>` segment in scalar entries. See `domain/models/report.py::BenchmarlLinks`.
 
-#### F5.6 — Sweep config + combinatorial validator — S
+#### F5.6 — `multi-scenario sweep` (CLI-level expansion over per-experiment YAMLs) — S
 
-- `SweepConfig` (lists for `seeds`, `algorithms`, scenario params); `iter_runs()` materialises combinations.
-- Validator refuses sweeps over a configurable size cap (default 100); prints estimated wall-time before launching.
-- **Port from rendezvous_comm:** `iter_runs()` semantics, but **return a list, not a generator** (see gotcha §7.5).
+**Design rev (after user review):** dropped the originally-planned `SweepConfig` Pydantic schema. The "1 YAML = 1 experiment" invariant stays; sweeps are pure CLI orchestration over filesystem selection.
+
+- New CLI command: `multi-scenario sweep <input> [--seeds N1,N2,...] [--dry-run] [--max-runs N] [--seconds-per-run S]`.
+- `<input>` resolution rules (in order):
+  1. Existing regular file → single yaml.
+  2. Existing directory → `<dir>/*.yaml`.
+  3. Otherwise → glob pattern (Python's `glob.glob`, supports `*`, `**`, `?`, character classes).
+  4. Filter to `*.yaml` extensions; error if zero matches.
+- Cell semantics:
+  - Without `--seeds`: each yaml's own `experiment.seed` is used; one run per yaml.
+  - With `--seeds 0,1,2`: cartesian — each yaml × each seed. The yaml's own `experiment.seed` is **replaced** (not augmented) per cell.
+  - `experiment.id` from the yaml is kept verbatim. Run-folder differentiation comes from `<exp_id>_s<seed>__<timestamp>` (F1.3).
+- `--max-runs N` (default 100) — refuse to launch if expansion exceeds the cap. Exits 2 with cap + actual count.
+- `--seconds-per-run S` — print wall-time estimate (`N cells × S sec ≈ total`).
+- `--dry-run` — print the expansion (yaml × seed → resulting `<exp_id>_s<seed>` and target run_dir) and exit 0; no runs.
+- Without `--dry-run`: runs each cell sequentially via `LocalRunner` with progress lines (`[3/12] running mappo_smoke_s2 → <run_dir>`).
+- **No new domain models** — pure CLI orchestration. Glob via `pathlib`/`glob`; load via `ExperimentConfig.from_yaml`; override `experiment.seed`; run via `LocalRunner`.
+- **Out of scope (deferred):**
+  - **Heterogeneous overrides** (e.g. "mappo with seeds [0..4], ippo with seeds [0..1]") — workaround: two `sweep` invocations with different glob patterns. Lift only when a real use case needs it.
+  - **Non-seed overrides** (`scenario.params.<field>` cartesian) — workaround: one variant yaml per cell (which is the "1 yaml = 1 experiment" principle).
+  - **Parallel execution** — see F6.7.
+- Tests:
+  - Glob expansion: 4 yamls in dir → 4 cells; same dir × 3 seeds → 12 cells.
+  - Single yaml + seeds; wildcard pattern.
+  - Size cap raises non-zero exit with cap message.
+  - `--dry-run` prints expansion without running.
+  - Real sweep (slow): 2 yaml × 2 seeds → 4 run folders produced under storage path.
 
 #### F5.7 — Resume from crash — M
 
@@ -671,6 +695,31 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - Unit: a fake `VideoRecorder` that raises → `train()` returns the experiment, warning logged, training metrics unaffected.
 - Integration: regenerate-videos against a fixture run folder (with checkpoint) → both MP4s land + `report.json` updated.
 - OVH smoke (manual, F6.5 follow-up): submit a non-smoke config, confirm crash-free completion, pull back, run `regenerate-videos`, confirm both videos generated.
+
+#### F6.7 — Parallel sweep on OVH — S
+
+**Background:** F5.6's `multi-scenario sweep <input>` runs cells **sequentially** locally — one cell at a time through `LocalRunner`. On OVH, each cell is naturally a separate AI Training job and would block-by-block waste credits when run sequentially. F6.7 lifts F5.6's expansion to OVH-parallel.
+
+**Scope when activated:**
+
+- New CLI flag on `sweep`: `--runner ovh` (default `local`). When set, each expanded cell becomes one OVH AI Training submission via `OvhRunner` (F6.2) instead of an in-process `LocalRunner.run`.
+- **Submission mode:** "fire and forget" — submit all cells, print job IDs, return. The user polls / pulls results via separate commands (or the Streamlit dashboard reads them from S3).
+- **Per-cell isolation:** each cell gets its own S3 prefix (`s3://<bucket>/<prefix>/experiments/<scenario>/<exp_type>/<run_id>__<ts>/`). Avoids the trailing-slash collision gotcha (project memory).
+- **Concurrency cap:** new flag `--max-parallel N` (default unlimited). When set, batches the submissions so no more than N jobs are queued at OVH at any time. Useful for credit budgeting.
+- **Optional follow-mode:** `--follow` polls the OVH job statuses and prints progress; without it, exits as soon as all jobs are submitted. Polling cadence configurable (`--poll-interval 30`).
+- **Validation:** before any submission, verify `OvhRunner` is configured (env vars / config file). Print the cell count + estimated cost (cells × per-job-cost-estimate) and require explicit `--yes` to confirm submissions over a configurable cost cap (default 10 credits).
+
+**Tests:**
+
+- Unit: dry-run with `--runner ovh --dry-run` prints submission plan (cell count, per-cell S3 prefix, estimated cost) without actually submitting; mocks `OvhRunner` to assert no real network calls.
+- Integration (mocked): `--runner ovh` submits N cells via a fake `OvhRunner` that records calls; assert N submissions with distinct S3 prefixes.
+- Manual OVH smoke: 2-cell sweep with real `OvhRunner`; verify both runs land at expected S3 prefixes.
+
+**Out of scope (deferred):**
+
+- Auto-retry on OVH job failures.
+- Cross-cell dependencies (one cell's output feeding another's input).
+- Live result streaming back during execution (today's pull-on-completion is fine).
 
 ---
 
