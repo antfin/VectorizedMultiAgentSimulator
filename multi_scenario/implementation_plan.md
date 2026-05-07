@@ -660,9 +660,16 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
   - Resuming after `state == DONE` (refuse).
   - Cross-yaml resume (different config than original — that's a fresh run, not resume).
 
-#### F5.8 — Eval-only mode — S
+#### F5.8 — Eval-only mode — S ✅
 
-- `multi-scenario eval <run_dir>` loads policy, runs N episodes, writes a separate `eval_run.json`. Useful for re-evaluating old policies under different conditions.
+- `multi-scenario eval <run_dir> [--episodes N] [--name TAG]` re-evaluates a trained policy without retraining.
+- **Flow:** loads `<run_dir>/input/config.json`, optionally overrides `cfg.evaluation.episodes`, locates the latest BenchMARL checkpoint, reconstructs `Experiment` via `reload_from_file`, runs `BenchmarlBaseAdapter.evaluate` (reuses F2.4.3 aggregation), scores via `CommonMetricsBundle`, writes `<run_dir>/output/eval_runs/<TAG>.json` (default TAG = `eval_<UTC_timestamp>`).
+- **`EvalRunRecord`** domain model in `domain/models/eval_run.py` — mirrors `ExperimentResult` (flat metrics dict on the wire, list[MetricRecord] in memory) plus eval-only fields: `eval_id`, `eval_timestamp`, `policy_checkpoint`.
+- **No capability flag** — eval-only is by-design a local-machine action even when the original training ran on OVH (the user pulls results down first, then evals locally). The CLI just verifies the run-dir has the artefacts; original `cfg.runtime.runner.type` is irrelevant.
+- **`LocalStorageAdapter.save_eval_run`** added (off the Storage Protocol per F1.9 minimalism).
+- **Multiple eval runs coexist** as separate files keyed by tag (e.g. `post_hoc.json` + `eval_20260507_1500.json` + `eval_20260507_1600.json` side-by-side).
+- Tests: 5 (2 refusal: missing config / missing checkpoint; 3 slow happy paths: full e2e with `--episodes` override, default timestamped name, multiple coexisting eval runs).
+- **Out of scope (deferred):** OOD overrides like `--scenario-params n_targets=10` (F5.8.1 if needed); multi-checkpoint eval (eval at multiple training stages); metric-bundle re-scoring.
 
 ---
 

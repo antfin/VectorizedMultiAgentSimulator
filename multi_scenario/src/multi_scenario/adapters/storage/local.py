@@ -4,10 +4,11 @@ Writes the §3.5.2 layout to disk via JSON for everything we own. Pydantic's
 ``model_dump_json`` / ``model_validate_json`` handles datetime fields
 (Provenance, RunStateRecord) cleanly via built-in ISO-8601 (de)serialization.
 
-Optional artefacts (eval_episodes, report, videos, log, eval_steps_long) and
-the cross-run ``runs.csv`` / ``runs.json`` are not in the Storage Protocol
-surface and are added on later concrete adapters when each writer feature
-lands (F2.7 / F2.10 / F2.10.1 / F2.11 / F5.2 / F5.3 / F5.4).
+Optional artefacts (eval_episodes, report, videos, log, eval_steps_long,
+eval_runs) and the cross-run ``runs.csv`` / ``runs.json`` are not in the
+Storage Protocol surface and are added on later concrete adapters when each
+writer feature lands (F2.7 / F2.10 / F2.10.1 / F2.11 / F5.2 / F5.3 / F5.4 /
+F5.8).
 """
 
 import json
@@ -17,6 +18,7 @@ from typing import Any
 import pandas as pd
 
 from multi_scenario.domain.models import (
+    EvalRunRecord,
     ExperimentConfig,
     ExperimentResult,
     Provenance,
@@ -90,6 +92,18 @@ class LocalStorageAdapter:
             value = rollout[key]
             payload[key] = value.tolist() if hasattr(value, "tolist") else value
         self._write(run_dir / "output" / "eval_episodes.json", json.dumps(payload, indent=2))
+
+    def save_eval_run(self, run_dir: Path, record: EvalRunRecord) -> None:
+        """Write a re-evaluation record to ``output/eval_runs/<eval_id>.json`` (F5.8).
+
+        Off the ``Storage`` Protocol surface (F1.9 minimalism). The CLI
+        ``multi-scenario eval`` is the canonical caller. Multiple eval runs
+        coexist as separate files keyed by ``eval_id``.
+        """
+        self._write(
+            run_dir / "output" / "eval_runs" / f"{record.eval_id}.json",
+            record.model_dump_json(indent=2),
+        )
 
     def save_eval_steps_long(
         self,

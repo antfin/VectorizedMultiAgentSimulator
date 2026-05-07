@@ -16,6 +16,7 @@ from .config import (
     StorageSection,
     TrainingSection,
 )
+from .eval_run import EvalRunRecord
 from .provenance import LibraryVersions, Provenance
 from .report import BenchmarlLinks, ReportLinks, ReportVideos, RunReport
 from .result import ExperimentResult, MetricRecord
@@ -27,6 +28,7 @@ from .runs_manifest import ManifestRunEntry, ManifestScope, RankingEntry, RunsMa
 __all__ = [
     "AlgorithmSection",
     "BenchmarlLinks",
+    "EvalRunRecord",
     "EvaluationSection",
     "ExperimentConfig",
     "ExperimentResult",
