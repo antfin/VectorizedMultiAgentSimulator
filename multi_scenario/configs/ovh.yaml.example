@@ -4,19 +4,25 @@
 
 region: GRA           # GRA / BHS / SBG / WAW
 image: ovhcom/ai-training-pytorch:latest
-gpu_type: V100S
+flavor: ai1-1-gpu     # ovhai flavor — see `ovhai capabilities flavor list`
+gpu_type: V100S       # cost-registry key (display only; flavor is what ovhai uses)
 n_gpu: 1
 
-# S3 buckets (your project's): code is mounted RO at submit-time;
-# results bucket gets one per-experiment prefix per job to avoid the
-# trailing-slash/parallel-finalize collision documented in F6.2.
+# S3 buckets (your project's): code is mounted ``ro`` at submit-time;
+# results bucket gets one per-experiment prefix (no trailing slash) so
+# parallel jobs don't overwrite each other during OVH's FINALIZING sync.
 bucket_code: my-multi-scenario-code
 bucket_results: my-multi-scenario-results
 mount_code: /workspace/code
 mount_results: /workspace/results
 
-default_runner: python -m multi_scenario.cli run
-default_extra_cli: --device cuda
+# The runner is a bash command that runs INSIDE the OVH container. ``HOME=/tmp``
+# is mandatory — pip can't write to /workspace. Substitution tokens:
+# ``{mount_code}`` / ``{mount_results}`` / ``{yaml_path_in_container}`` (the
+# absolute path to the experiment yaml inside the container, computed from
+# OvhRunner.yaml_path_in_repo + mount_code).
+default_runner: |
+  export HOME=/tmp && pip install -e {mount_code} && cd {mount_code} && python -m multi_scenario.cli run {yaml_path_in_container}
 
 # Polling cadence and timeout.
 poll_interval_sec: 30.0

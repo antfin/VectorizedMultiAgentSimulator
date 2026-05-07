@@ -686,6 +686,20 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 **LLM context (worth being explicit):** the framework has **zero LLM code so far**. F6.1 is pure secrets infrastructure laid down before its consumer (LERO at Phase 9) lands, so OVH job submission (F6.2) has the credential-shipping plumbing ready. LLM client / prompt registry / disk cache / scenario_patch.exec all stay parked at Phase 9.
 
+#### F6.2.1 — OVH submission command-construction corrections — XS ✅
+
+Found during pre-F6.5 prep: F6.2's mock-only tests didn't catch real-world `ovhai` syntax errors. Five corrections applied:
+
+- **`--gpu V100S`** → **`--flavor ai1-1-gpu`** (separate `--gpu N` for count). Added `OvhJobConfig.flavor: str = "ai1-1-gpu"`; `gpu_type` stays for cost-registry display only.
+- **`:RO` / no permission for results** → **`:ro` (lowercase)** / **`:rwd`** (writable + deletions sync back).
+- **Raw runner command** → **wrapped in `bash -c "..."`** with `export HOME=/tmp && pip install -e {mount_code} && cd {mount_code} && python -m multi_scenario.cli run {yaml_path_in_container}`. `HOME=/tmp` is mandatory — pip can't write to /workspace mount on OVH.
+- **Volume mounted at code root with no path** → mounted at `{mount_code}` and `{mount_results}` substituted into the template.
+- **Required `yaml_path_in_repo`** constructor arg on `OvhRunner` — points at the experiment YAML relative to uploaded code root (e.g. `experiments/discovery/baseline/configs/mappo_smoke.yaml`); container resolves it under `mount_code`. Missing at submit-time → clear `OvhJobError`.
+
+Tests updated: `test_ovh.py` now asserts the corrected arg shape (`--flavor`, `:rwd`, `bash -c`, `HOME=/tmp`, `pip install -e /workspace/code`) plus a new test that omitting `yaml_path_in_repo` raises. `configs/ovh.yaml.example` updated with `flavor` field + new template runner.
+
+**Pyproject deps audit (also done here):** added `imageio[ffmpeg]>=2.30`, `torchrl`, `tensordict` as direct deps. Previously these were only transitively installed via `benchmarl`/`vmas` — the audit caught them as direct imports in F2.11 (video), F5.4 (long-format), and benchmarl_base; declaring direct usage prevents F10.4 extraction breakage.
+
 #### F6.2 — Port `ovh.py` (cleaned) — M ✅
 
 Three coupled deliverables landed together (framework wiring + submit/poll plumbing). Result-sync from S3 (F6.3) and code upload to `bucket_code` (F6.4) deferred — `OvhRunner.run()` reads `<run_dir>/output/metrics.json` directly, assuming someone has synced it.
@@ -724,10 +738,17 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
 - Tests: 7 CodeUploader unit tests (curated set / pycache+results excludes / per-run-folder excludes / dry-run no-op / empty repo / custom includes / pattern sanity) + 2 CLI tests (`--dry-run` lists files without S3 calls; full upload puts files at expected keys). All moto-mocked.
 - **Out of scope (deferred):** real rsync diffing (hash-based skip-unchanged); compression / tar-and-upload; per-experiment subset uploads.
 
-#### F6.5 — End-to-end OVH smoke — S (manual)
+#### F6.5 — End-to-end OVH smoke — S (manual) ✅
 
-- Submit `discovery_mappo_smoke.yaml`; verify results land at the right prefix; pull back via `S3StorageAdapter`.
-- **Manual demo** — gated on user confirmation that they want to spend an OVH credit.
+**Verified end-to-end on real OVH (2026-05-07):** mappo discovery 1-iter smoke submitted via `ovhai job run`, ran in `pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime`, results synced back via OVH FINALIZING, every artefact in §3.5.2 layout downloaded + parsed cleanly. ~90s wall time on `ai1-1-cpu`, ~4 jobs × cpu-flavor ≈ negligible cost.
+
+- **Procedure documented in `docs/ovh_smoke_checklist.md`** (F6.5 deliverable). One-time prereqs in `docs/ovh_setup.md` (install `ovhai` Go binary, `ovhai login`, create buckets, generate S3 keys for boto3 / or skip them when using `ovhai bucket` directly). Both evergreen — F10.3 absorbs them into the canonical docs.
+- **Two bugs caught + fixed during F6.5** (would have blocked any production OVH run):
+  - `pyproject.toml`: `requires-python = ">=3.11"` → `">=3.10"`. The `pytorch/pytorch:*-runtime` images ship Python 3.10; we use no 3.11-only syntax.
+  - `cli.py`: missing `if __name__ == "__main__": main()` — `python -m multi_scenario.cli` was a no-op (typer app never invoked, exit 0). Added the standard guard.
+- **Per-experiment S3 prefix isolation confirmed working:** results landed at `rendezvous-results@GRA/multi_scenario_smoke/<run_id>__<ts>/...` — no trailing slash, no collision with other prefixes.
+- **OVH FINALIZING auto-sync confirmed working:** the volume mount `:rwd` permission ports the entire local `/workspace/results` tree back to S3 at job end. We did NOT need F6.3's `S3StorageAdapter.sync_to_local` for this smoke (downloaded via `ovhai bucket object download` directly). F6.3's boto3 path remains the option for users who set up AWS credentials.
+- **Smoke artefact:** `experiments/discovery/baseline/configs/mappo_ovh_smoke.yaml` (added in this feature) — same shape as `mappo_smoke.yaml` but `runtime.storage.path: /workspace/results` so the run-folder writes hit the rwd-mounted volume.
 
 #### F6.6 — Headless video handling + `regenerate-videos` CLI — S
 
@@ -867,7 +888,11 @@ Final user-facing project docs. Replaces the placeholder stubs from F0.5 / F0.6 
 - **`docs/architecture.md`** — the hexagonal layout (ports / adapters / application / domain), what each layer can and can't depend on (the F1.12 isolation rule), the lifecycle of one experiment run (F1.11 → F2.x slice).
 - **`docs/scenarios.md`** — one section per scenario (discovery / navigation / flocking / transport): goal, agents, default params, M1 semantics, M6 semantics where applicable, special cases (e.g. flocking has no natural M1 — see F4.2).
 - **`docs/run_layout.md`** — §3.5.x conventions formalised: run_id format, folder layout per run (the §3.5.2 tree), cross-run files (`runs.csv` / `runs.json`), provenance fields, run-state machine.
-- **`docs/cli.md`** (or expand README) — every `multi-scenario` subcommand with one example each: `version`, `run`, `validate`, `consolidate`. Cross-reference what each emits.
+- **`docs/cli.md`** (or expand README) — every `multi-scenario` subcommand with one example each: `version`, `run`, `validate`, `consolidate`, `sweep`, `resume`, `eval`, `upload-code`. Cross-reference what each emits.
+- **OVH section** — fold the existing pre-feature docs into the canonical narrative:
+  - **`docs/ovh_setup.md`** (written at F6.5) — one-time machine setup: install `ovhai` CLI (Go binary, NOT pyproject), `ovhai login`, create buckets, generate S3 keys for boto3, configure `configs/ovh.yaml` + `configs/s3.yaml`. **Reuse content as-is** — already evergreen.
+  - **`docs/ovh_smoke_checklist.md`** (written at F6.5) — the manual smoke procedure. **Reuse as-is** for "first OVH run" walkthrough.
+  - F10.3 audit: cross-link both into `README.md` (Quick start → "Running on OVH") and `docs/architecture.md` (Runners section → OvhRunner). Both files survive F10.6's scaffolding cleanup pass — they are operational docs, not dev-time decision artefacts.
 - **Cross-link audit:** every `docs/*.md` should link to `README.md` and to its sibling docs; `README.md` should link to all of `docs/`. No orphans.
 
 #### F10.4 — Repo extraction — M
@@ -902,6 +927,8 @@ Some artefacts produced *during* development serve a one-time purpose — inform
 - Smoke YAMLs under `experiments/<scenario>/<exp_type>/configs/<algo>_smoke.yaml` — these are CI fixtures, not dev scaffolding.
 - The `.pre-commit-config.yaml` / `.markdownlint.json` / `.gitignore` / pyproject.toml — production tooling.
 - All test fixtures, even the ones that were written to drive a single feature (regression value).
+- **`docs/ovh_setup.md` + `docs/ovh_smoke_checklist.md`** — operational user docs (evergreen). F10.3 cross-links them; F10.6 leaves them in place.
+- **`configs/ovh.yaml.example` + `configs/s3.yaml.example`** — config templates users copy on machine setup.
 
 **Demo:**
 

@@ -53,6 +53,7 @@ class OvhRunner:
         s3_storage: S3StorageAdapter | None = None,
         secret_env: dict[str, str] | None = None,
         secret_passphrase: str | None = None,
+        yaml_path_in_repo: str | None = None,
         sleep: callable = time.sleep,
     ) -> None:
         self._ovh_config = ovh_config
@@ -66,6 +67,10 @@ class OvhRunner:
         # Optional encrypted secrets to ship as env vars on the OVH job.
         self._secret_env = secret_env or {}
         self._secret_passphrase = secret_passphrase
+        # Path of the experiment YAML *relative to the uploaded code root*.
+        # E.g. "experiments/discovery/baseline/configs/mappo_smoke.yaml". The
+        # container resolves it under ``mount_code``. Required at submit time.
+        self._yaml_path_in_repo = yaml_path_in_repo
         self._sleep = sleep  # injectable for fast tests
 
     def run(
@@ -108,18 +113,44 @@ class OvhRunner:
         sync. We intentionally drop the trailing slash to avoid the
         silent-prefix-loss bug documented in the rendezvous_comm port.
         """
+        # The arg list is genuinely many flag pairs (--flavor / --gpu /
+        # --volume × 2 / --env per secret / image / -- / bash -c "..."); pylint
+        # flags it but flattening the list is the natural shape for ovhai.
+        # pylint: disable=too-many-locals
+        if self._yaml_path_in_repo is None:
+            raise OvhJobError(
+                "OvhRunner: yaml_path_in_repo must be set on the constructor "
+                "before calling run(); points at the experiment yaml *relative "
+                "to the uploaded code root* (e.g. "
+                "'experiments/discovery/baseline/configs/mappo_smoke.yaml')."
+            )
+        # ``del run_dir`` documents that we don't need the local run_dir at
+        # this point — submission is purely from the in-repo YAML path.
+        del run_dir
+
         cfg_oc = self._ovh_config
         run_id = f"{cfg.experiment.id}_s{cfg.experiment.seed}"
-        # No trailing slash; per-experiment isolation.
-        results_uri = f"{cfg_oc.bucket_results}@{cfg_oc.region}/{run_id}:{cfg_oc.mount_results}"
-        code_uri = f"{cfg_oc.bucket_code}@{cfg_oc.region}:{cfg_oc.mount_code}:RO"
+        yaml_in_container = f"{cfg_oc.mount_code}/{self._yaml_path_in_repo}"
+
+        # Volume URIs: lowercase ``ro`` / ``rwd`` per ovhai. No trailing slash
+        # on the results prefix (project-memory bug from rendezvous_comm).
+        code_uri = f"{cfg_oc.bucket_code}@{cfg_oc.region}:{cfg_oc.mount_code}:ro"
+        results_uri = f"{cfg_oc.bucket_results}@{cfg_oc.region}/{run_id}:{cfg_oc.mount_results}:rwd"
+
+        # Render the runner template; the OVH container needs ``HOME=/tmp``
+        # for pip + ``pip install -e mount_code`` to install our package.
+        runner_cmd = cfg_oc.default_runner.format(
+            mount_code=cfg_oc.mount_code,
+            mount_results=cfg_oc.mount_results,
+            yaml_path_in_container=yaml_in_container,
+        )
 
         args = [
             "--name",
             f"multi-scenario-{run_id}",
+            "--flavor",
+            cfg_oc.flavor,
             "--gpu",
-            cfg_oc.gpu_type,
-            "--gpus",
             str(cfg_oc.n_gpu),
             "--volume",
             code_uri,
@@ -127,15 +158,20 @@ class OvhRunner:
             results_uri,
             cfg_oc.image,
             "--",
-            *cfg_oc.default_runner.split(),
-            str(run_dir),
-            *cfg_oc.default_extra_cli.split(),
+            "bash",
+            "-c",
+            runner_cmd,
         ]
-        # Encrypted secret env vars (F6.1) — ship as one --env per key.
+        # Encrypted secret env vars (F6.1) — ship as one --env per key,
+        # placed before the image in the arg list.
         if self._secret_env and self._secret_passphrase:
             ship = self._secrets.encrypt_for_env(self._secret_env, self._secret_passphrase)
+            env_flags: list[str] = []
             for k, v in ship.items():
-                args = ["--env", f"{k}={v}", *args]
+                env_flags.extend(["--env", f"{k}={v}"])
+            # Insert env flags before the image (last element before ``--``).
+            image_idx = args.index(cfg_oc.image)
+            args = args[:image_idx] + env_flags + args[image_idx:]
         return args
 
     def _poll_until_terminal(self, job_id: str):

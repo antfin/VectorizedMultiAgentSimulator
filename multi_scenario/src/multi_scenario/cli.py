@@ -375,3 +375,7 @@ def upload_code(
 def main() -> None:
     """Entry point used by the ``multi-scenario`` console script."""
     app()
+
+
+if __name__ == "__main__":
+    main()

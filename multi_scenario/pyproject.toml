@@ -6,11 +6,14 @@ build-backend = "hatchling.build"
 name = "multi-scenario"
 version = "0.0.1"
 description = "Multi-scenario cooperative MARL framework (placeholder name; renamed at F10.4)."
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "torch",
+    "torchrl",
+    "tensordict",
     "vmas",
     "benchmarl",
+    "imageio[ffmpeg]>=2.30",
     "pyyaml",
     "pydantic",
     "pandas",

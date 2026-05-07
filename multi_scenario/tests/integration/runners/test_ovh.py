@@ -164,6 +164,7 @@ def test_run_with_resume_from_raises(tmp_path: Path) -> None:
         client=_StubClient(states_after_submit=["DONE"]),
         secrets=FernetSecretsAdapter(),
         logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
         sleep=lambda _: None,
     )
     with pytest.raises(OvhJobError, match="resume"):
@@ -179,6 +180,7 @@ def test_run_happy_path_returns_loaded_result(tmp_path: Path) -> None:
         client=client,
         secrets=FernetSecretsAdapter(),
         logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
         sleep=lambda _: None,
     )
     result = runner.run(_exp_cfg(tmp_path), run_dir)
@@ -197,13 +199,23 @@ def test_submit_args_include_per_run_s3_prefix(tmp_path: Path) -> None:
         client=client,
         secrets=FernetSecretsAdapter(),
         logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
         sleep=lambda _: None,
     )
     runner.run(_exp_cfg(tmp_path), run_dir)
     args = " ".join(client.submit_calls[0])
-    # Per-experiment prefix appears, no trailing slash.
-    assert "results-bucket@GRA/ovh_demo_s0:" in args
+    # Per-experiment prefix appears, no trailing slash, mounted ``rwd``.
+    assert "results-bucket@GRA/ovh_demo_s0:/workspace/results:rwd" in args
     assert "results-bucket@GRA/ovh_demo_s0/:" not in args
+    # Code volume is read-only lowercase.
+    assert "code-bucket@GRA:/workspace/code:ro" in args
+    # ovhai uses --flavor (not --gpu) for the GPU model.
+    assert "--flavor" in args
+    # Runner is wrapped in ``bash -c``.
+    assert "bash" in args
+    # HOME=/tmp is mandatory for pip install in OVH containers.
+    assert "HOME=/tmp" in args
+    assert "pip install -e /workspace/code" in args
 
 
 def test_run_failed_state_raises_with_logs_tail(tmp_path: Path) -> None:
@@ -215,6 +227,7 @@ def test_run_failed_state_raises_with_logs_tail(tmp_path: Path) -> None:
         client=client,
         secrets=FernetSecretsAdapter(),
         logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
         sleep=lambda _: None,
     )
     with pytest.raises(OvhJobError, match="OOM at iter 12"):
@@ -232,6 +245,7 @@ def test_secrets_shipped_via_env_when_configured(tmp_path: Path) -> None:
         logger=_NoopLogger(),
         secret_env={"OPENAI_API_KEY": "sk-xyz"},
         secret_passphrase="hunter2",
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
         sleep=lambda _: None,
     )
     runner.run(_exp_cfg(tmp_path), run_dir)
@@ -241,6 +255,20 @@ def test_secrets_shipped_via_env_when_configured(tmp_path: Path) -> None:
     keys = {flag.split("=", 1)[0] for flag in env_flags}
     assert "MS_ENCRYPTED_SECRETS" in keys
     assert "MS_SECRETS_PASSPHRASE" in keys
+
+
+def test_run_without_yaml_path_in_repo_raises(tmp_path: Path) -> None:
+    """F6.2.1: yaml_path_in_repo is mandatory at submit; missing → :class:`OvhJobError`."""
+    runner = OvhRunner(
+        ovh_config=_ovh_cfg(),
+        client=_StubClient(states_after_submit=["DONE"]),
+        secrets=FernetSecretsAdapter(),
+        logger=_NoopLogger(),
+        # NB: yaml_path_in_repo intentionally omitted.
+        sleep=lambda _: None,
+    )
+    with pytest.raises(OvhJobError, match="yaml_path_in_repo"):
+        runner.run(_exp_cfg(tmp_path), tmp_path)
 
 
 def test_run_times_out_when_never_terminal(tmp_path: Path) -> None:
@@ -256,6 +284,7 @@ def test_run_times_out_when_never_terminal(tmp_path: Path) -> None:
         client=client,
         secrets=FernetSecretsAdapter(),
         logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
         sleep=lambda _: None,
     )
     with pytest.raises(OvhJobError, match="terminal state"):
