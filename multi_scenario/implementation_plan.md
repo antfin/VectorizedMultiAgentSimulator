@@ -158,7 +158,7 @@ Notes:
 - No `results/` parent folder — run folders are direct children of `<exp_type>/`, sibling to `configs/`.
 - All run-level files we own are JSON. BenchMARL's native CSVs (`scalars/`) remain in `benchmarl/` untouched.
 - No standalone `policy.pt` at run-folder root: the policy lives in `output/benchmarl/<bm_run>/checkpoints/`. `report.json` records the exact path.
-- `report.json` is a manifest with relative paths to `config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy`, `videos.{before,after}_training`, `benchmarl_dir`, `benchmarl_scalars`, plus a headline summary (status, duration, M1/M2 highlights). Streamlit run-detail page reads this — no globbing.
+- `report.json` is a manifest with relative paths to `config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy`, `videos.{before,after}_training`, plus a `benchmarl: {dir, scalars: [...]}` block (where `dir` points at the *inner* BenchMARL run root and `scalars[i]` are paths relative to `dir`, typically `scalars/<name>.csv`), plus a headline summary (status, duration, M1/M2 highlights). Streamlit run-detail page reads this — no globbing. Resolve a scalar via `run_dir / benchmarl.dir / benchmarl.scalars[i]`.
 
 ### 3.5.3 Cross-run aggregations
 
@@ -174,7 +174,7 @@ Cross-run files live at `experiments/<scenario>/<exp_type>/`, sibling to run fol
   - `csv`: link to `runs.csv`.
   - `rankings`: per-metric leaderboards as `[{run_id, value, report}]` arrays.
   - `runs`: flat list of `{run_id, report}` linking to each per-run `output/report.json`.
-  - **No file duplication**: every per-run path (config, metrics, policy, videos, benchmarl_scalars) lives only in the per-run report; the cross-run manifest dereferences via `report` links.
+  - **No file duplication**: every per-run path (config, metrics, policy, videos, `benchmarl.scalars`) lives only in the per-run report; the cross-run manifest dereferences via `report` links.
 - `runs.previous.csv`, `runs.previous.json` — one-step backups, overwritten on each consolidate.
 
 ### 3.5.4 Run state lifecycle
@@ -481,7 +481,7 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 #### F2.10 — `report.json` writer — XS
 
-- At run end, emit `output/report.json` per §3.5.2: a manifest with status, started/finished timestamps, duration, headline summary (M1–M4), and relative-path links to every relevant artefact (`config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy` inside `benchmarl/`, `videos.before_training`, `videos.after_training`, `benchmarl_dir`, `benchmarl_scalars`).
+- At run end, emit `output/report.json` per §3.5.2: a manifest with status, started/finished timestamps, duration, headline summary (M1–M4), and relative-path links to every relevant artefact (`config`, `provenance`, `log`, `metrics`, `eval_episodes`, `policy` inside `benchmarl/`, `videos.before_training`, `videos.after_training`, plus a `benchmarl: {dir, scalars: [...]}` block enumerating every native scalar CSV).
 - **Wiring:** built and saved by `LocalRunner` *after* `ExperimentService.run()` returns (not inside the service) so the report's `status` reflects the on-disk run state. Keeps the `Storage` Protocol surface minimal — `save_report` lives on the concrete `LocalStorageAdapter` only (per F1.9 design note).
 - The exact `<bm_run>` directory name (BenchMARL-assigned) is captured in the manifest so consumers don't glob.
 - **Out of scope:** `eval_episodes.json` writer — link is `null` until F2.10.1 lands. Video paths — `null` until F2.11 lands.
@@ -597,10 +597,14 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - **Wiring:** `BenchmarlBaseAdapter.evaluate()` saves the LAST rollout's per-step data when the flag is on AND `run_dir` is set. Multi-rollout aggregation deferred — most evals fit in one rollout.
 - Tests: 6 unit tests against fake rollout TensorDicts (row count, schema, value placement, group-map agent naming, done/terminated broadcast, output-dir creation) + 2 integration tests through `MappoAdapter.evaluate` (flag on → CSV produced; flag off → no file).
 
-#### F5.5 — **DECISION POINT: long vs summary** — S (analysis, not code)
+#### F5.5 — **DECISION POINT: long vs summary** — S (analysis) ✅
 
-- Mini-experiment: 6-algo × discovery × 3 seeds. Generate both formats; measure (a) disk size, (b) load time in pandas, (c) which downstream questions each can answer.
-- Output: `docs/csv_format_decision.md` + recommendation. **User signs off** before defaults change.
+- `scripts/f5_5_format_decision.py` is the reproducer — runs 3 seeds (mappo, discovery, max_steps=100, n_agents=4, num_envs=1, long_format=true), then walks every per-run artefact + BenchMARL native scalars, captures sizes / columns / sample rows / load times, and emits `docs/csv_format_decision.md` directly. Re-runnable; no hand-typed numbers.
+- **Scope cut from 18 → 3 runs** (documented in §1 of the doc): format-size analysis depends on `max_steps × n_agents × num_envs × episodes`, not on algorithm or seed. Three runs are enough to confirm consistency.
+- Doc covers: per-file inventory with full content for `config.json` / `provenance.json` / `metrics.json` / `eval_episodes.json` / `report.json`, head + columns for `eval_steps.csv` (long format), all 39 BenchMARL `*.csv` scalars grouped by prefix (train_/eval_/collection_/timers_/counters_), side-by-side column comparison matrix, empirical sizes + load times, production-scale projection (1000 × 5 × 10 → 50k rows / ~3.7 MB per run), question matrix, recommendation, sign-off line.
+- **Recommendation:** `long_format` stays opt-in (default off — F5.4 status quo). Cross-run leaderboard questions go through `runs.csv`; single-run drill-down via Streamlit + `eval_steps.csv` opt-in; training internals via BenchMARL native scalars (always-on, BenchMARL writes them anyway).
+- **User signs off** before any defaults change. Sign-off boxes embedded at the bottom of the doc.
+- **Post-review schema rev** (after first user pass): collapsed report's separate `benchmarl_dir` + `benchmarl_scalars` (single string) into a single `benchmarl: {dir, scalars: [...]}` block, with `dir` pointing at the *inner* BenchMARL run root and `scalars[i]` relative to `dir` (typically `scalars/<name>.csv`). Cleaner enumeration of every native CSV in one place; one resolve idiom (`run_dir / dir / scalars[i]`); no duplicated `<bm_run>` segment in scalar entries. See `domain/models/report.py::BenchmarlLinks`.
 
 #### F5.6 — Sweep config + combinatorial validator — S
 
@@ -750,7 +754,14 @@ Out of scope right now. **Note for future planning** (from deep analysis): rende
 
 #### F10.3 — Documentation pass — S
 
-- `README.md` (quick-start), `docs/architecture.md`, `docs/scenarios.md`, `docs/run_layout.md` (the §3.5 conventions formalised).
+Final user-facing project docs. Replaces the placeholder stubs from F0.5 / F0.6 with the real thing once everything else is stable.
+
+- **`README.md`** — quick-start (install, run a smoke config, browse results in Streamlit), 1-paragraph project description, links into `docs/`. Replaces the F0.6 stub.
+- **`docs/architecture.md`** — the hexagonal layout (ports / adapters / application / domain), what each layer can and can't depend on (the F1.12 isolation rule), the lifecycle of one experiment run (F1.11 → F2.x slice).
+- **`docs/scenarios.md`** — one section per scenario (discovery / navigation / flocking / transport): goal, agents, default params, M1 semantics, M6 semantics where applicable, special cases (e.g. flocking has no natural M1 — see F4.2).
+- **`docs/run_layout.md`** — §3.5.x conventions formalised: run_id format, folder layout per run (the §3.5.2 tree), cross-run files (`runs.csv` / `runs.json`), provenance fields, run-state machine.
+- **`docs/cli.md`** (or expand README) — every `multi-scenario` subcommand with one example each: `version`, `run`, `validate`, `consolidate`. Cross-reference what each emits.
+- **Cross-link audit:** every `docs/*.md` should link to `README.md` and to its sibling docs; `README.md` should link to all of `docs/`. No orphans.
 
 #### F10.4 — Repo extraction — M
 
@@ -767,6 +778,31 @@ Out of scope right now. **Note for future planning** (from deep analysis): rende
 - For each comment found: if there is a substantive WHY behind the reference, keep that prose and drop the phase pointer. If the comment was *only* a phase pointer, delete the comment entirely. Per project style (CLAUDE.md) — comments justify *why*, not *which-feature-added-this*.
 - Files in scope: `src/**`, `tests/**`, `docs/**` (non-markdown), `pyproject.toml`, `.pre-commit-config.yaml`, `.markdownlint.json`, `.gitignore`, YAML configs under `experiments/**`. Out of scope: `plan.md`, `implementation_plan.md`, and any other markdown documents in `docs/` whose purpose is planning/architectural narrative — those are allowed to keep phase references.
 - **Demo:** `grep -rnE 'F[0-9]+\.[0-9]+|Phase [0-9]+|§[0-9]' src tests pyproject.toml .pre-commit-config.yaml .markdownlint.json .gitignore docs experiments --include='*.py' --include='*.toml' --include='*.yaml' --include='*.yml' --include='*.json' --include='.gitignore' --include='.pre-commit-config.yaml'` returns no matches.
+
+#### F10.6 — Scaffolding cleanup pass — XS
+
+Some artefacts produced *during* development serve a one-time purpose — informing a decision, generating empirical numbers for a sign-off, validating a deferred choice — and become dead weight once the final code + F10.3 docs land. Sweep them out before extraction (F10.4).
+
+**Removal candidates (review each before deleting; delete only when the final state preserves the information they carried):**
+
+- **`docs/csv_format_decision.md`** + **`scripts/f5_5_format_decision.py`** — the F5.5 long-vs-summary decision. Once `long_format` defaults are locked in code and `docs/run_layout.md` documents the artefact set, the empirical doc is redundant. Re-runnable scripts for one-off decisions don't justify a permanent home.
+- **Sub-feature placeholder sections in `implementation_plan.md`** (F2.4.2, F2.10.1, F5.2.1, F6.6) — once each is implemented (or definitively skipped), fold the resulting state into the relevant final doc and remove the placeholder.
+- **Any `_<exp_id>` scratch folders under `experiments/<scenario>/<exp_type>/`** (e.g. `_f5_5_decision`) — these are temp dirs from reproducer scripts; should already be auto-cleaned, but spot-check.
+- **Stale TODO comments** referencing deferred features whose triggers have since fired or been cancelled.
+
+**What to keep** (do *not* remove just because they're "phase-tagged"):
+
+- Smoke YAMLs under `experiments/<scenario>/<exp_type>/configs/<algo>_smoke.yaml` — these are CI fixtures, not dev scaffolding.
+- The `.pre-commit-config.yaml` / `.markdownlint.json` / `.gitignore` / pyproject.toml — production tooling.
+- All test fixtures, even the ones that were written to drive a single feature (regression value).
+
+**Demo:**
+
+- `find docs scripts -maxdepth 2 -type f \( -name '*decision*' -o -name 'f5_*' \)` — should return no surviving dev-time decision artefacts.
+- `find experiments -type d -name '_*'` — should return no scratch run folders.
+- `grep -rn 'TODO\|FIXME' src tests` — every remaining occurrence is justified or also deleted.
+
+**Order:** run after F10.5 (comment cleanup) and after F10.3 (documentation pass) — those passes formalise what's worth preserving, so anything they didn't promote to canonical state is fair game here.
 
 ---
 

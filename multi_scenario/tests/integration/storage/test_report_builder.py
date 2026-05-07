@@ -68,19 +68,25 @@ def _seed_required_files(run_dir: Path) -> None:
 
 
 def _seed_benchmarl(run_dir: Path, bm_run: str = "mappo_xyz_20260506_1400") -> Path:
-    """Lay down a fake BenchMARL output dir with a checkpoints policy + scalars."""
-    bm_dir = run_dir / "output" / "benchmarl" / bm_run
-    (bm_dir / "checkpoints").mkdir(parents=True)
-    (bm_dir / "checkpoints" / "checkpoint_0.pt").write_text("policy", encoding="utf-8")
-    (bm_dir / "scalars").mkdir()
-    (bm_dir / "scalars" / "train.csv").write_text("", encoding="utf-8")
-    return bm_dir
+    """Lay down a fake BenchMARL output dir matching the real nested layout.
+
+    BenchMARL writes ``output/benchmarl/<bm_run>/<bm_run>/{scalars,checkpoints}``;
+    the inner-nest mirror is the BenchMARL quirk we work around. Returns the
+    inner dir (the one with ``scalars/`` + ``checkpoints/``).
+    """
+    inner = run_dir / "output" / "benchmarl" / bm_run / bm_run
+    (inner / "checkpoints").mkdir(parents=True)
+    (inner / "checkpoints" / "checkpoint_0.pt").write_text("policy", encoding="utf-8")
+    (inner / "scalars").mkdir()
+    for name in ("train_loss.csv", "eval_reward.csv", "timers_iter.csv"):
+        (inner / "scalars" / name).write_text("0,0.0\n", encoding="utf-8")
+    return inner
 
 
 def test_build_with_fully_populated_layout(tmp_path: Path) -> None:
     """Every link resolves to an existing file when the run folder is fully populated."""
     _seed_required_files(tmp_path)
-    bm_dir = _seed_benchmarl(tmp_path)
+    inner = _seed_benchmarl(tmp_path)
 
     report = ReportBuilder().build(tmp_path, _result(), _done_state())
 
@@ -94,12 +100,20 @@ def test_build_with_fully_populated_layout(tmp_path: Path) -> None:
     ):
         assert rel is not None
         assert (tmp_path / rel).is_file()
-    # BenchMARL artefacts.
-    assert report.links.benchmarl_dir is not None
-    assert (tmp_path / report.links.benchmarl_dir).is_dir()
-    assert (tmp_path / report.links.benchmarl_dir).resolve() == bm_dir.resolve()
-    assert report.links.benchmarl_scalars is not None
-    assert (tmp_path / report.links.benchmarl_scalars).is_dir()
+    # BenchMARL block — dir points at the *inner* BenchMARL run root,
+    # scalars[i] are paths relative to that dir.
+    assert report.links.benchmarl is not None
+    assert (tmp_path / report.links.benchmarl.dir).resolve() == inner.resolve()
+    assert sorted(report.links.benchmarl.scalars) == [
+        "scalars/eval_reward.csv",
+        "scalars/timers_iter.csv",
+        "scalars/train_loss.csv",
+    ]
+    # Each scalar resolves under (run_dir / dir).
+    bm_root = tmp_path / report.links.benchmarl.dir
+    for rel in report.links.benchmarl.scalars:
+        assert (bm_root / rel).is_file()
+    # Policy.
     assert report.links.policy is not None
     assert (tmp_path / report.links.policy).is_file()
     # eval_episodes / videos default-None until F2.10.1 / F2.11.
@@ -109,13 +123,12 @@ def test_build_with_fully_populated_layout(tmp_path: Path) -> None:
 
 
 def test_build_with_missing_optional_artefacts(tmp_path: Path) -> None:
-    """No benchmarl / no videos → optional links are None; required ones still set."""
+    """No benchmarl / no videos → benchmarl/policy None; required ones still set."""
     _seed_required_files(tmp_path)
 
     report = ReportBuilder().build(tmp_path, _result(), _done_state())
 
-    assert report.links.benchmarl_dir is None
-    assert report.links.benchmarl_scalars is None
+    assert report.links.benchmarl is None
     assert report.links.policy is None
     assert report.links.eval_episodes is None
     assert report.links.videos.before_training is None

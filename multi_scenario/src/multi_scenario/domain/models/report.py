@@ -25,6 +25,22 @@ class ReportVideos(BaseModel):
     after_training: str | None = None
 
 
+class BenchmarlLinks(BaseModel):
+    """BenchMARL-native artefact block in the report (F5.5 / report-schema rev).
+
+    ``dir`` is the BenchMARL run root (the *inner* dir, where ``scalars/``,
+    ``checkpoints/``, ``texts/``, ``videos/`` live — BenchMARL nests a same-named
+    subdir inside the outer ``output/benchmarl/<bm_run>/``; we point at the
+    inner one so ``scalars[i]`` paths stay clean like ``scalars/train_loss.csv``).
+    Resolve a scalar via ``run_dir / dir / scalars[i]``.
+    """
+
+    model_config = STRICT
+
+    dir: str
+    scalars: list[str]
+
+
 class ReportLinks(BaseModel):
     """Relative-path links to every artefact the run produced.
 
@@ -41,8 +57,7 @@ class ReportLinks(BaseModel):
     eval_episodes: str | None = None
     policy: str | None = None
     videos: ReportVideos = ReportVideos()
-    benchmarl_dir: str | None = None
-    benchmarl_scalars: str | None = None
+    benchmarl: BenchmarlLinks | None = None
 
 
 class RunReport(BaseModel):

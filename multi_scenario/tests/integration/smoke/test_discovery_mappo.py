@@ -122,8 +122,13 @@ def test_discovery_mappo_smoke_completes(tmp_path: Path) -> None:
         report.links.log,
         report.links.metrics,
         report.links.eval_episodes,  # populated now (F2.10.1)
-        report.links.benchmarl_dir,
-        report.links.benchmarl_scalars,
     ):
         assert rel is not None
         assert (run_dir / rel).exists()
+    # BenchMARL block (post-rev): dir + scalars[] of paths relative to dir.
+    assert report.links.benchmarl is not None
+    bm_root = run_dir / report.links.benchmarl.dir
+    assert bm_root.is_dir()
+    assert len(report.links.benchmarl.scalars) > 0
+    for rel in report.links.benchmarl.scalars:
+        assert (bm_root / rel).is_file()

@@ -14,6 +14,7 @@ only (per F1.9 design note).
 from pathlib import Path
 
 from multi_scenario.domain.models import (
+    BenchmarlLinks,
     ExperimentResult,
     ReportLinks,
     ReportVideos,
@@ -52,6 +53,7 @@ class ReportBuilder:
         result_metrics = {m.name: m.value for m in result.metrics}
         summary = {name: result_metrics.get(name) for name in _HEADLINE_METRICS}
 
+        bm_run = _find_bm_run(run_dir)
         links = ReportLinks(
             config=_required_rel(run_dir, run_dir / "input" / "config.json"),
             provenance=_required_rel(run_dir, run_dir / "input" / "provenance.json"),
@@ -59,7 +61,8 @@ class ReportBuilder:
             metrics=_required_rel(run_dir, run_dir / "output" / "metrics.json"),
             eval_episodes=_optional_rel(run_dir, run_dir / "output" / "eval_episodes.json"),
             videos=_videos(run_dir),
-            **_benchmarl_links(run_dir),
+            policy=_latest_policy(run_dir, bm_run) if bm_run is not None else None,
+            benchmarl=_benchmarl_block(run_dir, bm_run) if bm_run is not None else None,
         )
         return RunReport(
             status=run_state.state.value,
@@ -90,37 +93,39 @@ def _videos(run_dir: Path) -> ReportVideos:
     )
 
 
-def _benchmarl_links(run_dir: Path) -> dict[str, str | None]:
-    """Locate BenchMARL's per-run subdir + scalars dir + latest policy checkpoint.
+def _find_bm_run(run_dir: Path) -> Path | None:
+    """Locate the *inner* BenchMARL run dir (where scalars/checkpoints live).
 
     BenchMARL writes a nested layout: ``output/benchmarl/<bm_run>/<bm_run>/
-    {scalars,texts,videos,checkpoints}``. The outer dir holds ``config.pkl``;
-    actual artefacts live one level deeper. We recurse to find them so the
-    inner-name quirk doesn't leak into report consumers.
+    {scalars,texts,videos,checkpoints}``. We point the report at the **inner**
+    dir so ``scalars[i]`` paths stay clean (``scalars/train_loss.csv`` rather
+    than ``<bm_run>/scalars/train_loss.csv``). Returns None if no benchmarl
+    output present.
     """
     bm_root = run_dir / "output" / "benchmarl"
     if not bm_root.is_dir():
-        return {"benchmarl_dir": None, "benchmarl_scalars": None, "policy": None}
-    children = [p for p in bm_root.iterdir() if p.is_dir()]
-    if not children:
-        return {"benchmarl_dir": None, "benchmarl_scalars": None, "policy": None}
-    # BenchMARL produces exactly one per-run subdir; pick the only / newest.
-    bm_run = max(children, key=lambda p: p.stat().st_mtime)
-    return {
-        "benchmarl_dir": _required_rel(run_dir, bm_run),
-        "benchmarl_scalars": _find_descendant_dir(run_dir, bm_run, "scalars"),
-        "policy": _latest_policy(run_dir, bm_run),
-    }
-
-
-def _find_descendant_dir(run_dir: Path, root: Path, name: str) -> str | None:
-    """Return the relative path of the first ``name``-named directory under ``root``."""
-    matches = [p for p in root.rglob(name) if p.is_dir()]
-    if not matches:
         return None
-    # Shallowest match wins — keeps the link stable when BenchMARL adds nesting.
-    chosen = min(matches, key=lambda p: len(p.parts))
-    return _required_rel(run_dir, chosen)
+    # Find the shallowest dir that contains a `scalars/` subfolder — that's
+    # the BenchMARL run root regardless of nesting depth.
+    candidates = [s.parent for s in bm_root.rglob("scalars") if s.is_dir() and s.parent.is_dir()]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda p: len(p.parts))
+
+
+def _benchmarl_block(run_dir: Path, bm_run: Path) -> BenchmarlLinks:
+    """Build the report's ``benchmarl`` block: dir + sorted list of scalar CSVs.
+
+    ``dir`` is relative to ``run_dir`` and points at the BenchMARL run root.
+    ``scalars[i]`` are relative to ``dir`` (so a consumer resolves a CSV via
+    ``run_dir / dir / scalars[i]``) — typically just ``scalars/<name>.csv``.
+    """
+    scalars_dir = bm_run / "scalars"
+    files = sorted(scalars_dir.glob("*.csv")) if scalars_dir.is_dir() else []
+    return BenchmarlLinks(
+        dir=_required_rel(run_dir, bm_run),
+        scalars=[f.relative_to(bm_run).as_posix() for f in files],
+    )
 
 
 def _latest_policy(run_dir: Path, bm_run: Path) -> str | None:
