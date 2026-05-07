@@ -113,8 +113,17 @@ class BenchmarlBaseAdapter:
         bm.loggers = ["csv"]  # avoid wandb default; we don't need its setup
         bm.create_json = False
         bm.render = False  # avoid pyglet crashes in headless / OVH
-        bm.checkpoint_interval = 0
-        bm.checkpoint_at_end = False
+        # F5.7: enable BenchMARL checkpoints for non-smoke runs so resume can
+        # work and the F6.6 regenerate-videos CLI has a saved policy to load.
+        # Smoke runs stay off (1-iter runs don't need checkpoints).
+        if cfg.experiment.id.endswith("_smoke"):
+            bm.checkpoint_interval = 0
+            bm.checkpoint_at_end = False
+        else:
+            bm.checkpoint_interval = (
+                cfg.training.checkpoint_interval_iters * cfg.training.frames_per_batch
+            )
+            bm.checkpoint_at_end = True
         if save_folder is not None:
             bm.save_folder = save_folder
         return bm
@@ -142,7 +151,13 @@ class BenchmarlBaseAdapter:
             config=bm_cfg,
         )
 
-    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Experiment:
+    def train(
+        self,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+        resume_from: Path | None = None,
+    ) -> Experiment:
         """Build the BenchMARL Experiment, run training, return the Experiment.
 
         BenchMARL's native scalars / checkpoints land at ``run_dir/output/benchmarl/``
@@ -153,12 +168,22 @@ class BenchmarlBaseAdapter:
         for ``*_smoke`` runs, on otherwise) and ``run_dir`` is set, records
         ``before_training.mp4`` (random-init policy) and ``after_training.mp4``
         (trained policy) under ``run_dir/output/videos/``.
+
+        F5.7: when ``resume_from`` is set, the experiment is reconstructed via
+        BenchMARL's static ``Experiment.reload_from_file(<ckpt>)`` (which reads
+        the run's ``config.pkl`` saved alongside the checkpoint) instead of
+        ``build_experiment``. The "before_training" video is skipped on resume —
+        there's no random-init policy at that point.
         """
-        experiment = self.build_experiment(cfg, run_dir)
+        if resume_from is not None:
+            experiment = Experiment.reload_from_file(str(resume_from))
+        else:
+            experiment = self.build_experiment(cfg, run_dir)
 
         record = _should_record_video(cfg, run_dir)
         videos_dir = run_dir / "output" / "videos" if run_dir is not None else None
-        if record and videos_dir is not None:
+        # Skip the "before" video on resume — the policy is no longer random-init.
+        if record and videos_dir is not None and resume_from is None:
             VideoRecorder().record(
                 test_env=experiment.test_env,
                 policy=experiment.policy,

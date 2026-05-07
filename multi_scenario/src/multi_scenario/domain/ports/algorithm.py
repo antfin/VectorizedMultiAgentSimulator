@@ -23,8 +23,19 @@ class Algorithm(Protocol):
 
     name: str
 
-    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
-        """Train and return a serialisable artifact (policy state + metadata)."""
+    def train(
+        self,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+        resume_from: Path | None = None,
+    ) -> Any:
+        """Train and return a serialisable artifact (policy state + metadata).
+
+        ``resume_from`` (F5.7): when set, points at a checkpoint file the
+        adapter should load before continuing training. Adapters that don't
+        support resume can ignore this kwarg.
+        """
 
     def evaluate(
         self,

@@ -76,8 +76,14 @@ class _FakeAlgorithm:
 
     name = "fake"
 
-    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
-        return ("artifact", env, cfg, run_dir)
+    def train(
+        self,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+        resume_from: Path | None = None,
+    ) -> Any:
+        return ("artifact", env, cfg, run_dir, resume_from)
 
     def evaluate(
         self,
@@ -94,7 +100,13 @@ class _IncompleteAlgorithm:
 
     name = "incomplete"
 
-    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
+    def train(
+        self,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+        resume_from: Path | None = None,
+    ) -> Any:
         return None
 
 
@@ -251,9 +263,10 @@ class _FakeRunner:
     """A complete fake runner covering every member of the Runner protocol."""
 
     name = "fake"
+    supports_resume = True
 
     def run(  # type: ignore[empty-body]
-        self, cfg: ExperimentConfig, run_dir: Path
+        self, cfg: ExperimentConfig, run_dir: Path, resume_from: Path | None = None
     ) -> ExperimentResult:
         return None  # type: ignore[return-value]
 
@@ -262,6 +275,7 @@ class _IncompleteRunner:
     """No `run` method — should fail isinstance."""
 
     name = "incomplete"
+    supports_resume = False
 
 
 def test_fake_runner_implements_protocol():

@@ -61,23 +61,35 @@ class ExperimentService:
         cfg: ExperimentConfig,
         run_dir: Path,
         provenance: Provenance,
+        resume_from: Path | None = None,
     ) -> ExperimentResult:
-        """Execute the full lifecycle: init → save inputs → train → eval → save result → done."""
-        run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
-        started_at = self._now()
+        """Execute the full lifecycle: init → save inputs → train → eval → save result → done.
 
-        state = RunStateRecord.initial(started_at)
-        self._storage.save_run_state(run_dir, state)
-        self._storage.save_config(run_dir, cfg)
-        self._storage.save_provenance(run_dir, provenance)
+        F5.7: when ``resume_from`` is set, this is a resume of a previously-crashed
+        run — the run-state record is loaded from disk (caller already transitioned
+        it to ``RESUMED``) and ``config.json`` / ``provenance.json`` are NOT
+        re-written (they're immutable for the run's identity).
+        """
+        run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
+        is_resume = resume_from is not None
+
+        if is_resume:
+            state = self._storage.load_run_state(run_dir)
+            started_at = state.transitions[0].ts
+        else:
+            started_at = self._now()
+            state = RunStateRecord.initial(started_at)
+            self._storage.save_run_state(run_dir, state)
+            self._storage.save_config(run_dir, cfg)
+            self._storage.save_provenance(run_dir, provenance)
 
         env = self._scenario.make_env(cfg.scenario, cfg.training.num_envs, cfg.experiment.seed)
 
         state = state.transition_to(RunState.RUNNING, self._now())
         self._storage.save_run_state(run_dir, state)
 
-        self._logger.info(f"training {run_id}")
-        artifact = self._algorithm.train(env, cfg, run_dir=run_dir)
+        self._logger.info(f"training {run_id}{' (resume)' if is_resume else ''}")
+        artifact = self._algorithm.train(env, cfg, run_dir=run_dir, resume_from=resume_from)
 
         self._logger.info(f"evaluating {run_id}")
         rollout = self._algorithm.evaluate(artifact, env, cfg, run_dir=run_dir)

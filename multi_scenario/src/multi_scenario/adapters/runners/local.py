@@ -40,6 +40,8 @@ class LocalRunner:
     # pylint: disable=too-few-public-methods
 
     name = "local"
+    # F5.7: local fs gives direct checkpoint access; resume is supported.
+    supports_resume: bool = True
 
     def __init__(
         self,
@@ -53,7 +55,12 @@ class LocalRunner:
         )
         self._metrics: MetricsBundle = metrics or CommonMetricsBundle()
 
-    def run(self, cfg: ExperimentConfig, run_dir: Path) -> ExperimentResult:
+    def run(
+        self,
+        cfg: ExperimentConfig,
+        run_dir: Path,
+        resume_from: Path | None = None,
+    ) -> ExperimentResult:
         """Resolve adapter names, build the service, delegate, and return the result."""
         scenario = make_scenario(cfg.scenario.type)
         algorithm = make_algorithm(cfg.algorithm.type)
@@ -75,7 +82,7 @@ class LocalRunner:
             eval_episodes_writer=eval_writer,
         )
         provenance = self._provenance_factory(cfg)
-        result = service.run(cfg, run_dir, provenance)
+        result = service.run(cfg, run_dir, provenance, resume_from=resume_from)
 
         # F2.10: build + save the run-end manifest. ``save_report`` is off the
         # ``Storage`` Protocol surface, so narrow to the concrete adapter.

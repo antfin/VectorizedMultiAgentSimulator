@@ -43,8 +43,16 @@ class _FakeScenario:
 
 class _FakeAlgorithm:
     name = "mappo"
+    last_resume_from: Path | None = None  # captured for F5.7 resume tests
 
-    def train(self, env: Any, cfg: ExperimentConfig, run_dir: Path | None = None) -> Any:
+    def train(
+        self,
+        env: Any,
+        cfg: ExperimentConfig,
+        run_dir: Path | None = None,
+        resume_from: Path | None = None,
+    ) -> Any:
+        type(self).last_resume_from = resume_from
         return {"trained": True}
 
     def evaluate(

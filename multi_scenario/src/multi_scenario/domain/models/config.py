@@ -63,6 +63,10 @@ class TrainingSection(BaseModel):
     minibatch_size: int = 400
     n_minibatch_iters: int = 45
     share_policy_params: bool = True
+    # F5.7: BenchMARL writes a checkpoint every N iters (sparse). Set to 0 to
+    # disable interval checkpoints (final-only via checkpoint_at_end). Smoke
+    # runs auto-disable in the adapter; this is the cadence for non-smoke runs.
+    checkpoint_interval_iters: int = 10
 
 
 class EvaluationSection(BaseModel):

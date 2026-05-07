@@ -20,6 +20,17 @@ class Runner(Protocol):
     # pylint: disable=too-few-public-methods
 
     name: str
+    supports_resume: bool
 
-    def run(self, cfg: ExperimentConfig, run_dir: Path) -> ExperimentResult:
-        """Execute one experiment run end-to-end and return its result."""
+    def run(
+        self,
+        cfg: ExperimentConfig,
+        run_dir: Path,
+        resume_from: Path | None = None,
+    ) -> ExperimentResult:
+        """Execute one experiment run end-to-end and return its result.
+
+        ``resume_from`` (F5.7): optional path to a BenchMARL checkpoint to
+        load before continuing training. Only meaningful for runners with
+        ``supports_resume = True``; others raise / ignore.
+        """

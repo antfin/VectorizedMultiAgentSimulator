@@ -636,11 +636,29 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
   - `--dry-run` prints expansion without running.
   - Real sweep (slow): 2 yaml × 2 seeds → 4 run folders produced under storage path.
 
-#### F5.7 — Resume from crash — M
+#### F5.7 — Resume from crash (local only) — M ✅
 
-- Checkpoint writer (sparse: every N eval intervals + last + best). Resume detection: on launch, if `run_state.json` exists with `RUNNING` and process is dead, resume from latest checkpoint; mark state `RESUMED`.
-- **Not in rendezvous_comm yet** (in their cleanup plan, R10–R12). Port the *plan*, write the implementation.
-- TDD: kill mid-run, relaunch, verify metrics consistent with uninterrupted run within tolerance.
+**Scope decision:** local-only. OVH and other distributed runners explicitly do **not** support resume — see "Capability flag" below. Rationale: most local crashes are environmental (laptop sleep, terminal close, OOM kill) and recovery saves real iteration time; OVH AI Training jobs are short and reliable, so the (resume infra effort) ÷ (compute saved) ratio doesn't justify the OVH path. If a real OVH crash pattern emerges (long jobs hitting transient failures), F6.8 would add it.
+
+- **BenchMARL checkpoint enabling.** `BenchmarlBaseAdapter._experiment_config` sets `bm.checkpoint_interval = checkpoint_interval_iters × frames_per_batch` and `bm.checkpoint_at_end = True` for non-smoke runs (`*_smoke` exp_ids stay off — no point checkpointing 1-iter runs). New `TrainingSection.checkpoint_interval_iters: int = 10`.
+- **`Algorithm` Protocol extension:** `train(env, cfg, run_dir=..., resume_from=...)` — optional `resume_from: Path | None = None`. `BenchmarlBaseAdapter.train` honours it via `experiment.load_state(resume_from)` between construction and `experiment.run()`. Other algorithm impls can ignore the kwarg.
+- **`Runner` Protocol extension — capability flag:** `supports_resume: bool` class attribute. `LocalRunner.supports_resume = True`. Future runners (`OvhRunner` at F6.2, any SLURM / Modal / k8s adapter) set their own; the resume CLI checks the flag and refuses with a helpful message if `False`. Generalises cleanly per runner.
+- **`LocalRunner.run` extension:** optional `resume_from: Path | None = None` threaded through `ExperimentService.run` to `Algorithm.train`.
+- **`multi-scenario resume <run_dir>` CLI command:**
+  - Loads `<run_dir>/input/config.json` → `ExperimentConfig`.
+  - Builds runner via factory; refuses (exit 2) if `runner.supports_resume is False`.
+  - Loads `run_state.json`; refuses (exit 2) if state is `DONE` (nothing to resume).
+  - Locates latest BenchMARL checkpoint via `output/benchmarl/<bm_run>/.../checkpoints/*.pt` (mtime-newest).
+  - Records state transitions: existing → `CRASHED` (if not already) → `RESUMED`. Both transitions persisted for the audit log.
+  - Calls `runner.run(cfg, run_dir, resume_from=checkpoint_path)`. Service continues `RESUMED → RUNNING → DONE`.
+- Tests:
+  - Unit: capability flag exposed on `LocalRunner`; resume CLI refuses non-local cfg + DONE state.
+  - Unit: state-machine `RUNNING → CRASHED → RESUMED` valid (already covered by F1.4).
+  - Slow: train N iters, kill mid-run, relaunch via `multi-scenario resume`; verify final metrics agree with uninterrupted N-iter baseline within tolerance.
+- **Out of scope:**
+  - OVH resume (capability flag returns False for `OvhRunner`).
+  - Resuming after `state == DONE` (refuse).
+  - Cross-yaml resume (different config than original — that's a fresh run, not resume).
 
 #### F5.8 — Eval-only mode — S
 
@@ -658,6 +676,7 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 #### F6.2 — Port `ovh.py` (cleaned) — M
 
 - Adapter implementing `Runner`. Builds the job spec, uploads code via S3, submits via `ovhai`, polls for completion. **Trailing-slash fix and per-experiment S3 prefix already baked in** (known gotchas, retain).
+- **`supports_resume = False`** (capability flag from F5.7) — OVH-resume is intentionally out of scope; the `multi-scenario resume` CLI refuses with a helpful message. If a real long-running OVH crash pattern emerges later, F6.8 would add it.
 
 #### F6.3 — `S3StorageAdapter` — S
 
@@ -676,11 +695,12 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 **Background:** F2.11 records before/after MP4s inline during training using VMAS Pyglet rendering. OVH AI Training containers are headless (no OpenGL/X11) → any non-smoke run on OVH would crash inside `VideoRecorder.record()` (confirmed `pyglet.gl` import error in `rendezvous_comm/results/.../run.log`). This feature makes OVH runs complete cleanly and reproduces the videos locally after pulling results back.
 
-**Three bundled changes (each XS, single feature for tight coupling):**
+**Two bundled changes (each XS, single feature for tight coupling):**
+
+> **Checkpoint enabling moved to F5.7.** F5.7 owns the `bm.checkpoint_interval` + `bm.checkpoint_at_end = True` plumbing for non-smoke runs (it's load-bearing for resume). F6.6 inherits that — by the time F6.6 is implemented, checkpoints will already be written for non-smoke runs, and the regenerate-videos command can load them.
 
 1. **Fail-soft `VideoRecorder` invocation** — wrap each `VideoRecorder().record(...)` call in `BenchmarlBaseAdapter.train()` with try/except. On failure, emit a warning: `"Video {before|after}_training skipped on headless host: <error>. Regenerate locally with 'multi-scenario regenerate-videos <run_dir>' after pulling results."` Training completes; `report.links.videos.{before,after}_training` resolves to `null`.
-2. **`bm.checkpoint_at_end = True`** for non-smoke runs (mirror the same `*_smoke` heuristic used in `_should_record_video`). Smoke runs stay off — no point checkpointing 1-iter runs. This is what makes (3) reproducible.
-3. **`multi-scenario regenerate-videos <run_dir>` CLI command:**
+2. **`multi-scenario regenerate-videos <run_dir>` CLI command:**
    - Reads `<run_dir>/input/config.json` (cfg) and the BenchMARL checkpoint at `<run_dir>/output/benchmarl/<bm_run>/.../checkpoints/*.pt` (latest by mtime).
    - Rebuilds the experiment with the same seed via `BenchmarlBaseAdapter.build_experiment(cfg, run_dir)` — random-init policy → records `before_training.mp4`.
    - Loads the checkpoint state dict into `experiment.policy` → records `after_training.mp4`.
