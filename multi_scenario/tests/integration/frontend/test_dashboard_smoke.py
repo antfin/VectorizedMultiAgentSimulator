@@ -1,4 +1,4 @@
-"""F7.1 smoke test: Dashboard.py imports cleanly under streamlit's AppTest harness."""
+"""F7.1 smoke: Dashboard.py renders cleanly under streamlit's AppTest harness."""
 
 # pylint: disable=missing-function-docstring
 
@@ -9,11 +9,13 @@ import pytest
 
 @pytest.mark.slow
 def test_dashboard_renders_per_scenario_empty_state(tmp_path: Path) -> None:
-    """Empty experiments dir → 4 tabs, each with its own scenario-specific info."""
+    """Empty experiments dir → main shows 'No runs yet for <scenario>'."""
     # streamlit.testing is the official AppTest harness — exercises the
     # script top-to-bottom without spinning up a browser.
     # pylint: disable=import-outside-toplevel
     from streamlit.testing.v1 import AppTest
+
+    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
 
     dashboard_path = (
         Path(__file__).resolve().parents[3]
@@ -23,15 +25,11 @@ def test_dashboard_renders_per_scenario_empty_state(tmp_path: Path) -> None:
         / "Dashboard.py"
     )
     at = AppTest.from_file(str(dashboard_path), default_timeout=10.0)
-    # First run materialises the widgets; then we point the sidebar at the
-    # empty tmp_path and re-run to exercise the no-runs branch.
-    at.run()
-    at.sidebar.text_input[0].set_value(str(tmp_path))
+    # Settings page would normally seed the session_state key; in AppTest we
+    # set it directly to point at the empty tmp_path.
+    at.session_state[EXPERIMENTS_ROOT_KEY] = str(tmp_path)
     at.run()
     assert not at.exception
     info_texts = [(card.value or "") for card in at.info]
-    # Every scenario tab renders its own empty notice; 4 in total.
-    assert any("discovery" in t for t in info_texts)
-    assert any("navigation" in t for t in info_texts)
-    assert any("transport" in t for t in info_texts)
-    assert any("flocking" in t for t in info_texts)
+    # Default scenario is "discovery" (no runs yet → empty-state notice).
+    assert any("discovery" in t and "No runs yet" in t for t in info_texts)

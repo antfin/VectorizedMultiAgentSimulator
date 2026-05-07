@@ -150,6 +150,41 @@ def box_by_algo(df: pd.DataFrame, metric: str, title: str, ylabel: str | None = 
     plt.close(fig)
 
 
+def pie_by_category(counts: dict[str, int], title: str) -> None:
+    """Pie chart of category → count, coloured from the Polimi cycle.
+
+    Used by the Settings page (and future cross-experiment summaries) to
+    show share of runs per scenario / algorithm.
+    """
+    if not counts:
+        st.subheader(title)
+        st.info("No data to plot.")
+        return
+    set_style()
+    labels = list(counts.keys())
+    values = [counts[k] for k in labels]
+    colors = [_color_for(label, i) for i, label in enumerate(labels)]
+    # Compact layout — Settings page is a meta config screen, not a chart-first
+    # page, so the pie shouldn't dominate. ``figsize`` × ``dpi`` controls the
+    # intrinsic pixel size; ``use_container_width=False`` keeps Streamlit from
+    # upscaling it to fill the column.
+    fig, ax = plt.subplots(figsize=(3.0, 3.0), dpi=80)
+    ax.pie(
+        values,
+        labels=labels,
+        colors=colors,
+        autopct=lambda p: f"{int(round(p * sum(values) / 100))}",
+        startangle=90,
+        textprops={"fontsize": 9, "color": "#002F6C"},
+        wedgeprops={"edgecolor": "white", "linewidth": 1.0},
+    )
+    ax.set_aspect("equal")
+    fig.tight_layout()
+    st.subheader(title)
+    st.pyplot(fig, use_container_width=False)
+    plt.close(fig)
+
+
 def bar_by_algo_with_stderr(
     df: pd.DataFrame,
     metric: str,

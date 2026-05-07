@@ -73,15 +73,54 @@ def apply_theme(title: str = "", subtitle: str = "Politecnico di Milano — PhD 
             background-color: #002F6C !important;
         }
 
-        /* Sidebar nav links — white text */
+        /* Sidebar text — white across the board (links, headings, captions) */
         [data-testid="stSidebar"] a,
         [data-testid="stSidebar"] a span,
         [data-testid="stSidebar"] a p,
         [data-testid="stSidebar"] p,
         [data-testid="stSidebar"] label,
         [data-testid="stSidebar"] .stMarkdown,
-        [data-testid="stSidebar"] .stMarkdown p {
+        [data-testid="stSidebar"] .stMarkdown p,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] h4,
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {
             color: #FFFFFF !important;
+        }
+
+        /* Sidebar inputs — Streamlit gives them a white wrapper; keep that
+           and just darken the typed text so it's visible on white. */
+        [data-testid="stSidebar"] input,
+        [data-testid="stSidebar"] textarea,
+        [data-testid="stSidebar"] [data-baseweb="select"] input {
+            color: #002F6C !important;
+        }
+
+        /* Help "?" icon on sidebar widget labels — Streamlit's SVG uses
+           ``stroke="currentColor"`` with ``fill="none"`` so the icon is an
+           OUTLINED glyph, not a solid shape. Driving ``color`` is enough;
+           do NOT force ``fill`` (would solid-fill the circle, hiding the
+           "?" inside). */
+        [data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg,
+        [data-testid="stSidebar"] button[aria-label^="Help"] svg {
+            color: #009CDC !important;
+            stroke: #009CDC !important;
+        }
+        [data-testid="stSidebar"] button[aria-label^="Help"] {
+            background-color: transparent !important;
+            border: none !important;
+        }
+
+/* Multi-page nav (stSidebarNav) — keep visible with subtle hover */
+        [data-testid="stSidebarNav"] {
+            background-color: transparent !important;
+            padding-top: 0.5rem;
+        }
+        [data-testid="stSidebarNav"] li a:hover {
+            background-color: rgba(0, 156, 220, 0.15) !important;
+            border-radius: 6px;
         }
 
         /* Sidebar active page highlight — light blue accent */

@@ -2,11 +2,10 @@
 
 Launch: ``streamlit run src/multi_scenario/frontend/Dashboard.py``.
 
-Title-level summary across 4 scenario tabs (Discovery / Navigation / Transport
-/ Flocking). Each tab renders KPIs + Top Runs + scenario-specific charts via
-:mod:`.scenarios`. The cache key is content-aware (number-of-files +
-max-mtime) so adding a new run on disk auto-invalidates without a manual
-refresh; a sidebar 🔄 button is also wired for explicit clears.
+Per-scenario detail view with KPIs, top-runs table and scenario-specific
+charts. The scenario is picked from the sidebar (single-select, defaults to
+the first scenario that has runs on disk). The browse-all-runs view lives
+on the sibling F7.2 page (``pages/1_Experiments.py``).
 
 Per-scenario tweaks (KPIs, charts, sort order) are conversational — edit
 :mod:`.scenarios` directly. Update mechanism documented in the F7.1 spec.
@@ -34,10 +33,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-import pandas as pd  # noqa: E402
-
-from multi_scenario.frontend.runs_loader import load_runs
 from multi_scenario.frontend.scenarios import SCENARIO_RENDERERS
+from multi_scenario.frontend.sidebar import (
+    load_runs_with_cache,
+    render_active_root_caption,
+)
 from multi_scenario.frontend.theme import apply_theme
 
 apply_theme(
@@ -45,57 +45,38 @@ apply_theme(
     subtitle="Cooperative MARL — Politecnico di Milano",
 )
 
-# ── Sidebar: experiments root + refresh ──────────────────────────────
-DEFAULT_EXPERIMENTS_DIR = Path.cwd() / "experiments"
-st.sidebar.header("Data source")
-experiments_dir_str = st.sidebar.text_input(
-    "Experiments root",
-    value=str(DEFAULT_EXPERIMENTS_DIR),
-    help="Folder containing run subdirectories with output/metrics.json files.",
-)
-experiments_dir = Path(experiments_dir_str).expanduser()
-if st.sidebar.button("🔄 Refresh"):
-    st.cache_data.clear()
-    st.rerun()
+# ── Sidebar: read-only data-source caption + scenario selector ───────
+experiments_dir = render_active_root_caption()
+runs_df = load_runs_with_cache(experiments_dir)
 
-
-def _experiments_signature(path: Path) -> tuple[int, float]:
-    """Cheap fingerprint: ``(file_count, max_mtime)`` over ``output/metrics.json`` files.
-
-    Used as part of the cache key so the cache invalidates the moment a new
-    run lands on disk — no manual refresh needed for fresh data.
-    """
-    if not path.is_dir():
-        return (0, 0.0)
-    files = list(path.rglob("output/metrics.json"))
-    if not files:
-        return (0, 0.0)
-    return (len(files), max(f.stat().st_mtime for f in files))
-
-
-@st.cache_data(show_spinner="Loading runs…")
-def _cached_load(path_str: str, signature: tuple[int, float]) -> pd.DataFrame:
-    """Cache wrapper for ``load_runs``; ``signature`` varies the key on disk changes."""
-    del signature  # only present to vary the cache key — load_runs walks fresh
-    return load_runs(Path(path_str))
-
-
-runs_df = _cached_load(str(experiments_dir), _experiments_signature(experiments_dir))
-
-# ── Tabs (4 scenarios, always visible) ───────────────────────────────
 SCENARIO_ORDER = ("discovery", "navigation", "transport", "flocking")
-tabs = st.tabs([s.capitalize() for s in SCENARIO_ORDER])
+present_scenarios = (
+    set(runs_df["scenario"].dropna().unique()) if "scenario" in runs_df.columns else set()
+)
+# Default to the first scenario that has data, falling back to the first option.
+default_idx = next(
+    (i for i, s in enumerate(SCENARIO_ORDER) if s in present_scenarios),
+    0,
+)
 
-for tab, scenario in zip(tabs, SCENARIO_ORDER):
-    with tab:
-        if "scenario" in runs_df.columns:
-            sub_df = runs_df[runs_df["scenario"] == scenario]
-        else:
-            sub_df = pd.DataFrame()
-        if sub_df.empty:
-            st.info(
-                f"No runs yet for **{scenario}**. "
-                f"Run via `multi-scenario run experiments/{scenario}/...`."
-            )
-            continue
-        SCENARIO_RENDERERS[scenario](sub_df)
+st.sidebar.header("Scenario")
+selected_scenario = st.sidebar.selectbox(
+    "Pick a scenario",
+    SCENARIO_ORDER,
+    index=default_idx,
+    format_func=str.capitalize,
+)
+
+# ── Main: render selected scenario ───────────────────────────────────
+if "scenario" in runs_df.columns:
+    sub_df = runs_df[runs_df["scenario"] == selected_scenario]
+else:
+    sub_df = runs_df.iloc[0:0]  # empty with same columns
+
+if sub_df.empty:
+    st.info(
+        f"No runs yet for **{selected_scenario}**. "
+        f"Run via `multi-scenario run experiments/{selected_scenario}/...`."
+    )
+else:
+    SCENARIO_RENDERERS[selected_scenario](sub_df)
