@@ -675,10 +675,16 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 ### Phase 6 — OVH runner & secrets
 
-#### F6.1 — `SecretsAdapter` (Fernet) — S
+#### F6.1 — `FernetSecretsAdapter` — S ✅
 
-- Encrypt/decrypt LLM API keys via Fernet with passphrase-derived key. Used to ship LLM keys to OVH jobs.
-- **Port from rendezvous_comm:** `secrets_util.py`.
+- `FernetSecretsAdapter` (`adapters/secrets/fernet.py`): Fernet (AES-128-CBC + HMAC-SHA256) with PBKDF2-HMAC-SHA256 (100k iters, fixed salt) deriving the 32-byte key from a passphrase. Methods: `encrypt(secrets, passphrase) -> str`, `decrypt(blob, passphrase) -> dict`, `encrypt_for_env(secrets, passphrase) -> dict[str, str]` (returns the `MS_ENCRYPTED_SECRETS` / `MS_SECRETS_PASSPHRASE` env-var pair), `decrypt_from_env() -> dict` (reads from `os.environ`; does NOT mutate it — caller decides how to inject).
+- **Generic, not LLM-specific.** Naming dropped rendezvous_comm's `LERO_*` env vars — secrets layer is reusable for any future remote-job credential.
+- **Threat model documented in module docstring:** protects against bystanders glancing at job specs / S3 / `ovhai job get` output, NOT against malicious cloud providers (they see both blob + passphrase). Real defence = rotate passphrase per job. For stronger threat models, plug in a different adapter that talks to a real KMS — the interface is small enough to swap.
+- **`cryptography>=41`** added to `pyproject.toml` deps.
+- **Port from rendezvous_comm:** `secrets_util.py` (refactored to a class; dropped the `.env`-shape filter — caller decides which keys to encrypt).
+- Tests: 7 covering round-trip, wrong passphrase, empty dict, env-var key names, env-pipeline round-trip with monkeypatched `os.environ`, missing-blob → `{}` no-op, missing-passphrase → clear error.
+
+**LLM context (worth being explicit):** the framework has **zero LLM code so far**. F6.1 is pure secrets infrastructure laid down before its consumer (LERO at Phase 9) lands, so OVH job submission (F6.2) has the credential-shipping plumbing ready. LLM client / prompt registry / disk cache / scenario_patch.exec all stay parked at Phase 9.
 
 #### F6.2 — Port `ovh.py` (cleaned) — M
 
