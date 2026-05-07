@@ -17,6 +17,7 @@ from .config import (
     TrainingSection,
 )
 from .eval_run import EvalRunRecord
+from .ovh_job_config import OvhGpuModel, OvhJobConfig
 from .provenance import LibraryVersions, Provenance
 from .report import BenchmarlLinks, ReportLinks, ReportVideos, RunReport
 from .result import ExperimentResult, MetricRecord
@@ -37,6 +38,8 @@ __all__ = [
     "ManifestRunEntry",
     "ManifestScope",
     "MetricRecord",
+    "OvhGpuModel",
+    "OvhJobConfig",
     "Provenance",
     "RankingEntry",
     "ReportLinks",

@@ -1,0 +1,33 @@
+# OVH AI Training deployment config — copy to ovh.yaml and fill in.
+# Loaded by `OvhJobConfig.from_yaml(...)`. Per-experiment YAMLs stay
+# portable across runners; this file pins the OVH-specific bits.
+
+region: GRA           # GRA / BHS / SBG / WAW
+image: ovhcom/ai-training-pytorch:latest
+gpu_type: V100S
+n_gpu: 1
+
+# S3 buckets (your project's): code is mounted RO at submit-time;
+# results bucket gets one per-experiment prefix per job to avoid the
+# trailing-slash/parallel-finalize collision documented in F6.2.
+bucket_code: my-multi-scenario-code
+bucket_results: my-multi-scenario-results
+mount_code: /workspace/code
+mount_results: /workspace/results
+
+default_runner: python -m multi_scenario.cli run
+default_extra_cli: --device cuda
+
+# Polling cadence and timeout.
+poll_interval_sec: 30.0
+timeout_sec: 7200.0   # 2h default; bump for long matrix cells.
+
+# Known GPU models with eur_per_hour for cost estimates. Wrong gpu_type
+# fails loudly via OvhJobConfig.validate_gpu_choice.
+gpu_models:
+  V100S:
+    eur_per_hour: 2.5
+    description: NVIDIA V100S 32GB
+  CPU:
+    eur_per_hour: 0.0
+    description: CPU-only (smoke debugging)

@@ -686,10 +686,19 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 **LLM context (worth being explicit):** the framework has **zero LLM code so far**. F6.1 is pure secrets infrastructure laid down before its consumer (LERO at Phase 9) lands, so OVH job submission (F6.2) has the credential-shipping plumbing ready. LLM client / prompt registry / disk cache / scenario_patch.exec all stay parked at Phase 9.
 
-#### F6.2 — Port `ovh.py` (cleaned) — M
+#### F6.2 — Port `ovh.py` (cleaned) — M ✅
 
-- Adapter implementing `Runner`. Builds the job spec, uploads code via S3, submits via `ovhai`, polls for completion. **Trailing-slash fix and per-experiment S3 prefix already baked in** (known gotchas, retain).
-- **`supports_resume = False`** (capability flag from F5.7) — OVH-resume is intentionally out of scope; the `multi-scenario resume` CLI refuses with a helpful message. If a real long-running OVH crash pattern emerges later, F6.8 would add it.
+Three coupled deliverables landed together (framework wiring + submit/poll plumbing). Result-sync from S3 (F6.3) and code upload to `bucket_code` (F6.4) deferred — `OvhRunner.run()` reads `<run_dir>/output/metrics.json` directly, assuming someone has synced it.
+
+- **`OvhJobConfig`** (`domain/models/ovh_job_config.py`) — strict Pydantic model loaded from `configs/ovh.yaml`. Holds region / image / GPU / buckets / mounts / poll cadence / timeout / known-GPU registry with cost estimates.
+- **`OvhClient`** (`adapters/runners/ovh_cli.py`) — thin subprocess wrapper around the `ovhai` binary: `submit / get / list_jobs / logs / stop / check_available`. Mockable via an injected `runner` callable. Parses both plain-text and JSON `ovhai` output; recognises `DONE / FAILED / KILLED / ERROR` as terminal states.
+- **`OvhRunner`** (`adapters/runners/ovh.py`) — implements `Runner`; `name="ovh"`, `supports_resume = False` (per F5.7). `run()` builds the `ovhai job run` arg list (per-experiment S3 prefix isolation, no trailing slash), submits, polls until terminal, raises `OvhJobError` on non-DONE with logs tail, otherwise loads `ExperimentResult` from disk. Encrypted secrets via F6.1's `FernetSecretsAdapter.encrypt_for_env` ride along as `--env` flags when configured.
+- **`configs/ovh.yaml.example`** — commented template for the deployment config.
+- Tests: 17 mock-only (10 OvhClient subprocess-mocked tests + 7 OvhRunner orchestration tests). No real OVH calls; F6.5 covers the manual end-to-end smoke when the user OKs spending a credit.
+- **Out of scope (folded forward):**
+  - **Code upload** to `bucket_code` → F6.4 (rsync helper).
+  - **S3 result sync** back to local `run_dir` → F6.3 (`S3StorageAdapter`).
+  - **OVH resume** → not implemented; capability flag refuses cleanly.
 
 #### F6.3 — `S3StorageAdapter` — S
 
