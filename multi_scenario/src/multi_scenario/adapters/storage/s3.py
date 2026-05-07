@@ -101,6 +101,15 @@ class S3StorageAdapter:
             rel = path.relative_to(local_dir).as_posix()
             self._put(run_dir, rel, path.read_bytes())
 
+    def put_file(self, key: str, body: bytes) -> None:
+        """Flat upload at an explicit ``<prefix>/<key>`` (F6.4).
+
+        Used by the code uploader: per-run-folder transforms don't apply, the
+        caller decides the key relative to ``config.prefix``.
+        """
+        full_key = "/".join(p.strip("/") for p in (self._config.prefix, key) if p)
+        self._client.put_object(Bucket=self._config.bucket, Key=full_key, Body=body)
+
     # ── internals ──────────────────────────────────────────────────────
 
     def _key(self, run_dir: Path, rel: str) -> str:

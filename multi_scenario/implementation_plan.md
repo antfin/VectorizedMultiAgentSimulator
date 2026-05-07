@@ -712,9 +712,17 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
 - Tests (`tests/integration/storage/test_s3.py`, 9): protocol satisfaction, key construction, round-trip per artefact, sync-to-local + sync-from-local, YAML round-trip. All moto-mocked S3 — no AWS calls.
 - **Out of scope:** multipart upload (run-folder files are small); `make_storage("s3")` factory wiring (direct construction only); `save_report` / `save_eval_episodes` etc. on S3 (same F1.9 minimalism rule — add when needed).
 
-#### F6.4 — Code uploader — S
+#### F6.4 — Code uploader — S ✅
 
-- Rsync-style upload of `src/` + `experiments/<scenario>/<exp_type>/configs/` to S3 before job submit.
+- `CodeUploader` (`adapters/storage/code_uploader.py`) — walks a curated include set under the repo root, applies fnmatch exclude patterns, uploads each surviving file to `s3://<bucket>/<prefix>/<rel-from-repo-root>` via `S3StorageAdapter.put_file`.
+  - Defaults: `include_dirs=("src/multi_scenario", "experiments", "configs")`, `include_files=("pyproject.toml", "README.md")`. All overridable.
+  - Excludes: `__pycache__`, `*.pyc/.pyo`, `.pytest_cache`, `.ruff_cache`, `.mypy_cache`, `*.egg-info`, `*/results/*`, `*/output/*`, `*/logs/*`, per-run folders (`<run_id>__<timestamp>` pattern), `.DS_Store`.
+  - `dry_run=True` returns the would-upload list without touching S3.
+- `S3StorageAdapter.put_file(key, body)` — flat-upload helper used by the code uploader (no run-dir transform).
+- New CLI: `multi-scenario upload-code <s3-config.yaml> [--repo-root PATH] [--dry-run]`.
+- **Decoupled from job submission** — the user runs `upload-code` once per code change; submitted jobs reuse the already-uploaded code in `bucket_code`. Avoids re-uploading on every job submit.
+- Tests: 7 CodeUploader unit tests (curated set / pycache+results excludes / per-run-folder excludes / dry-run no-op / empty repo / custom includes / pattern sanity) + 2 CLI tests (`--dry-run` lists files without S3 calls; full upload puts files at expected keys). All moto-mocked.
+- **Out of scope (deferred):** real rsync diffing (hash-based skip-unchanged); compression / tar-and-upload; per-experiment subset uploads.
 
 #### F6.5 — End-to-end OVH smoke — S (manual)
 

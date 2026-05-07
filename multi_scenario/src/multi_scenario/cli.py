@@ -30,11 +30,19 @@ from pydantic import ValidationError
 from multi_scenario import __version__
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
+from multi_scenario.adapters.storage.code_uploader import CodeUploader
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
 from multi_scenario.adapters.storage.runs_csv import RunsCsvWriter
 from multi_scenario.adapters.storage.runs_json import RunsJsonWriter
+from multi_scenario.adapters.storage.s3 import S3StorageAdapter
 from multi_scenario.application.factories import make_algorithm, make_scenario
-from multi_scenario.domain.models import EvalRunRecord, ExperimentConfig, RunId, RunState
+from multi_scenario.domain.models import (
+    EvalRunRecord,
+    ExperimentConfig,
+    RunId,
+    RunState,
+    S3StorageConfig,
+)
 
 app = typer.Typer(help="multi_scenario CLI")
 
@@ -337,6 +345,31 @@ def eval_only(
     )
     storage.save_eval_run(run_dir, record)
     typer.echo(f"OK eval -> {run_dir / 'output' / 'eval_runs' / (eval_id + '.json')}")
+
+
+@app.command(name="upload-code")
+def upload_code(
+    s3_config: Path = typer.Argument(..., exists=True, readable=True),
+    repo_root: Path = typer.Option(
+        Path.cwd(), "--repo-root", help="Repo root to upload from (defaults to CWD)."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print what would upload; no S3 calls."),
+) -> None:
+    """Upload local source tree to the OVH code bucket (F6.4).
+
+    Walks the curated include set (``src/multi_scenario``, ``experiments``,
+    ``configs``, plus ``pyproject.toml`` / ``README.md``) and uploads each
+    surviving file to ``s3://<bucket>/<prefix>/<rel-from-repo-root>``.
+    """
+    cfg = S3StorageConfig.from_yaml(s3_config)
+    s3 = S3StorageAdapter(cfg)
+    uploader = CodeUploader(s3)
+    files = uploader.upload(repo_root.resolve(), dry_run=dry_run)
+    verb = "would upload" if dry_run else "uploaded"
+    typer.echo(f"OK {verb} {len(files)} files → s3://{cfg.bucket}/{cfg.prefix}/")
+    if dry_run:
+        for rel in files:
+            typer.echo(f"  {rel}")
 
 
 def main() -> None:
