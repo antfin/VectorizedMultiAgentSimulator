@@ -539,7 +539,7 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
   - `_extract_collisions` extended with a third info-key fallback: `agent_collision_rew` (flocking's key). Now tries `collision_rew` → `agent_collisions` → `agent_collision_rew` → zeros.
   - `experiments/flocking/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_flocking.py`. End-to-end via `LocalRunner` confirmed (`M1=None`, `M2=-0.137`, `M4=0.0`).
   - **Out of scope (deferred):** sharper M1 like "fraction of timesteps in flocking-acceptable state" — needs per-step pos/vel extraction. Add later if you want it.
-- **F4.3 — Transport adapter + metrics** (S). Proposed: package-at-goal flag + final distance.
+- **F4.3 — Transport adapter + metrics** (S) ✅ — `VmasTransportAdapter`. M1 uses universal `episode_terminated` (= "all packages delivered to goals" — same template as navigation). No base changes — VMAS transport has no `info()` so no new collision key needed. Defaults: heavy package (`package_mass=50`) requiring cooperative push. `experiments/transport/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_transport.py`. End-to-end via `LocalRunner` confirmed. M6 stub `None` (deferred — needs per-package position extraction).
 - **F4.4 — Scenario registry refactor** (XS).
 
 **Phase 4 milestone demo:** for each scenario, `multi-scenario run <scenario>_mappo_smoke.yaml` succeeds.

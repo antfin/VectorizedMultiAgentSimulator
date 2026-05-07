@@ -1,0 +1,37 @@
+experiment:
+  id: mappo_smoke
+  name: "Transport / MAPPO smoke"
+  description: "1-iter, 1-env smoke run used to validate the F4.3 Transport adapter slice."
+  seed: 0
+
+scenario:
+  type: transport
+  params:
+    n_agents: 2
+    n_packages: 1
+    max_steps: 10
+
+algorithm:
+  type: mappo
+  params: {}
+
+training:
+  max_iters: 1
+  num_envs: 1
+  device: cpu
+  frames_per_batch: 50
+  minibatch_size: 25
+  n_minibatch_iters: 1
+
+evaluation:
+  interval_iters: 1
+  episodes: 1
+
+runtime:
+  runner:
+    type: local
+    params: {}
+  storage:
+    type: fs
+    path: experiments/transport/baseline
+    params: {}
