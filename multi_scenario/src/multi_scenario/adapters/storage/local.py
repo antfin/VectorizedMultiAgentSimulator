@@ -4,15 +4,17 @@ Writes the §3.5.2 layout to disk via JSON for everything we own. Pydantic's
 ``model_dump_json`` / ``model_validate_json`` handles datetime fields
 (Provenance, RunStateRecord) cleanly via built-in ISO-8601 (de)serialization.
 
-Optional artefacts (eval_episodes, report, videos, log) and the cross-run
-``runs.csv`` / ``runs.json`` are not in the Storage Protocol surface and are
-added on later concrete adapters when each writer feature lands (F2.7 /
-F2.10 / F2.10.1 / F2.11 / F5.2 / F5.3).
+Optional artefacts (eval_episodes, report, videos, log, eval_steps_long) and
+the cross-run ``runs.csv`` / ``runs.json`` are not in the Storage Protocol
+surface and are added on later concrete adapters when each writer feature
+lands (F2.7 / F2.10 / F2.10.1 / F2.11 / F5.2 / F5.3 / F5.4).
 """
 
 import json
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from multi_scenario.domain.models import (
     ExperimentConfig,
@@ -89,6 +91,25 @@ class LocalStorageAdapter:
             payload[key] = value.tolist() if hasattr(value, "tolist") else value
         self._write(run_dir / "output" / "eval_episodes.json", json.dumps(payload, indent=2))
 
+    def save_eval_steps_long(
+        self,
+        run_dir: Path,
+        rollout_td: Any,
+        group_map: dict[str, list[str]],
+    ) -> None:
+        """Write per-(env, step, agent) rows to ``output/eval_steps.csv`` (F5.4).
+
+        Long-format CSV — row count = ``num_envs × T × sum(len(g) for g in group_map)``.
+        Off the ``Storage`` Protocol surface (F1.9 minimalism) and gated upstream
+        by ``cfg.runtime.storage.params['long_format']``. Schema is universal:
+        ``env_idx, step, agent, reward, done, terminated, action_d{i}``.
+        """
+        rows = list(_iter_long_rows(rollout_td, group_map))
+        df = pd.DataFrame(rows)
+        target = run_dir / "output" / "eval_steps.csv"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(target, index=False)
+
     def load_config(self, run_dir: Path) -> ExperimentConfig:
         """Read back ``input/config.json`` as ``ExperimentConfig``."""
         return ExperimentConfig.model_validate_json(
@@ -117,3 +138,37 @@ class LocalStorageAdapter:
     def _write(path: Path, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+
+
+def _iter_long_rows(rollout_td: Any, group_map: dict[str, list[str]]):
+    """Yield one dict per (env_idx, step, group:agent) tuple from a rollout TD.
+
+    Pulls reward from ``("next", group, "reward")``, action from ``(group, "action")``,
+    and broadcasts env-wide done/terminated to per-agent rows.
+    """
+    # The triple-nested expansion is what makes this a long format; the locals
+    # tracked are all the indices and field views needed per (env, step, agent).
+    # pylint: disable=too-many-locals
+    bs = rollout_td.batch_size
+    num_envs, t_steps = bs[0], bs[1]
+    done = rollout_td["next", "done"].squeeze(-1)  # [E, T]
+    terminated = rollout_td["next", "terminated"].squeeze(-1)  # [E, T]
+
+    for group, agent_names in group_map.items():
+        reward = rollout_td["next", group, "reward"].squeeze(-1)  # [E, T, A]
+        action = rollout_td[group, "action"]  # [E, T, A, D]
+        action_dim = action.shape[-1]
+        for env_idx in range(num_envs):
+            for step in range(t_steps):
+                for agent_idx, agent_name in enumerate(agent_names):
+                    row: dict[str, Any] = {
+                        "env_idx": env_idx,
+                        "step": step,
+                        "agent": f"{group}:{agent_name}",
+                        "reward": float(reward[env_idx, step, agent_idx]),
+                        "done": bool(done[env_idx, step]),
+                        "terminated": bool(terminated[env_idx, step]),
+                    }
+                    for d in range(action_dim):
+                        row[f"action_d{d}"] = float(action[env_idx, step, agent_idx, d])
+                    yield row

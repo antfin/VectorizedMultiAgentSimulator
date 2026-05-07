@@ -25,6 +25,7 @@ from benchmarl.experiment import ExperimentConfig as BenchmarlExperimentConfig
 from benchmarl.models.mlp import MlpConfig
 from torchrl.envs.utils import ExplorationType, set_exploration_type
 
+from multi_scenario.adapters.storage.local import LocalStorageAdapter
 from multi_scenario.adapters.video.recorder import VideoRecorder
 from multi_scenario.domain.models import ExperimentConfig
 
@@ -188,10 +189,7 @@ class BenchmarlBaseAdapter:
         # The aggregation loop legitimately tracks several per-rollout
         # accumulators (returns / lengths / collisions / targets_covered);
         # extracting them into a separate state class would be more noise.
-        # `run_dir` is part of the protocol but unused here — BenchMARL's eval
-        # writes through the same save_folder set in `train`.
         # pylint: disable=too-many-locals
-        del run_dir
         experiment = artifact
         test_env = experiment.test_env
         policy = experiment.policy
@@ -205,6 +203,7 @@ class BenchmarlBaseAdapter:
         all_collisions: list[float] = []
         all_terminated: list[bool] = []
         all_targets_covered: list[torch.Tensor] = []
+        last_rollout_td: Any = None
 
         with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
             for _ in range(n_rollouts):
@@ -226,6 +225,14 @@ class BenchmarlBaseAdapter:
                     self._extract_targets_covered(
                         rollout_td, experiment.group_map, all_targets_covered
                     )
+                last_rollout_td = rollout_td
+
+        # F5.4: opt-in long-format CSV. Saves the LAST rollout's per-step data;
+        # multi-rollout aggregation deferred (most evals fit in one rollout).
+        if last_rollout_td is not None and run_dir is not None and _long_format_enabled(cfg):
+            LocalStorageAdapter().save_eval_steps_long(
+                run_dir, last_rollout_td, dict(experiment.group_map)
+            )
 
         rollout_dict: dict[str, Any] = {
             "episode_returns": torch.tensor(all_returns[:n_episodes], dtype=torch.float),
@@ -321,3 +328,10 @@ def _should_record_video(cfg: ExperimentConfig, run_dir: Path | None) -> bool:
         return False
     default = not cfg.experiment.id.endswith("_smoke")
     return bool(cfg.runtime.runner.params.get("record_video", default))
+
+
+def _long_format_enabled(cfg: ExperimentConfig) -> bool:
+    """F5.4 gating: opt-in via ``cfg.runtime.storage.params['long_format']``."""
+    if cfg.runtime is None:
+        return False
+    return bool(cfg.runtime.storage.params.get("long_format", False))

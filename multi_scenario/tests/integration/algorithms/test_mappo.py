@@ -1,7 +1,8 @@
-"""F2.4 integration tests: MappoAdapter — Protocol satisfaction + smoke training."""
+"""F2.4 + F5.4 integration tests: MappoAdapter Protocol + training + long-format CSV."""
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from multi_scenario.adapters.algorithms.mappo import MappoAdapter
@@ -78,3 +79,36 @@ def test_smoke_training_2_iter(tmp_path: Path):
     assert tc.shape[0] == cfg.evaluation.episodes
     # Cumsum is monotone non-decreasing along T.
     assert (tc[:, 1:] >= tc[:, :-1]).all()
+
+
+@pytest.mark.slow
+def test_evaluate_writes_long_format_csv_when_flag_on(tmp_path: Path):
+    """F5.4: with ``storage.params.long_format: true``, evaluate() writes eval_steps.csv."""
+    adapter = MappoAdapter()
+    cfg = _smoke_config(tmp_path)
+    cfg.runtime.storage.params["long_format"] = True
+
+    artifact = adapter.train(env=None, cfg=cfg, run_dir=tmp_path)
+    adapter.evaluate(artifact, env=None, cfg=cfg, run_dir=tmp_path)
+
+    out = tmp_path / "output" / "eval_steps.csv"
+    assert out.is_file()
+    df = pd.read_csv(out)
+    # Universal columns + at least one action dim.
+    assert {"env_idx", "step", "agent", "reward", "done", "terminated"} <= set(df.columns)
+    assert any(c.startswith("action_d") for c in df.columns)
+    # Rows = num_envs × T × n_agents (smoke: 1 × max_steps × 2).
+    assert len(df) > 0
+
+
+@pytest.mark.slow
+def test_evaluate_does_not_write_long_format_when_flag_off(tmp_path: Path):
+    """F5.4: without the flag, no eval_steps.csv produced."""
+    adapter = MappoAdapter()
+    cfg = _smoke_config(tmp_path)
+    # No long_format flag set (default False).
+
+    artifact = adapter.train(env=None, cfg=cfg, run_dir=tmp_path)
+    adapter.evaluate(artifact, env=None, cfg=cfg, run_dir=tmp_path)
+
+    assert not (tmp_path / "output" / "eval_steps.csv").exists()

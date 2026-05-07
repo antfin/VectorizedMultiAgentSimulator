@@ -590,9 +590,12 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - CLI: `multi-scenario consolidate` now writes **both** `runs.csv` (F5.2) and `runs.json` (F5.3) in one shot from the same run scan.
 - Tests: 9 unit tests covering scope aggregation, descending rankings, None-skipping, runs[] linking + missing-report → null, atomic backup, empty-dir → empty manifest. Plus end-to-end CLI confirmation.
 
-#### F5.4 — Per-step long-format CSV (experimental) — S
+#### F5.4 — Per-step long-format CSV (experimental) — S ✅
 
-- Behind a `storage.long_format: true` flag. Row count = `num_envs × max_steps × n_agents`.
+- `LocalStorageAdapter.save_eval_steps_long(run_dir, rollout_td, group_map)` writes `output/eval_steps.csv` with one row per `(env_idx, step, group:agent)` tuple. Row count = `num_envs × T × Σ|group|`. Universal schema: `env_idx, step, agent, reward, done, terminated, action_d{i}` (action dim discovered at runtime). Position / observation / per-info-key columns deliberately excluded — F5.5 measures whether they're worth adding.
+- **Opt-in:** gated by `cfg.runtime.storage.params['long_format']: bool` (default `False`). Off the `Storage` Protocol per F1.9 minimalism.
+- **Wiring:** `BenchmarlBaseAdapter.evaluate()` saves the LAST rollout's per-step data when the flag is on AND `run_dir` is set. Multi-rollout aggregation deferred — most evals fit in one rollout.
+- Tests: 6 unit tests against fake rollout TensorDicts (row count, schema, value placement, group-map agent naming, done/terminated broadcast, output-dir creation) + 2 integration tests through `MappoAdapter.evaluate` (flag on → CSV produced; flag off → no file).
 
 #### F5.5 — **DECISION POINT: long vs summary** — S (analysis, not code)
 
