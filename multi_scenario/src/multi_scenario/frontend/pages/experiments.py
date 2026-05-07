@@ -9,27 +9,12 @@ The detail-link column is intentionally absent for now — it lands with F7.3
 this page is a stand-alone browse view.
 """
 
-# Streamlit scripts are top-level scripts, not importable modules — Pylint's
-# default rules around module-level setup don't fit. Suppress the noisy ones.
+# Streamlit pages are scripts loaded by ``st.navigation`` at runtime; the
+# file-level execution model triggers pylint's import-position rules. Disable
+# them rather than restructure into a function (the script *is* the page).
 # pylint: disable=wrong-import-position,invalid-name
 
-import sys
-from pathlib import Path
-
 import streamlit as st
-
-# Make the package importable when launched via `streamlit run Dashboard.py`.
-# Streamlit auto-loads page files but doesn't add our src/ root to sys.path.
-_SRC_ROOT = Path(__file__).resolve().parents[3]
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
-st.set_page_config(
-    page_title="Experiments — Multi-Robot",
-    page_icon=":mag:",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 from multi_scenario.frontend.filters import filter_runs
 from multi_scenario.frontend.sidebar import (
@@ -104,9 +89,16 @@ view = filtered.copy()
 if "state" in view.columns:
     view["state"] = view["state"].map(_STATE_BADGES).fillna(view["state"])
 
+# Deep-link column → opens F7.3 with the run preselected via ``?run_id=``.
+# ``LinkColumn`` works with absolute or relative URLs; ``/run_detail`` matches
+# st.navigation's auto-generated path for ``pages/run_detail.py``.
+if "run_id" in view.columns:
+    view["open"] = view["run_id"].apply(lambda rid: f"/run_detail?run_id={rid}")
+
 display_cols = [
     c
     for c in (
+        "open",
         "state",
         "run_id",
         "scenario",
@@ -133,4 +125,15 @@ st.dataframe(
     view[display_cols].style.format(fmt, na_rep="—"),
     use_container_width=True,
     hide_index=True,
+    column_config={
+        # Empty label hides the column header; the "small" width is the
+        # narrowest preset Streamlit exposes (the icon is the only content).
+        # Material ":open_in_new:" renders a button-like square-arrow glyph
+        # so the cell reads as "click me".
+        "open": st.column_config.LinkColumn(
+            "",
+            display_text=":material/open_in_new:",
+            width="small",
+        ),
+    },
 )

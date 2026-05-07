@@ -2,32 +2,15 @@
 
 The experiments root path lives here (single source of truth via
 ``st.session_state[EXPERIMENTS_ROOT_KEY]``). All other pages display a
-read-only ``📁 path`` caption and link back here to change it.
+read-only ``📁 path`` caption.
 
 Future config (OVH cluster path, S3 endpoint overrides, plot theme toggles)
 will land on this page so users have one place to look.
-
-Numbered ``9_`` so it appears at the bottom of the page nav — meta config
-shouldn't compete with the analysis pages for first attention.
 """
 
 # pylint: disable=wrong-import-position,invalid-name
 
-import sys
-from pathlib import Path
-
 import streamlit as st
-
-_SRC_ROOT = Path(__file__).resolve().parents[3]
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
-st.set_page_config(
-    page_title="Settings — Multi-Robot",
-    page_icon=":gear:",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 from multi_scenario.frontend.charts import pie_by_category
 from multi_scenario.frontend.sidebar import (

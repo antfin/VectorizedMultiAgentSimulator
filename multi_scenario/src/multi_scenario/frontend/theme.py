@@ -118,9 +118,56 @@ def apply_theme(title: str = "", subtitle: str = "Politecnico di Milano — PhD 
             background-color: transparent !important;
             padding-top: 0.5rem;
         }
+        /* "Pages" label above the nav — st.navigation always pins itself to
+           the top of the sidebar, so widget calls before ``nav.run()`` end
+           up *below* it. CSS ``::before`` is the cleanest way to put a
+           heading above. Sized to match the per-page ``st.sidebar.header``
+           h2s ("Scenario" / "Run") for visual consistency. */
+        [data-testid="stSidebarNav"]::before {
+            content: "Pages";
+            display: block;
+            color: #FFFFFF !important;
+            font-size: 1.5rem;
+            font-weight: 600;
+            line-height: 1.2;
+            padding: 0 8px 0.5rem 8px;
+        }
         [data-testid="stSidebarNav"] li a:hover {
             background-color: rgba(0, 156, 220, 0.15) !important;
             border-radius: 6px;
+        }
+        /* Section header ("Experiments") — align its text with the page-icon
+           column (8px nudge) and disable the default click-to-collapse so
+           the user can't accidentally hide the children. */
+        [data-testid="stNavSectionHeader"] {
+            padding-left: 8px !important;
+            pointer-events: none !important;
+            cursor: default !important;
+        }
+        /* Embedded videos (st.video) — sensible min/max so they never dwarf
+           the page on huge screens but stay legible on small ones. The
+           ``stVideo`` testid wraps the actual ``<video>`` element. */
+        [data-testid="stVideo"],
+        [data-testid="stVideo"] video {
+            max-width: 480px !important;
+            min-width: 240px;
+            width: 100%;
+            height: auto;
+            margin: 0 auto;
+            display: block;
+        }
+
+        /* Path caption pinned at the bottom of the sidebar — single-line,
+           ellipsised; HTML ``title`` attribute supplies the full path on hover. */
+        .ms-path-caption {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 0.72rem !important;
+            color: rgba(255, 255, 255, 0.65) !important;
+            padding: 0 8px;
+            margin-top: 0.5rem;
         }
 
         /* Sidebar active page highlight — light blue accent */

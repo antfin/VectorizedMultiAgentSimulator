@@ -21,7 +21,7 @@ def test_experiments_page_empty_state(tmp_path: Path) -> None:
         / "multi_scenario"
         / "frontend"
         / "pages"
-        / "1_Experiments.py"
+        / "experiments.py"
     )
     at = AppTest.from_file(str(page_path), default_timeout=10.0)
     at.session_state[EXPERIMENTS_ROOT_KEY] = str(tmp_path)

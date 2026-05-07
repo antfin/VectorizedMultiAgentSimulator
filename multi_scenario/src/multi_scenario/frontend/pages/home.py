@@ -1,37 +1,20 @@
-"""multi_scenario — Streamlit landing dashboard (F7.1).
-
-Launch: ``streamlit run src/multi_scenario/frontend/Dashboard.py``.
+"""Home — landing dashboard (F7.1).
 
 Per-scenario detail view with KPIs, top-runs table and scenario-specific
-charts. The scenario is picked from the sidebar (single-select, defaults to
-the first scenario that has runs on disk). The browse-all-runs view lives
-on the sibling F7.2 page (``pages/1_Experiments.py``).
+charts. Scenario is picked from the sidebar (single-select, defaults to the
+first scenario that has runs on disk). The browse-all-runs view lives on the
+sibling :mod:`.experiments` page (F7.2).
 
 Per-scenario tweaks (KPIs, charts, sort order) are conversational — edit
 :mod:`.scenarios` directly. Update mechanism documented in the F7.1 spec.
 """
 
-# Streamlit scripts are top-level scripts, not importable modules — Pylint's
-# default rules around module-level setup don't fit. Suppress the noisy ones.
+# Streamlit pages are scripts loaded by ``st.navigation`` at runtime; the
+# file-level execution model triggers pylint's import-position rules. Disable
+# them rather than restructure into a function (the script *is* the page).
 # pylint: disable=wrong-import-position,invalid-name
 
-import sys
-from pathlib import Path
-
 import streamlit as st
-
-# Make the package importable when launched via `streamlit run <path>`. The
-# entrypoint runs at file-level, so we resolve our src/ root and prepend it.
-_SRC_ROOT = Path(__file__).resolve().parents[2]
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
-st.set_page_config(
-    page_title="Multi-Robot Experiments",
-    page_icon=":robot_face:",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 from multi_scenario.frontend.scenarios import SCENARIO_RENDERERS
 from multi_scenario.frontend.sidebar import (

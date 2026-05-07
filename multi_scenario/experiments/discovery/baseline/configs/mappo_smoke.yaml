@@ -33,7 +33,8 @@ evaluation:
 runtime:
   runner:
     type: local
-    params: {}
+    params:
+      record_video: true
   storage:
     type: fs
     path: experiments/discovery/baseline

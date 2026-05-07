@@ -150,6 +150,87 @@ def box_by_algo(df: pd.DataFrame, metric: str, title: str, ylabel: str | None = 
     plt.close(fig)
 
 
+def line_plot_csvs(csv_paths: list["Path"], title: str) -> None:  # noqa: F821
+    """Plot one line per CSV (BenchMARL scalar dumps).
+
+    BenchMARL writes headerless ``step,value`` CSVs under
+    ``output/benchmarl/.../scalars/``; we read with ``header=None`` and
+    synthesize column names. CSVs that already have a header row (e.g. with
+    ``step`` / ``iteration`` column) are auto-detected. Each CSV becomes a
+    single labelled line; series are coloured from the Polimi cycle.
+    """
+    # pylint: disable=import-outside-toplevel
+    from pathlib import Path  # noqa: F401  (re-imported for clarity in helper)
+
+    if not csv_paths:
+        st.subheader(title)
+        st.info("No scalar CSVs to plot.")
+        return
+    set_style()
+    # Use the same defaults as Dashboard scatter/box charts so axis text and
+    # plot area stay proportional. The actual rendered width is capped by the
+    # caller's ``st.columns`` wrapper rather than the figure's intrinsic size.
+    fig, ax = plt.subplots()
+    plotted = 0
+    for i, path in enumerate(csv_paths):
+        df = _read_scalar_csv(path)
+        if df is None or df.empty:
+            continue
+        x_col = next((c for c in ("step", "iteration") if c in df.columns), None)
+        numeric_cols = [
+            c for c in df.columns if c != x_col and pd.api.types.is_numeric_dtype(df[c])
+        ]
+        if not numeric_cols:
+            continue
+        y_col = numeric_cols[0]
+        x = df[x_col] if x_col else df.index
+        ax.plot(
+            x, df[y_col],
+            label=path.stem,
+            color=_color_for(path.stem, i),
+            linewidth=1.6,
+        )
+        plotted += 1
+    if plotted == 0:
+        plt.close(fig)
+        st.subheader(title)
+        st.info("No usable numeric columns in the supplied CSVs.")
+        return
+    ax.set_xlabel("step")
+    ax.set_ylabel("value")
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    st.subheader(title)
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def _read_scalar_csv(path: "Path") -> "pd.DataFrame | None":  # noqa: F821
+    """Read a scalar CSV, auto-detecting whether it has a header row.
+
+    BenchMARL emits headerless ``step,value`` lines; legacy / future formats
+    may include a header. Strategy: peek at the first cell — if it parses as
+    a float, the file is headerless and we synthesize ``step,value``.
+    """
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            first = fh.readline().strip()
+    except OSError:
+        return None
+    first_token = first.split(",", 1)[0] if "," in first else first
+    try:
+        float(first_token)
+        has_header = False
+    except ValueError:
+        has_header = True
+    try:
+        if has_header:
+            return pd.read_csv(path)
+        return pd.read_csv(path, header=None, names=["step", "value"])
+    except (OSError, pd.errors.ParserError):
+        return None
+
+
 def pie_by_category(counts: dict[str, int], title: str) -> None:
     """Pie chart of category → count, coloured from the Polimi cycle.
 

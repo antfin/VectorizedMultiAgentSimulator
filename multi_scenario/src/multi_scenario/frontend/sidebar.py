@@ -33,17 +33,31 @@ def active_experiments_dir() -> Path:
 
 
 def render_active_root_caption() -> Path:
-    """Render the read-only ``📁 path`` caption in the sidebar.
-
-    Streamlit's auto-page nav at the top of the sidebar already exposes the
-    Settings page as a clickable link, so we don't render a redundant in-body
-    link here (which also avoids ``st.page_link`` blowing up under AppTest).
-
-    Returns the resolved active path so callers can immediately load runs.
+    """Return the resolved active path. (No sidebar render — that's owned by
+    :func:`render_path_footer` which streamlit_app.py calls after the page,
+    so the caption pins to the bottom of the sidebar regardless of which
+    page is active.)
     """
-    path = active_experiments_dir()
-    st.sidebar.caption(f"📁 {path}")
-    return path
+    return active_experiments_dir()
+
+
+def render_path_footer() -> None:
+    """Append a single-line, truncated ``📁 path`` caption at the sidebar bottom.
+
+    Uses raw HTML so we get ``text-overflow: ellipsis`` and a native
+    ``title=`` tooltip on hover (the full path stays one keystroke away).
+    Styled via the ``.ms-path-caption`` class in :mod:`.theme`.
+    """
+    path = str(active_experiments_dir())
+    # ``html.escape`` keeps weird path chars from breaking the markup; we
+    # render via st.sidebar.markdown with unsafe_allow_html for the tooltip.
+    import html  # pylint: disable=import-outside-toplevel
+
+    safe = html.escape(path)
+    st.sidebar.markdown(
+        f"<span class='ms-path-caption' title='{safe}'>📁 {safe}</span>",
+        unsafe_allow_html=True,
+    )
 
 
 def _experiments_signature(path: Path) -> tuple[int, float]:

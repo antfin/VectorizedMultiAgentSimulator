@@ -1,0 +1,16 @@
+{
+  "config_hash": "sha256:0425c2709d09552384fb89bdfba3fe6121fa8989d58848933f8456d7110c2403",
+  "code_hash": "sha256:empty",
+  "hashed_source_files": [],
+  "git_sha": "bae355eedcbed5ea975a270bcc73b4ee99b829f9",
+  "git_dirty": true,
+  "created_at": "2026-05-07T19:59:55.868599Z",
+  "finished_at": null,
+  "library_versions": {
+    "python": "3.11.4",
+    "torch": "2.10.0",
+    "vmas": "1.5.2",
+    "benchmarl": "1.5.2",
+    "multi_scenario": "0.0.1"
+  }
+}
