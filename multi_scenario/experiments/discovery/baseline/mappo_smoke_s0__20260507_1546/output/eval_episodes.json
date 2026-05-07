@@ -1,0 +1,29 @@
+{
+  "episode_returns": [
+    0.0
+  ],
+  "episode_lengths": [
+    10
+  ],
+  "episode_collisions": [
+    0.0
+  ],
+  "episode_terminated": [
+    true
+  ],
+  "targets_covered": [
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "n_targets": 2
+}

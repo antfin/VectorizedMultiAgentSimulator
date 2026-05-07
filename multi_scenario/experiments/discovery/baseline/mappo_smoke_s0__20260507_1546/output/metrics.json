@@ -1,0 +1,30 @@
+{
+  "run_id": "mappo_smoke_s0",
+  "exp_id": "mappo_smoke",
+  "scenario": "discovery",
+  "algorithm": "mappo",
+  "seed": 0,
+  "run_timestamp": "20260507_1546",
+  "metrics": {
+    "M1_success_rate": 0.0,
+    "M2_avg_return": 0.0,
+    "M3_steps": 10.0,
+    "M4_collisions": 0.0,
+    "M5_tokens": null,
+    "M6_coverage_progress": 0.0,
+    "M7_sample_efficiency": null,
+    "M8_agent_utilization": null,
+    "M9_spatial_spread": null
+  },
+  "config_snapshot": {
+    "n_agents": 2,
+    "n_targets": 2,
+    "agents_per_target": 2,
+    "targets_respawn": false,
+    "shared_reward": true,
+    "max_steps": 10
+  },
+  "n_envs": 1,
+  "n_eval_episodes": 1,
+  "convergence_frame": null
+}

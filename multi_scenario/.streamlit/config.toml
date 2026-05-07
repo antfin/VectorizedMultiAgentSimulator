@@ -1,0 +1,12 @@
+[theme]
+# Polimi brand palette — drives Streamlit's primary accent (running spinner,
+# active tabs, sliders, focus rings, button hover, etc.). Matches the CSS
+# overrides in src/multi_scenario/frontend/theme.py so chrome and content
+# stay visually coherent.
+primaryColor = "#002F6C"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#333333"
+
+[server]
+headless = true

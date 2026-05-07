@@ -20,6 +20,8 @@ dependencies = [
     "typer",
     "cryptography>=41",
     "boto3>=1.30",
+    "streamlit>=1.30",
+    "matplotlib>=3.7",
 ]
 
 [project.optional-dependencies]
