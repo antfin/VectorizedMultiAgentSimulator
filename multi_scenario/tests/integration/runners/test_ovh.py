@@ -105,6 +105,10 @@ class _StubClient:
         self._log_text = log_text
         self.submit_calls: list[list[str]] = []
 
+    def ensure_available(self) -> None:
+        """No-op stand-in for OvhClient.ensure_available (F6.7.1)."""
+        return None
+
     def submit(self, args) -> str:
         self.submit_calls.append(list(args))
         return "job_42"

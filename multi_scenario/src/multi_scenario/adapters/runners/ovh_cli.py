@@ -73,6 +73,24 @@ class OvhClient:
             return False
         return res.returncode == 0
 
+    def ensure_available(self) -> None:
+        """Raise :class:`OvhCliError` with install instructions if ``ovhai`` is missing.
+
+        Called at the top of every entry point that needs the CLI (sweep
+        ``--runner ovh``, ``OvhRunner.submit``, etc.) so users get a helpful
+        message instead of a bare ``FileNotFoundError`` traceback.
+        """
+        if self.check_available():
+            return
+        raise OvhCliError(
+            "ovhai CLI not found on PATH.\n\n"
+            "Install it via OVH's official shell script:\n"
+            "    curl -sSf https://cli.bhs.ai.cloud.ovh.net/install.sh | bash\n\n"
+            "Then authenticate:\n"
+            "    ovhai login\n\n"
+            "See docs/ovh_setup.md for the full one-time setup."
+        )
+
     def submit(self, args: Sequence[str]) -> str:
         """Run ``ovhai job run <args>``; return the job ID parsed from output."""
         res = self._run(["job", "run", *args])

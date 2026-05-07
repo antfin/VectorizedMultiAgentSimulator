@@ -1,12 +1,12 @@
 """S3StorageAdapter — boto3-backed implementation of the Storage port.
 
-Mirrors the §3.5.2 layout under ``s3://<bucket>/<prefix>/<run_dir.name>/...``.
-The 8 ``Storage`` Protocol methods write/read the four owned per-run JSON
-artefacts (config / provenance / metrics / run_state); ``sync_to_local`` and
-``sync_from_local`` are off-Protocol helpers used by ``OvhRunner`` (F6.2)
-when transferring whole run folders between local fs and S3.
+Inherits the eight Protocol methods (save/load × {config, provenance, result,
+run_state}) from :class:`StorageAdapterBase`; only the I/O primitives
+(``_write_text`` / ``_read_text``) plus S3-only off-Protocol helpers
+(``sync_to_local``, ``sync_from_local``, ``put_file``) live here.
 
-Construct the boto3 client from the supplied ``S3StorageConfig`` (region +
+Mirrors the §3.5.2 layout under ``s3://<bucket>/<prefix>/<run_dir.name>/...``.
+The boto3 client is built from the supplied ``S3StorageConfig`` (region +
 optional ``endpoint_url`` for OVH Object Storage). Tests inject a moto-mocked
 client via the ``client`` kwarg.
 """
@@ -16,16 +16,12 @@ from typing import Any
 
 import boto3
 
-from multi_scenario.domain.models import (
-    ExperimentConfig,
-    ExperimentResult,
-    Provenance,
-    RunStateRecord,
-    S3StorageConfig,
-)
+from multi_scenario.domain.models import S3StorageConfig
+
+from ._base import StorageAdapterBase
 
 
-class S3StorageAdapter:
+class S3StorageAdapter(StorageAdapterBase):
     """S3-backed Storage Protocol implementation."""
 
     name = "s3"
@@ -37,40 +33,6 @@ class S3StorageAdapter:
             region_name=config.region,
             endpoint_url=config.endpoint_url,
         )
-
-    # ── Storage Protocol surface ────────────────────────────────────────
-
-    def save_config(self, run_dir: Path, config: ExperimentConfig) -> None:
-        """Write ``input/config.json`` to S3 under the run's key prefix."""
-        self._put(run_dir, "input/config.json", config.model_dump_json(indent=2))
-
-    def save_provenance(self, run_dir: Path, provenance: Provenance) -> None:
-        """Write ``input/provenance.json`` to S3."""
-        self._put(run_dir, "input/provenance.json", provenance.model_dump_json(indent=2))
-
-    def save_result(self, run_dir: Path, result: ExperimentResult) -> None:
-        """Write ``output/metrics.json`` to S3."""
-        self._put(run_dir, "output/metrics.json", result.model_dump_json(indent=2))
-
-    def save_run_state(self, run_dir: Path, state: RunStateRecord) -> None:
-        """Write ``run_state.json`` at the run's key root."""
-        self._put(run_dir, "run_state.json", state.model_dump_json(indent=2))
-
-    def load_config(self, run_dir: Path) -> ExperimentConfig:
-        """Read back ``input/config.json`` as :class:`ExperimentConfig`."""
-        return ExperimentConfig.model_validate_json(self._get(run_dir, "input/config.json"))
-
-    def load_provenance(self, run_dir: Path) -> Provenance:
-        """Read back ``input/provenance.json`` as :class:`Provenance`."""
-        return Provenance.model_validate_json(self._get(run_dir, "input/provenance.json"))
-
-    def load_result(self, run_dir: Path) -> ExperimentResult:
-        """Read back ``output/metrics.json`` as :class:`ExperimentResult`."""
-        return ExperimentResult.model_validate_json(self._get(run_dir, "output/metrics.json"))
-
-    def load_run_state(self, run_dir: Path) -> RunStateRecord:
-        """Read back ``run_state.json`` as :class:`RunStateRecord`."""
-        return RunStateRecord.model_validate_json(self._get(run_dir, "run_state.json"))
 
     # ── Off-Protocol sync helpers (used by OvhRunner) ──────────────────
 
@@ -110,6 +72,15 @@ class S3StorageAdapter:
         full_key = "/".join(p.strip("/") for p in (self._config.prefix, key) if p)
         self._client.put_object(Bucket=self._config.bucket, Key=full_key, Body=body)
 
+    # ── I/O primitives (subclass hook for StorageAdapterBase) ──────────
+
+    def _write_text(self, run_dir: Path, rel: str, body: str) -> None:
+        self._put(run_dir, rel, body)
+
+    def _read_text(self, run_dir: Path, rel: str) -> str:
+        obj = self._client.get_object(Bucket=self._config.bucket, Key=self._key(run_dir, rel))
+        return obj["Body"].read().decode("utf-8")
+
     # ── internals ──────────────────────────────────────────────────────
 
     def _key(self, run_dir: Path, rel: str) -> str:
@@ -120,13 +91,10 @@ class S3StorageAdapter:
         return "/".join(p.strip("/") for p in parts if p)
 
     def _put(self, run_dir: Path, rel: str, body: str | bytes) -> None:
+        """Bytes-or-str put — used by ``_write_text`` and the bytes-mode sync helper."""
         if isinstance(body, str):
             body = body.encode("utf-8")
         self._client.put_object(Bucket=self._config.bucket, Key=self._key(run_dir, rel), Body=body)
-
-    def _get(self, run_dir: Path, rel: str) -> str:
-        obj = self._client.get_object(Bucket=self._config.bucket, Key=self._key(run_dir, rel))
-        return obj["Body"].read().decode("utf-8")
 
     def _list(self, prefix: str) -> list[str]:
         """Page-aware list of keys under ``prefix``."""

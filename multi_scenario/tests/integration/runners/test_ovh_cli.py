@@ -43,6 +43,25 @@ def test_check_available_false_when_binary_missing() -> None:
     assert OvhClient(runner=runner).check_available() is False
 
 
+def test_ensure_available_raises_with_install_hint_when_missing() -> None:
+    """``ensure_available`` raises :class:`OvhCliError` whose message includes the install URL."""
+
+    def runner(args, timeout=60):  # noqa: ARG001
+        raise FileNotFoundError("no such file: ovhai")
+
+    with pytest.raises(OvhCliError, match="cli.bhs.ai.cloud.ovh.net/install.sh"):
+        OvhClient(runner=runner).ensure_available()
+
+
+def test_ensure_available_silent_when_binary_present() -> None:
+    """``ensure_available`` is a no-op when the CLI is on PATH."""
+
+    def runner(args, timeout=60):  # noqa: ARG001
+        return _make_proc(stdout="ovhai 3.35.0\n")
+
+    OvhClient(runner=runner).ensure_available()  # must not raise
+
+
 def test_submit_returns_job_id_from_plain_text() -> None:
     """Plain-text ``ovhai job run`` output → first whitespace token of first line."""
 

@@ -775,7 +775,16 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
 - Integration: regenerate-videos against a fixture run folder (with checkpoint) → both MP4s land + `report.json` updated.
 - OVH smoke (manual, F6.5 follow-up): submit a non-smoke config, confirm crash-free completion, pull back, run `regenerate-videos`, confirm both videos generated.
 
-#### F6.7 — Parallel sweep on OVH — S
+#### F6.7.1 — Friendly error when `ovhai` CLI missing — XS ✅
+
+User-flagged usability gap: previously, missing `ovhai` binary surfaced as a bare `FileNotFoundError` traceback. Now:
+
+- **`OvhClient.ensure_available()`** — calls `check_available()`; raises `OvhCliError` with the canonical install-instructions message (`curl -sSf https://cli.bhs.ai.cloud.ovh.net/install.sh | bash` → `ovhai login` → `docs/ovh_setup.md`).
+- Called at the top of every CLI/runner entry point that needs the binary: **`OvhRunner.submit()`** (covers programmatic use) and **`_sweep_run_ovh`** in the CLI (covers `multi-scenario sweep --runner ovh`).
+- Tests: `OvhClient.ensure_available()` raises with install URL when missing / no-op when present; CLI sweep with `check_available` mocked False → exit 2 + `cli.bhs.ai.cloud.ovh.net/install.sh` in stderr.
+- `docs/ovh_setup.md` updated with a note explaining the friendly-error fallback.
+
+#### F6.7 — Parallel sweep on OVH — S ✅
 
 **Background:** F5.6's `multi-scenario sweep <input>` runs cells **sequentially** locally — one cell at a time through `LocalRunner`. On OVH, each cell is naturally a separate AI Training job and would block-by-block waste credits when run sequentially. F6.7 lifts F5.6's expansion to OVH-parallel.
 

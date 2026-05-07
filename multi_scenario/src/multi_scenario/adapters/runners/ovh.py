@@ -73,6 +73,23 @@ class OvhRunner:
         self._yaml_path_in_repo = yaml_path_in_repo
         self._sleep = sleep  # injectable for fast tests
 
+    def submit(self, cfg: ExperimentConfig, run_dir: Path) -> str:
+        """Submit the OVH job and return the job_id without polling (F6.7).
+
+        Used by ``multi-scenario sweep --runner ovh`` to fire all cells in
+        parallel; polling happens afterwards in the CLI when ``--follow`` is
+        set. ``run()`` is the synchronous variant (submit + poll + result).
+
+        Raises :class:`OvhCliError` (with install instructions) if the
+        ``ovhai`` binary isn't on PATH (F6.7.1 friendly-error gate).
+        """
+        self._client.ensure_available()
+        args = self._build_submit_args(cfg, run_dir)
+        self._logger.info(f"submitting OVH job for {cfg.experiment.id}")
+        job_id = self._client.submit(args)
+        self._logger.info(f"OVH job submitted: id={job_id}")
+        return job_id
+
     def run(
         self,
         cfg: ExperimentConfig,
@@ -86,10 +103,7 @@ class OvhRunner:
                 "rerun the job from scratch instead."
             )
 
-        args = self._build_submit_args(cfg, run_dir)
-        self._logger.info(f"submitting OVH job for {cfg.experiment.id}")
-        job_id = self._client.submit(args)
-        self._logger.info(f"OVH job submitted: id={job_id}")
+        job_id = self.submit(cfg, run_dir)
 
         info = self._poll_until_terminal(job_id)
         if info.state.upper() != "DONE":

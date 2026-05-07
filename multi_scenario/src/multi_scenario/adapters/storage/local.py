@@ -1,12 +1,12 @@
 """LocalStorageAdapter — filesystem implementation of the Storage port.
 
-Writes the §3.5.2 layout to disk via JSON for everything we own. Pydantic's
-``model_dump_json`` / ``model_validate_json`` handles datetime fields
-(Provenance, RunStateRecord) cleanly via built-in ISO-8601 (de)serialization.
+Inherits the eight Protocol methods (save/load × {config, provenance, result,
+run_state}) from :class:`StorageAdapterBase`; only the I/O primitives
+(``_write_text`` / ``_read_text``) are implemented here.
 
 Optional artefacts (eval_episodes, report, videos, log, eval_steps_long,
 eval_runs) and the cross-run ``runs.csv`` / ``runs.json`` are not in the
-Storage Protocol surface and are added on later concrete adapters when each
+Storage Protocol surface and live as concrete-adapter extras here when each
 writer feature lands (F2.7 / F2.10 / F2.10.1 / F2.11 / F5.2 / F5.3 / F5.4 /
 F5.8).
 """
@@ -17,14 +17,9 @@ from typing import Any
 
 import pandas as pd
 
-from multi_scenario.domain.models import (
-    EvalRunRecord,
-    ExperimentConfig,
-    ExperimentResult,
-    Provenance,
-    RunReport,
-    RunStateRecord,
-)
+from multi_scenario.domain.models import EvalRunRecord, RunReport
+
+from ._base import StorageAdapterBase
 
 # Documented schema for `output/eval_episodes.json`. Only these keys are
 # serialised from the rollout dict — anything else (algorithm-internal state,
@@ -39,38 +34,16 @@ _EVAL_EPISODES_SCHEMA = (
 )
 
 
-class LocalStorageAdapter:
+class LocalStorageAdapter(StorageAdapterBase):
     """Persists per-run JSON files to the local filesystem under ``run_dir``."""
 
     name = "fs"
 
-    def save_config(self, run_dir: Path, config: ExperimentConfig) -> None:
-        """Write the resolved config to ``input/config.json``."""
-        self._write(run_dir / "input" / "config.json", config.model_dump_json(indent=2))
-
-    def save_provenance(self, run_dir: Path, provenance: Provenance) -> None:
-        """Write provenance to ``input/provenance.json``."""
-        self._write(
-            run_dir / "input" / "provenance.json",
-            provenance.model_dump_json(indent=2),
-        )
-
-    def save_result(self, run_dir: Path, result: ExperimentResult) -> None:
-        """Write the final aggregate to ``output/metrics.json``."""
-        self._write(run_dir / "output" / "metrics.json", result.model_dump_json(indent=2))
-
-    def save_run_state(self, run_dir: Path, state: RunStateRecord) -> None:
-        """Write the run-state record to ``run_state.json`` at the run-folder root."""
-        self._write(run_dir / "run_state.json", state.model_dump_json(indent=2))
+    # ── Off-Protocol extras (F1.9 minimalism) ──────────────────────────
 
     def save_report(self, run_dir: Path, report: RunReport) -> None:
-        """Write the run-end manifest to ``output/report.json`` (F2.10).
-
-        Off the ``Storage`` Protocol surface on purpose — optional artefact
-        per F1.9. Callers (``LocalRunner``) wire this directly against the
-        concrete adapter after ``ExperimentService.run`` returns.
-        """
-        self._write(run_dir / "output" / "report.json", report.model_dump_json(indent=2))
+        """Write the run-end manifest to ``output/report.json`` (F2.10)."""
+        self._write_text(run_dir, "output/report.json", report.model_dump_json(indent=2))
 
     def save_eval_episodes(self, run_dir: Path, rollout: dict[str, Any]) -> None:
         """Write per-episode raw eval data to ``output/eval_episodes.json`` (F2.10.1).
@@ -80,10 +53,6 @@ class LocalStorageAdapter:
         episode_collisions``; discovery: ``targets_covered / n_targets``) are
         serialised — unknown keys are silently dropped to keep the file's
         schema stable as new scenarios add fields.
-
-        Off the ``Storage`` Protocol surface (same minimalism rule as
-        ``save_report``); ``ExperimentService`` calls it via the optional
-        ``eval_episodes_writer`` constructor arg, not through the Protocol.
         """
         payload: dict[str, Any] = {}
         for key in _EVAL_EPISODES_SCHEMA:
@@ -91,17 +60,13 @@ class LocalStorageAdapter:
                 continue
             value = rollout[key]
             payload[key] = value.tolist() if hasattr(value, "tolist") else value
-        self._write(run_dir / "output" / "eval_episodes.json", json.dumps(payload, indent=2))
+        self._write_text(run_dir, "output/eval_episodes.json", json.dumps(payload, indent=2))
 
     def save_eval_run(self, run_dir: Path, record: EvalRunRecord) -> None:
-        """Write a re-evaluation record to ``output/eval_runs/<eval_id>.json`` (F5.8).
-
-        Off the ``Storage`` Protocol surface (F1.9 minimalism). The CLI
-        ``multi-scenario eval`` is the canonical caller. Multiple eval runs
-        coexist as separate files keyed by ``eval_id``.
-        """
-        self._write(
-            run_dir / "output" / "eval_runs" / f"{record.eval_id}.json",
+        """Write a re-evaluation record to ``output/eval_runs/<eval_id>.json`` (F5.8)."""
+        self._write_text(
+            run_dir,
+            f"output/eval_runs/{record.eval_id}.json",
             record.model_dump_json(indent=2),
         )
 
@@ -124,34 +89,15 @@ class LocalStorageAdapter:
         target.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(target, index=False)
 
-    def load_config(self, run_dir: Path) -> ExperimentConfig:
-        """Read back ``input/config.json`` as ``ExperimentConfig``."""
-        return ExperimentConfig.model_validate_json(
-            (run_dir / "input" / "config.json").read_text(encoding="utf-8")
-        )
+    # ── I/O primitives (subclass hook for StorageAdapterBase) ──────────
 
-    def load_provenance(self, run_dir: Path) -> Provenance:
-        """Read back ``input/provenance.json`` as ``Provenance``."""
-        return Provenance.model_validate_json(
-            (run_dir / "input" / "provenance.json").read_text(encoding="utf-8")
-        )
-
-    def load_result(self, run_dir: Path) -> ExperimentResult:
-        """Read back ``output/metrics.json`` as ``ExperimentResult``."""
-        return ExperimentResult.model_validate_json(
-            (run_dir / "output" / "metrics.json").read_text(encoding="utf-8")
-        )
-
-    def load_run_state(self, run_dir: Path) -> RunStateRecord:
-        """Read back ``run_state.json`` as ``RunStateRecord``."""
-        return RunStateRecord.model_validate_json(
-            (run_dir / "run_state.json").read_text(encoding="utf-8")
-        )
-
-    @staticmethod
-    def _write(path: Path, text: str) -> None:
+    def _write_text(self, run_dir: Path, rel: str, body: str) -> None:
+        path = run_dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(body, encoding="utf-8")
+
+    def _read_text(self, run_dir: Path, rel: str) -> str:
+        return (run_dir / rel).read_text(encoding="utf-8")
 
 
 def _iter_long_rows(rollout_td: Any, group_map: dict[str, list[str]]):

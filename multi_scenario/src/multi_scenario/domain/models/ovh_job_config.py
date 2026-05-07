@@ -47,6 +47,7 @@ class OvhJobConfig(BaseModel):
     )
     poll_interval_sec: float = 30.0
     timeout_sec: float = 7200.0  # 2h default; long enough for most matrix cells
+    cost_cap_eur: float = 5.0  # F6.7 sweep cost gate; prompts for --yes if exceeded
     gpu_models: dict[str, OvhGpuModel] = {}
 
     @classmethod

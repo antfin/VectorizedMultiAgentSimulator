@@ -17,6 +17,10 @@ ovhai --version    # expect: ovhai <X.Y.Z>
 
 The binary lands at `~/bin/ovhai`. Make sure `~/bin` is on your `PATH`.
 
+> **If you skip this step**, any `multi-scenario sweep --runner ovh` command
+> will exit 2 with a friendly message that points back here (F6.7.1) — no
+> bare `FileNotFoundError` traceback.
+
 ## 2. Authenticate
 
 ```bash
