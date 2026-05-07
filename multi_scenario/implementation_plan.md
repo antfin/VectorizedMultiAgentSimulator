@@ -540,7 +540,13 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
   - `experiments/flocking/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_flocking.py`. End-to-end via `LocalRunner` confirmed (`M1=None`, `M2=-0.137`, `M4=0.0`).
   - **Out of scope (deferred):** sharper M1 like "fraction of timesteps in flocking-acceptable state" — needs per-step pos/vel extraction. Add later if you want it.
 - **F4.3 — Transport adapter + metrics** (S) ✅ — `VmasTransportAdapter`. M1 uses universal `episode_terminated` (= "all packages delivered to goals" — same template as navigation). No base changes — VMAS transport has no `info()` so no new collision key needed. Defaults: heavy package (`package_mass=50`) requiring cooperative push. `experiments/transport/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_transport.py`. End-to-end via `LocalRunner` confirmed. M6 stub `None` (deferred — needs per-package position extraction).
-- **F4.4 — Scenario registry refactor** (XS).
+- **F4.4 — Scenario registry refactor** (XS) ✅ — `VmasScenarioBase` (`adapters/scenarios/base.py`) provides shared `make_env` (uses `self.name` as the VMAS scenario name), default `has_comm`/predicates returning `None`/`False`, plus a `_terminated_based_success` helper for navigation/transport. Each adapter shrunk:
+  - **discovery** — kept its bespoke cumsum-based M1 + fraction-based M6.
+  - **navigation, transport** — declarative metadata + 1-line `success_predicate` via the helper.
+  - **flocking** — just `name + default_params` (everything else inherits `None` defaults).
+  - Behavior-preserving — all 144 tests still green.
+
+**Phase 4 milestone reached.** All 4 scenarios + 6 algorithms = **24 possible scenario × algorithm combos**, each one runnable end-to-end via the same `LocalRunner` pipeline producing the full §3.5.2 layout.
 
 **Phase 4 milestone demo:** for each scenario, `multi-scenario run <scenario>_mappo_smoke.yaml` succeeds.
 
