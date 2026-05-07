@@ -25,6 +25,7 @@ from multi_scenario import __version__
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
 from multi_scenario.adapters.storage.runs_csv import RunsCsvWriter
+from multi_scenario.adapters.storage.runs_json import RunsJsonWriter
 from multi_scenario.domain.models import ExperimentConfig, RunId
 
 app = typer.Typer(help="multi_scenario CLI")
@@ -84,9 +85,11 @@ def validate(
 def consolidate(
     exp_type_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
 ) -> None:
-    """Build ``runs.csv`` from all DONE runs under ``exp_type_dir`` (F5.2)."""
-    out = RunsCsvWriter().consolidate(exp_type_dir)
-    typer.echo(f"OK runs.csv -> {out}")
+    """Build ``runs.csv`` + ``runs.json`` from all DONE runs (F5.2 + F5.3)."""
+    csv_path = RunsCsvWriter().consolidate(exp_type_dir)
+    json_path = RunsJsonWriter().consolidate(exp_type_dir)
+    typer.echo(f"OK runs.csv -> {csv_path}")
+    typer.echo(f"OK runs.json -> {json_path}")
 
 
 def main() -> None:

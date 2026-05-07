@@ -582,10 +582,13 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
   - **Option B (lighter):** read BenchMARL native `output/benchmarl/.../scalars/eval_*.csv` and map onto a subset of M1-M9 (M2 from `eval_reward_episode_reward_mean`, M3 from `eval_reward_episode_len_mean`; M1/M4/M6/M8 as `N/A`).
 - **Gotcha to port (rendezvous_comm §7.5/#1):** custom eval scalars fire one step after native eval scalars; consolidator must shift custom keys back by 1.
 
-#### F5.3 — `runs.json` writer (slim cross-run manifest) — XS
+#### F5.3 — `runs.json` writer (slim cross-run manifest) — XS ✅
 
-- Cross-run manifest per §3.5.3: scope, link to `runs.csv`, rankings (`{run_id, value, report}` per metric), and a flat list of per-run `report` links. No duplication of per-run file paths — consumers dereference via `report` to each run's `output/report.json`. Atomic write-rename + `runs.previous.json` backup.
-- TDD: given N populated run folders, the writer produces a manifest whose `runs[].report` paths all resolve and whose `rankings` agree with `final` rows in `runs.csv`.
+- `RunsManifest` domain model (`scope` / `csv` / `rankings` / `runs`) + `RunsJsonWriter.consolidate(exp_type_dir)` walking the same DONE-run folders as `RunsCsvWriter`. Atomic write-rename + `runs.previous.json` backup, mirroring the F5.2 pattern.
+- Rankings: per-metric `[{run_id, value, report}]` arrays sorted descending by raw value (consumers know minimize-vs-maximize semantics). None-valued entries dropped per metric; metrics that are None across all runs absent from the rankings dict entirely.
+- Pointer-only `runs[]`: `{run_id, report}` where `report` resolves to `<run_folder>/output/report.json` (relative to `exp_type_dir`) or is `None` if the run hasn't produced one yet. Zero path duplication — Streamlit dereferences via the `report` link to read each run's per-run manifest.
+- CLI: `multi-scenario consolidate` now writes **both** `runs.csv` (F5.2) and `runs.json` (F5.3) in one shot from the same run scan.
+- Tests: 9 unit tests covering scope aggregation, descending rankings, None-skipping, runs[] linking + missing-report → null, atomic backup, empty-dir → empty manifest. Plus end-to-end CLI confirmation.
 
 #### F5.4 — Per-step long-format CSV (experimental) — S
 

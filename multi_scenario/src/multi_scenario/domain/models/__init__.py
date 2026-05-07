@@ -22,6 +22,7 @@ from .result import ExperimentResult, MetricRecord
 from .rng_state import RngState
 from .run_id import RunId
 from .run_state import RunState, RunStateRecord, RunStateTransition
+from .runs_manifest import ManifestRunEntry, ManifestScope, RankingEntry, RunsManifest
 
 __all__ = [
     "AlgorithmSection",
@@ -30,8 +31,11 @@ __all__ = [
     "ExperimentResult",
     "ExperimentSection",
     "LibraryVersions",
+    "ManifestRunEntry",
+    "ManifestScope",
     "MetricRecord",
     "Provenance",
+    "RankingEntry",
     "ReportLinks",
     "ReportVideos",
     "RngState",
@@ -42,6 +46,7 @@ __all__ = [
     "RunStateTransition",
     "RunnerSection",
     "RuntimeSection",
+    "RunsManifest",
     "ScenarioSection",
     "StorageSection",
     "TrainingSection",

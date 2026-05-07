@@ -59,17 +59,19 @@ def _seed_done_run(parent: Path, run_id: str) -> None:
     )
 
 
-def test_consolidate_command_writes_runs_csv(tmp_path: Path) -> None:
-    """End-to-end: CLI consolidates a populated exp_type folder."""
+def test_consolidate_command_writes_runs_csv_and_json(tmp_path: Path) -> None:
+    """End-to-end: CLI consolidates a populated exp_type folder, producing both files."""
     _seed_done_run(tmp_path, "smoke_s0")
     _seed_done_run(tmp_path, "smoke_s1")
 
     result = CliRunner().invoke(app, ["consolidate", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "runs.csv" in result.output
+    assert "runs.json" in result.output
 
     df = pd.read_csv(tmp_path / "runs.csv")
     assert len(df) == 2
+    assert (tmp_path / "runs.json").is_file()
 
 
 def test_consolidate_command_with_missing_dir_returns_nonzero() -> None:
