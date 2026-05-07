@@ -535,7 +535,10 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
   - `_EVAL_EPISODES_SCHEMA` extended with `episode_terminated` so the new universal key surfaces in `eval_episodes.json`.
   - `experiments/navigation/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_navigation.py`. End-to-end via `LocalRunner` confirmed.
   - **Out of scope (deferred):** sharper M6 (per-agent on-goal fraction at episode end) — needs per-agent position extraction into the rollout dict; stub `None` for now.
-- **F4.2 — Flocking adapter + metrics** (S). Proposed: fraction of timesteps where inter-agent distance ∈ [desired ± tol] AND |v − v*| < tol.
+- **F4.2 — Flocking adapter + metrics** (S) ✅ — `VmasFlockingAdapter`. **M1 revised after user confirmation:** `None` (no natural binary success metric — flocking is continuous-control optimisation; M2 / M4 carry the evaluation weight). Mirrors the `null` semantics already used for M5/M6/M7/M8/M9 when not applicable. Bundled changes:
+  - `_extract_collisions` extended with a third info-key fallback: `agent_collision_rew` (flocking's key). Now tries `collision_rew` → `agent_collisions` → `agent_collision_rew` → zeros.
+  - `experiments/flocking/baseline/configs/mappo_smoke.yaml` + tests in `tests/integration/scenarios/test_flocking.py`. End-to-end via `LocalRunner` confirmed (`M1=None`, `M2=-0.137`, `M4=0.0`).
+  - **Out of scope (deferred):** sharper M1 like "fraction of timesteps in flocking-acceptable state" — needs per-step pos/vel extraction. Add later if you want it.
 - **F4.3 — Transport adapter + metrics** (S). Proposed: package-at-goal flag + final distance.
 - **F4.4 — Scenario registry refactor** (XS).
 

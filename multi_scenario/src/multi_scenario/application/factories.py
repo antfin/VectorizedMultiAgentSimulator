@@ -18,12 +18,14 @@ from multi_scenario.adapters.algorithms.maddpg import MaddpgAdapter
 from multi_scenario.adapters.algorithms.mappo import MappoAdapter
 from multi_scenario.adapters.algorithms.masac import MasacAdapter
 from multi_scenario.adapters.scenarios.discovery import VmasDiscoveryAdapter
+from multi_scenario.adapters.scenarios.flocking import VmasFlockingAdapter
 from multi_scenario.adapters.scenarios.navigation import VmasNavigationAdapter
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
 from multi_scenario.domain.ports import Algorithm, Scenario, Storage
 
 _SCENARIOS: dict[str, Callable[[], Scenario]] = {
     "discovery": VmasDiscoveryAdapter,
+    "flocking": VmasFlockingAdapter,
     "navigation": VmasNavigationAdapter,
 }
 

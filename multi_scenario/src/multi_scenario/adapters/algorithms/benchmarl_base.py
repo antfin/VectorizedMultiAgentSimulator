@@ -254,10 +254,11 @@ class BenchmarlBaseAdapter:
     @staticmethod
     def _extract_collisions(rollout_td: Any, ne: int, group_map: Any, out: list[float]) -> None:
         # Different scenarios surface collisions under different info keys:
-        # discovery uses ``collision_rew``, navigation uses ``agent_collisions``.
-        # Both encode collisions as negative rewards; same aggregation logic.
+        # discovery → ``collision_rew``; navigation → ``agent_collisions``;
+        # flocking → ``agent_collision_rew``. All three encode collisions as
+        # negative rewards; same aggregation logic.
         for group in group_map:
-            for info_key in ("collision_rew", "agent_collisions"):
+            for info_key in ("collision_rew", "agent_collisions", "agent_collision_rew"):
                 key = ("next", group, "info", info_key)
                 if key in rollout_td.keys(include_nested=True):
                     coll = rollout_td[key]
