@@ -561,11 +561,26 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 - Tests: valid YAML → exit 0; missing required field / unknown field / wrong type → exit 1 with the offending field path in the error output; missing file → typer's standard non-zero exit.
 - **Scope drop after user review:** `multi-scenario schema` (JSON Schema export for IDE autocomplete) skipped — YAMLs are mostly template copies and validation alone covers the realistic use cases. Re-add later if hand-editing volume justifies it.
 
-#### F5.2 — `runs.csv` writer (long-format, single file) — S
+#### F5.2 — `runs.csv` writer (final rows) — S
 
-- One CSV with `record_type` column, two row types per run: `final` (one row, full M1–M9 + config_snapshot + metadata) and `eval` (one per eval step, M1–M9 subset). Schema is algorithm-agnostic; JSON nulls → `N/A` via pandas `na_rep`. Atomic write-rename; on overwrite, copy current to `runs.previous.csv` for one-step rollback.
-- **Port from rendezvous_comm:** structure of `consolidate.py`. Eval-step rows ported from the per-eval consolidation logic; final rows from the per-run aggregation.
-- **Gotcha to handle (port the workaround):** custom eval scalars fire one step after native eval scalars; consolidator must shift custom keys back by 1. See §7.5/#1.
+- `RunsCsvWriter.consolidate(exp_type_dir)` walks `<exp_type_dir>/<run_folder>/`, filters runs with `run_state.state == "DONE"`, builds one `record_type=final` row per run from `output/metrics.json`. Schema is algorithm-agnostic; JSON nulls → `N/A` via pandas `to_csv(na_rep="N/A")`.
+- Atomic write-rename: write to `runs.csv.tmp` → `os.replace` → `runs.csv`. If `runs.csv` exists at write time, copy to `runs.previous.csv` first (one-step rollback per §3.5.3).
+- Schema: `record_type, run_id, exp_id, scenario, algorithm, seed, run_timestamp, M1_success_rate, ..., M9_spatial_spread, n_envs, n_eval_episodes, convergence_frame, duration_seconds, <flattened config_snapshot keys>`.
+- New CLI: `multi-scenario consolidate <exp_type_dir>` invokes the writer.
+- **Scope drop after user review:** `record_type=eval` rows deferred to F5.2.1 — needs BenchMARL eval callback or scalar-CSV aggregation mapping to M1-M9. Per-run leaderboard (final rows) is the load-bearing view; eval-time evolution can be read from per-run `output/benchmarl/.../scalars/eval_*.csv` at view time (Streamlit, Phase 7).
+- **Port from rendezvous_comm:** structure of `_build_sweep_row` in `consolidate.py` (final rows). Eval-step rows + custom-key shift gotcha (§7.5/#1) deferred to F5.2.1.
+
+#### F5.2.1 — `runs.csv` eval rows (deferred placeholder)
+
+**Trigger:** lift this into a real feature **before F8.4 (Comparison report)** if the report needs cross-run training-curve aggregation (e.g. "compare MAPPO vs IPPO M2 at iter 50 across seeds in one table/plot"). Or earlier if Streamlit (Phase 7) grows a cross-run plotting page that wants this. Until then, single-run training curves are readable directly from each run's BenchMARL `eval_*.csv` scalars.
+
+**Scope when activated:**
+
+- Add `record_type=eval` rows to `runs.csv`. One row per (run, eval step).
+- Source options:
+  - **Option A (preferred):** custom BenchMARL eval callback that fires our `MetricsBundle.compute(rollout, scenario)` mid-training, persisting per-step M1-M9 to a new `output/eval_steps.json` file. F5.2.1 then aggregates these into runs.csv.
+  - **Option B (lighter):** read BenchMARL native `output/benchmarl/.../scalars/eval_*.csv` and map onto a subset of M1-M9 (M2 from `eval_reward_episode_reward_mean`, M3 from `eval_reward_episode_len_mean`; M1/M4/M6/M8 as `N/A`).
+- **Gotcha to port (rendezvous_comm §7.5/#1):** custom eval scalars fire one step after native eval scalars; consolidator must shift custom keys back by 1.
 
 #### F5.3 — `runs.json` writer (slim cross-run manifest) — XS
 
@@ -707,6 +722,7 @@ Schema sketch (when implemented): add `algorithm.params.hidden_layers: list[int]
 
 - Streamlit page or notebook → per-scenario leaderboard, best baseline per scenario.
 - **Output:** identifies the best baseline candidate per scenario → input to Phase 9 LERO.
+- **Prerequisite check:** if the report needs cross-run training-curve comparisons (e.g. "compare MAPPO vs IPPO M2 at iter 50 across seeds in one table/plot"), **F5.2.1 must be implemented first**. F5.2 ships only `record_type=final` rows; the eval-step rows live in F5.2.1 and are a deferred placeholder. Per-run training scalars are still readable directly from each run's `output/benchmarl/.../scalars/eval_*.csv` for single-run views — only cross-run aggregation needs F5.2.1.
 
 ---
 

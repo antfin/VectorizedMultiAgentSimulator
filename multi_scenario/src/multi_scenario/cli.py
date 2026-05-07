@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from multi_scenario import __version__
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
+from multi_scenario.adapters.storage.runs_csv import RunsCsvWriter
 from multi_scenario.domain.models import ExperimentConfig, RunId
 
 app = typer.Typer(help="multi_scenario CLI")
@@ -77,6 +78,15 @@ def validate(
             typer.echo(f"  {path}: {err['msg']}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"OK {yaml_path}")
+
+
+@app.command()
+def consolidate(
+    exp_type_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
+) -> None:
+    """Build ``runs.csv`` from all DONE runs under ``exp_type_dir`` (F5.2)."""
+    out = RunsCsvWriter().consolidate(exp_type_dir)
+    typer.echo(f"OK runs.csv -> {out}")
 
 
 def main() -> None:
