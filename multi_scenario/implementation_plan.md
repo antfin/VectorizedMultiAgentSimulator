@@ -750,7 +750,7 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
 - **OVH FINALIZING auto-sync confirmed working:** the volume mount `:rwd` permission ports the entire local `/workspace/results` tree back to S3 at job end. We did NOT need F6.3's `S3StorageAdapter.sync_to_local` for this smoke (downloaded via `ovhai bucket object download` directly). F6.3's boto3 path remains the option for users who set up AWS credentials.
 - **Smoke artefact:** `experiments/discovery/baseline/configs/mappo_ovh_smoke.yaml` (added in this feature) — same shape as `mappo_smoke.yaml` but `runtime.storage.path: /workspace/results` so the run-folder writes hit the rwd-mounted volume.
 
-#### F6.6 — Headless video handling + `regenerate-videos` CLI — S
+#### F6.6 — Headless video handling + `regenerate-videos` CLI — S ✅
 
 **Background:** F2.11 records before/after MP4s inline during training using VMAS Pyglet rendering. OVH AI Training containers are headless (no OpenGL/X11) → any non-smoke run on OVH would crash inside `VideoRecorder.record()` (confirmed `pyglet.gl` import error in `rendezvous_comm/results/.../run.log`). This feature makes OVH runs complete cleanly and reproduces the videos locally after pulling results back.
 

@@ -15,6 +15,7 @@ BenchMARL's ``test_env.rollout()`` — pattern ported from
 ``rendezvous_comm/src/runner.py::evaluate_trained``.
 """
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -184,7 +185,8 @@ class BenchmarlBaseAdapter:
         videos_dir = run_dir / "output" / "videos" if run_dir is not None else None
         # Skip the "before" video on resume — the policy is no longer random-init.
         if record and videos_dir is not None and resume_from is None:
-            VideoRecorder().record(
+            _record_video_safe(
+                "before_training",
                 test_env=experiment.test_env,
                 policy=experiment.policy,
                 max_steps=experiment.max_steps,
@@ -194,7 +196,8 @@ class BenchmarlBaseAdapter:
         experiment.run()
 
         if record and videos_dir is not None:
-            VideoRecorder().record(
+            _record_video_safe(
+                "after_training",
                 test_env=experiment.test_env,
                 policy=experiment.policy,
                 max_steps=experiment.max_steps,
@@ -360,3 +363,24 @@ def _long_format_enabled(cfg: ExperimentConfig) -> bool:
     if cfg.runtime is None:
         return False
     return bool(cfg.runtime.storage.params.get("long_format", False))
+
+
+def _record_video_safe(label: str, **record_kwargs: Any) -> None:
+    """F6.6: call ``VideoRecorder().record(**record_kwargs)``; swallow + log on failure.
+
+    On headless hosts (OVH containers) VMAS' Pyglet renderer raises before any
+    frames are written. Letting that crash kills the whole training run.
+    F6.6's contract: training MUST complete; videos can always be regenerated
+    locally via ``multi-scenario regenerate-videos <run_dir>`` once results
+    are pulled back. ``label`` is one of ``"before_training"`` / ``"after_training"``
+    and is included in the warning so users can tell which video was skipped.
+    """
+    try:
+        VideoRecorder().record(**record_kwargs)
+    except Exception as exc:  # pylint: disable=broad-except
+        logging.getLogger(__name__).warning(
+            "Video %s skipped on headless host: %s. "
+            "Regenerate locally with 'multi-scenario regenerate-videos <run_dir>'.",
+            label,
+            exc,
+        )
