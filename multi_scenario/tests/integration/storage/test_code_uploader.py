@@ -10,8 +10,10 @@ import pytest
 from moto import mock_aws
 
 from multi_scenario.adapters.storage.code_uploader import (
+    CODE_HASH_KEY,
     DEFAULT_EXCLUDE_PATTERNS,
     CodeUploader,
+    compute_local_code_hash,
 )
 from multi_scenario.adapters.storage.s3 import S3StorageAdapter
 from multi_scenario.domain.models import S3StorageConfig
@@ -125,14 +127,45 @@ def test_default_exclude_patterns_contain_expected_globs() -> None:
 
 
 def test_custom_include_files_only(tmp_path: Path, mocked_s3_with_bucket) -> None:
-    """Override includes — only README.md uploaded when that's the sole include."""
+    """Override includes — only README.md uploaded (plus the .code_hash blob).
+
+    F7.5 Phase C added the .code_hash sidecar to every upload — assert both
+    keys land in the bucket.
+    """
     _mk_repo(tmp_path)
     out = _make_uploader(mocked_s3_with_bucket).upload(
         tmp_path, include_dirs=(), include_files=("README.md",)
     )
     assert out == [Path("README.md")]
-    keys = [
+    keys = sorted(
         obj["Key"]
         for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
-    ]
-    assert keys == [f"{_PREFIX}/README.md"]
+    )
+    assert keys == [f"{_PREFIX}/.code_hash", f"{_PREFIX}/README.md"]
+
+
+def test_upload_writes_code_hash_blob_matching_local_compute(
+    tmp_path: Path, mocked_s3_with_bucket
+) -> None:
+    """The ``.code_hash`` blob equals ``compute_local_code_hash`` over the same set."""
+    _mk_repo(tmp_path)
+    _make_uploader(mocked_s3_with_bucket).upload(tmp_path)
+    blob = (
+        mocked_s3_with_bucket.get_object(Bucket=_BUCKET, Key=f"{_PREFIX}/{CODE_HASH_KEY}")[
+            "Body"
+        ]
+        .read()
+        .decode("utf-8")
+    )
+    expected = compute_local_code_hash(tmp_path)
+    assert blob == expected
+    assert blob.startswith("sha256:")
+
+
+def test_local_hash_changes_when_a_file_changes(tmp_path: Path) -> None:
+    """Sanity: editing a tracked file shifts the local hash (so drift is detectable)."""
+    _mk_repo(tmp_path)
+    h1 = compute_local_code_hash(tmp_path)
+    (tmp_path / "src" / "multi_scenario" / "cli.py").write_text("# edited", encoding="utf-8")
+    h2 = compute_local_code_hash(tmp_path)
+    assert h1 != h2

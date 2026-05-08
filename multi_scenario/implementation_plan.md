@@ -837,13 +837,29 @@ User-flagged usability gap: previously, missing `ovhai` binary surfaced as a bar
 - Bar / box plots comparing algorithms across scenarios. Selectable metric, scenario, algos.
 - **Port:** `pages/4_*.py` (cross-exp comparison).
 
-#### F7.5 — Page 4: local job submission — M
+#### F7.5 + F7.6 — Submit page (merged) — M
 
-- Form → builds YAML → calls `LocalRunner` in a background thread → live tail of `logs/run.log`.
+> The original separate F7.5 (local submission) + F7.6 (OVH submission) were merged into a single **Submit** page under the Experiments parent group. The form is 90% shared between runners; splitting forced "pick page first, then change runner" which is backwards. A runner radio toggle inside the page reveals OVH-specific fields when relevant.
 
-#### F7.6 — Page 5: OVH job submission — M
+**Workflow shape (5 always-visible step cards):**
 
-- Same form but routes to `OvhRunner`. Shows the per-job S3 prefix. **Port:** `pages/2_*.py` (OVH jobs page).
+1. **Pick** — scenario / folder / config cascade picker over `experiments/<scenario>/<folder>/configs/*.yaml`.
+2. **Inspect & edit** — pre-filled form (Identity / Scenario / Algorithm / Training / Evaluation / Runner / Storage) inside an expander; dirty detection + "Modified fields:" summary.
+3. **Save** — auto-skipped if clean; "Save as new" forced if edits exist (never overwrites the source).
+4. **Preflight** — runner-aware LED panel (config schema valid · storage path writable · OVH CLI installed · results bucket reachable · **code matches OVH bucket** · per-run prefix not occupied · cost cap not exceeded).
+5. **Submit** — gated until preflight all-green AND no unsaved edits.
+
+**Phasing:**
+
+- **Phase A (DONE)**: workflow shell, all forms, validation banner, preflight LEDs (mocked), Download YAML button.
+- **Phase B**: real local-runner preflight checks (config schema, storage writable) + Submit button wired to `LocalRunner` (synchronous v1 with `st.spinner`; threaded log-tail v2 if pain).
+- **Phase C**: OVH submission via `OvhRunner.submit()` + status polling + auto-regen videos (already wired in `OvhRunner.run()` post-pullback) + real OVH preflight checks (`OvhClient.ensure_available`, `boto3.head_bucket`, code-hash compare against the `.code_hash` blob `upload-code` writes).
+
+State machine: `SubmitState` dataclass with derived `is_dirty`, `has_preflight_passed`, `active_step`, `can_submit` properties; session-state-backed.
+
+**Save policy**: writes go alongside the source YAML in the same `configs/` dir; never overwrites the source (button disabled if name matches). Default new name: `<original_stem>_v2.yaml`.
+
+**Code-vs-bucket consistency check (Phase C)**: hashes local `multi_scenario/` package via the existing `CodeHasher` (F2.7), compares to a `.code_hash` blob written by `multi-scenario upload-code` to the OVH code bucket. Mismatch → 🔴 with the exact `multi-scenario upload-code` command embedded in the error.
 
 #### F7.7 — End-of-F7 polish — S
 

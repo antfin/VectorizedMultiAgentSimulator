@@ -1,0 +1,39 @@
+# OVH AI Training deployment config — loaded by ``OvhJobConfig.from_yaml``.
+#
+# Fill in the bucket names + region for your project. Sensitive data
+# (tokens, passwords) NEVER goes here — use ``ovhai login`` for auth and
+# the standard ``~/.aws/credentials`` for S3.
+
+region: GRA           # GRA / BHS / SBG / WAW
+image: ovhcom/ai-training-pytorch:latest
+flavor: ai1-1-gpu
+gpu_type: V100S
+n_gpu: 1
+
+# S3 buckets — must already exist in your OVH Object Storage tenant.
+# ``bucket_code`` is mounted ``ro`` at submit time; ``bucket_results``
+# gets one prefix per run (``<exp_id>_s<seed>/``) so parallel jobs
+# don't clobber each other during OVH's FINALIZING sync.
+bucket_code: multi-scenario-code
+bucket_results: multi-scenario-results
+mount_code: /workspace/code
+mount_results: /workspace/results
+
+# Bash command that runs INSIDE the container. ``HOME=/tmp`` is mandatory
+# (pip can't write to /workspace). Substitution tokens: ``{mount_code}`` /
+# ``{mount_results}`` / ``{yaml_path_in_container}``.
+default_runner: |
+  export HOME=/tmp && pip install -e {mount_code} && cd {mount_code} && python -m multi_scenario.cli run {yaml_path_in_container}
+
+poll_interval_sec: 30.0
+timeout_sec: 7200.0
+cost_cap_eur: 5.0
+
+# Cost registry — wrong ``gpu_type`` fails loudly via validate_gpu_choice.
+gpu_models:
+  V100S:
+    eur_per_hour: 2.5
+    description: NVIDIA V100S 32GB
+  CPU:
+    eur_per_hour: 0.0
+    description: CPU-only (smoke debugging)
