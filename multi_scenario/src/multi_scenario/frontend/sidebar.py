@@ -7,14 +7,52 @@ clean (just a small read-only ``📁 path`` caption + a link to Settings).
 
 Streamlit's ``st.session_state`` survives reruns within the same browser tab
 but resets on full page reload — adequate for a "set once per session" knob.
+
+**Filter persistence across page nav** uses :func:`persist_widget_state`.
+Streamlit clears widget keys from ``session_state`` whenever the widget
+isn't rendered — including while you're on a different page in a multipage
+app. The shadow ``_persist_*`` key bypasses that and re-seeds the widget on
+the next render so filter selections survive navigation.
 """
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from .runs_loader import load_runs
+
+
+def persist_widget_state(widget_key: str, default: Any) -> str:
+    """Bridge a widget's state to a persistent session_state shadow key.
+
+    Workaround for Streamlit's auto-clearing of widget keys when the widget
+    isn't rendered (e.g. during multipage nav). Call BEFORE rendering the
+    widget; assign the widget's return value to the returned shadow key
+    AFTER rendering. The widget itself uses ``key=widget_key``.
+
+    Example::
+
+        persist_key = persist_widget_state("browse_scenarios", [])
+        scenarios = st.sidebar.multiselect(
+            "Scenario", options, key="browse_scenarios"
+        )
+        st.session_state[persist_key] = scenarios
+    """
+    # Avoid a leading underscore in the key — Streamlit treats ``_*`` keys
+    # as internal and clears them between page navigations in some versions.
+    persist_key = f"persist__{widget_key}"
+    if persist_key not in st.session_state:
+        st.session_state[persist_key] = default
+    # ONLY re-seed when the widget's own key isn't present in session_state.
+    # That happens exactly once per page entry: Streamlit drops widget keys
+    # on nav and re-creates them on first render. On *subsequent* reruns
+    # within the same page, the widget key persists, so we don't touch it
+    # (otherwise we'd clobber the user's interactive selection on every click).
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = st.session_state[persist_key]
+    return persist_key
 
 #: ``st.session_state`` key under which the active experiments root lives.
 #: Settings page writes it; other pages read it via :func:`active_experiments_dir`.

@@ -275,6 +275,105 @@ def test_run_without_yaml_path_in_repo_raises(tmp_path: Path) -> None:
         runner.run(_exp_cfg(tmp_path), tmp_path)
 
 
+def _exp_cfg_with_record_video(storage_path: Path, *, record: bool) -> ExperimentConfig:
+    """Like ``_exp_cfg`` but injects ``runner.params.record_video``."""
+    payload = _exp_cfg(storage_path).model_dump()
+    payload["runtime"]["runner"]["params"]["record_video"] = record
+    return ExperimentConfig.model_validate(payload)
+
+
+def test_run_skips_video_regen_when_flag_off(tmp_path: Path, monkeypatch) -> None:
+    """``record_video=false`` → :func:`regenerate_videos` is never called post-pullback."""
+    run_dir = _seed_done_run_dir(tmp_path)
+    client = _StubClient(states_after_submit=["DONE"])
+    calls: list[Path] = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: calls.append(rd) or rd,
+    )
+    runner = OvhRunner(
+        ovh_config=_ovh_cfg(),
+        client=client,
+        secrets=FernetSecretsAdapter(),
+        logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
+        sleep=lambda _: None,
+    )
+    runner.run(_exp_cfg_with_record_video(tmp_path, record=False), run_dir)
+    assert calls == []
+
+
+def test_run_skips_video_regen_when_videos_already_present(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """If ``output/videos/*.mp4`` exists already, don't re-render."""
+    run_dir = _seed_done_run_dir(tmp_path)
+    videos_dir = run_dir / "output" / "videos"
+    videos_dir.mkdir(parents=True)
+    (videos_dir / "before_training.mp4").write_bytes(b"\x00")
+    calls: list[Path] = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: calls.append(rd) or rd,
+    )
+    runner = OvhRunner(
+        ovh_config=_ovh_cfg(),
+        client=_StubClient(states_after_submit=["DONE"]),
+        secrets=FernetSecretsAdapter(),
+        logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
+        sleep=lambda _: None,
+    )
+    runner.run(_exp_cfg_with_record_video(tmp_path, record=True), run_dir)
+    assert calls == []
+
+
+def test_run_calls_video_regen_when_flag_on_and_no_videos(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """``record_video=true`` + empty videos dir → :func:`regenerate_videos` is called."""
+    run_dir = _seed_done_run_dir(tmp_path)
+    calls: list[Path] = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: calls.append(rd) or rd,
+    )
+    runner = OvhRunner(
+        ovh_config=_ovh_cfg(),
+        client=_StubClient(states_after_submit=["DONE"]),
+        secrets=FernetSecretsAdapter(),
+        logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
+        sleep=lambda _: None,
+    )
+    runner.run(_exp_cfg_with_record_video(tmp_path, record=True), run_dir)
+    assert calls == [run_dir]
+
+
+def test_run_swallows_video_regen_failure(tmp_path: Path, monkeypatch) -> None:
+    """If regen raises (Pyglet missing locally too), the run still returns successfully."""
+    run_dir = _seed_done_run_dir(tmp_path)
+
+    def boom(_rd):
+        raise RuntimeError("Pyglet display init failed")
+
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos", boom
+    )
+    runner = OvhRunner(
+        ovh_config=_ovh_cfg(),
+        client=_StubClient(states_after_submit=["DONE"]),
+        secrets=FernetSecretsAdapter(),
+        logger=_NoopLogger(),
+        yaml_path_in_repo="experiments/discovery/baseline/configs/mappo_smoke.yaml",
+        sleep=lambda _: None,
+    )
+    # Run completes despite regen failure — the contract says training success
+    # ≠ video success.
+    result = runner.run(_exp_cfg_with_record_video(tmp_path, record=True), run_dir)
+    assert result.run_id == "ovh_demo_s0"
+
+
 def test_run_times_out_when_never_terminal(tmp_path: Path) -> None:
     """Timeout exhausted before terminal state → :class:`OvhJobError`."""
     run_dir = _seed_done_run_dir(tmp_path)

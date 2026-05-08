@@ -49,6 +49,8 @@ cmake-build-*/
 # Mongo Explorer plugin
 .idea/**/mongoSettings.xml
 
+.playwright-mcp/
+
 # File-based project format
 *.iws
 

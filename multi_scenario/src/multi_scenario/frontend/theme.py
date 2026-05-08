@@ -157,6 +157,21 @@ def apply_theme(title: str = "", subtitle: str = "Politecnico di Milano — PhD 
             display: block;
         }
 
+        /* Matplotlib charts (st.pyplot) render as ``<img>`` inside
+           ``[data-testid="stImage"]`` (or its newer rename ``stImageContainer``).
+           min-width keeps tiny charts legible inside a narrow column;
+           max-width caps how big they grow on huge screens (1440px+);
+           ``object-fit: contain`` preserves the aspect ratio between bounds.
+           ``!important`` is required on max-width — Streamlit's own default
+           rule sets ``max-width: 100%`` at higher specificity, which lets the
+           image fill the column on wide screens. */
+        [data-testid="stImage"] img,
+        [data-testid="stImageContainer"] img {
+            min-width: 280px;
+            max-width: 720px !important;
+            object-fit: contain;
+        }
+
         /* Path caption pinned at the bottom of the sidebar — single-line,
            ellipsised; HTML ``title`` attribute supplies the full path on hover. */
         .ms-path-caption {

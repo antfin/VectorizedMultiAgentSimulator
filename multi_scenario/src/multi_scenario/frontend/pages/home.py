@@ -19,6 +19,7 @@ import streamlit as st
 from multi_scenario.frontend.scenarios import SCENARIO_RENDERERS
 from multi_scenario.frontend.sidebar import (
     load_runs_with_cache,
+    persist_widget_state,
     render_active_root_caption,
 )
 from multi_scenario.frontend.theme import apply_theme
@@ -43,12 +44,14 @@ default_idx = next(
 )
 
 st.sidebar.header("Scenario")
+_picker_persist = persist_widget_state("home_scenario_picker", SCENARIO_ORDER[default_idx])
 selected_scenario = st.sidebar.selectbox(
     "Pick a scenario",
     SCENARIO_ORDER,
-    index=default_idx,
     format_func=str.capitalize,
+    key="home_scenario_picker",
 )
+st.session_state[_picker_persist] = selected_scenario
 
 # ── Main: render selected scenario ───────────────────────────────────
 if "scenario" in runs_df.columns:

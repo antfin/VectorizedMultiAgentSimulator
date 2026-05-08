@@ -45,12 +45,13 @@ st.set_page_config(
 home = st.Page("pages/home.py", title="Dashboard", icon=":material/home:", default=True)
 browse = st.Page("pages/experiments.py", title="Browse", icon=":material/list:")
 detail = st.Page("pages/run_detail.py", title="Detail", icon=":material/insights:")
+compare = st.Page("pages/comparison.py", title="Compare", icon=":material/compare_arrows:")
 settings = st.Page("pages/settings.py", title="Settings", icon=":material/settings:")
 
 nav = st.navigation(
     {
         "": [home],
-        "Experiments": [browse, detail],
+        "Experiments": [browse, detail, compare],
         " ": [settings],  # space differentiates from the other empty-string section
     },
     expanded=True,  # keep all sections always-expanded; combined with the

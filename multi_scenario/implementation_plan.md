@@ -845,6 +845,24 @@ User-flagged usability gap: previously, missing `ovhai` binary surfaced as a bar
 
 - Same form but routes to `OvhRunner`. Shows the per-job S3 prefix. **Port:** `pages/2_*.py` (OVH jobs page).
 
+#### F7.7 — End-of-F7 polish — S
+
+- **Smoke data**: regenerate the canonical demo run with a slightly longer
+  config (e.g. `max_iters: 5`, `record_video: true`) so the dashboard ships
+  with non-degenerate charts/videos out of the box. Drop the smoke runs
+  that produced flat M-values once a richer reference exists.
+- Sweep visual nits surfaced during F7.1–F7.6 builds (one consolidated round
+  rather than per-page polish PRs).
+
+> **Auto-regen videos on OVH pullback (landed early as part of F7.4 review):**
+> ``OvhRunner.run()`` now auto-invokes ``application.regenerate_videos`` on
+> the local machine after results sync back from S3 — but only when
+> ``cfg.runtime.runner.params.record_video`` is true AND no MP4s came back
+> from the container (the in-job Pyglet renderer fails fail-soft on
+> headless OVH hosts per F6.6). Failure is swallowed with a logger.warning;
+> training success ≠ video success. CLI ``regenerate-videos`` shares the
+> same ``application.regenerate_videos`` core so behaviour stays consistent.
+
 ---
 
 ### Phase 8 — First cross-scenario baseline ablation (the "ER1 across 4 scenarios")

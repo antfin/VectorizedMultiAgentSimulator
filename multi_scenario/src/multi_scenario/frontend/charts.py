@@ -231,6 +231,55 @@ def _read_scalar_csv(path: "Path") -> "pd.DataFrame | None":  # noqa: F821
         return None
 
 
+def grouped_bar_with_se(
+    agg_df: "pd.DataFrame",  # noqa: F821
+    *,
+    group_col: str,
+    bar_col: str,
+    title: str,
+    ylabel: str | None = None,
+) -> None:
+    """Grouped bar chart with SE error bars.
+
+    ``agg_df`` must have columns ``group_col`` (e.g. ``"scenario"``,
+    one row group per cluster), ``bar_col`` (e.g. ``"algorithm"``,
+    one bar per cluster), ``mean``, and ``sem`` — i.e. the schema
+    produced by :func:`aggregations.aggregate_metric`.
+
+    Used by F7.4's "Algorithm leaderboard by scenario" section.
+    """
+    if agg_df.empty:
+        st.subheader(title)
+        st.info("No aggregated rows to plot.")
+        return
+    set_style()
+    groups = sorted(agg_df[group_col].unique())
+    bars = sorted(agg_df[bar_col].unique())
+    fig, ax = plt.subplots()
+    width = 0.8 / max(len(bars), 1)
+    for i, b in enumerate(bars):
+        sub = agg_df[agg_df[bar_col] == b].set_index(group_col).reindex(groups)
+        x = [groups.index(g) + i * width - 0.4 + width / 2 for g in groups]
+        ax.bar(
+            x,
+            sub["mean"].fillna(0).values,
+            width=width,
+            yerr=sub["sem"].fillna(0).values,
+            capsize=3,
+            label=str(b),
+            color=_color_for(str(b), i),
+            alpha=0.85,
+        )
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(groups, rotation=15, ha="right")
+    ax.set_ylabel(ylabel or "mean")
+    ax.legend(title=bar_col, fontsize=9)
+    fig.tight_layout()
+    st.subheader(title)
+    st.pyplot(fig)
+    plt.close(fig)
+
+
 def pie_by_category(counts: dict[str, int], title: str) -> None:
     """Pie chart of category → count, coloured from the Polimi cycle.
 

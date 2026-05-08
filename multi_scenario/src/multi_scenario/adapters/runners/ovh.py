@@ -116,7 +116,41 @@ class OvhRunner:
         if self._s3_storage is not None:
             self._logger.info(f"syncing {run_dir.name} from S3 → {run_dir}")
             self._s3_storage.sync_to_local(run_dir, run_dir)
+        self._regenerate_videos_if_needed(cfg, run_dir)
         return self._storage.load_result(run_dir)
+
+    def _regenerate_videos_if_needed(self, cfg: ExperimentConfig, run_dir: Path) -> None:
+        """If ``record_video=true`` and no videos came back, render them locally.
+
+        OVH containers are headless — the in-job Pyglet recorder fails fail-soft
+        per F6.6. Once results sync back to the dev machine (which has Pyglet
+        working), we can replay the trained checkpoint and produce the videos
+        the user asked for. Errors are logged and swallowed: a successful run
+        without videos is still a success.
+        """
+        if cfg.runtime is None:
+            return
+        if not cfg.runtime.runner.params.get("record_video", False):
+            return
+        videos_dir = run_dir / "output" / "videos"
+        if videos_dir.is_dir() and any(videos_dir.glob("*.mp4")):
+            return  # OVH somehow rendered them, or a previous regen succeeded.
+        # Local import keeps BenchMARL/torch off the OvhRunner import path.
+        # pylint: disable=import-outside-toplevel
+        from multi_scenario.application.regenerate_videos import (
+            VideoRegenerationError,
+            regenerate_videos,
+        )
+
+        self._logger.info(f"regenerating videos locally for {run_dir.name}…")
+        try:
+            regenerate_videos(run_dir)
+        except VideoRegenerationError as exc:
+            self._logger.warning(f"video regeneration skipped: {exc}")
+        except Exception as exc:  # pylint: disable=broad-except
+            # Any other failure (Pyglet missing locally too, etc.) is logged
+            # and absorbed — the OVH run completed, that's the contract.
+            self._logger.warning(f"video regeneration failed: {exc}")
 
     def _build_submit_args(self, cfg: ExperimentConfig, run_dir: Path) -> list[str]:
         """Compose the ``ovhai job run`` argument list for ``cfg``.

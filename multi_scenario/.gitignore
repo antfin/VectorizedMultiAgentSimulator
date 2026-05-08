@@ -15,6 +15,7 @@ env/
 
 # Test and lint caches
 .pytest_cache/
+.playwright-mcp/
 .ruff_cache/
 .mypy_cache/
 .coverage
