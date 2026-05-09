@@ -861,14 +861,76 @@ State machine: `SubmitState` dataclass with derived `is_dirty`, `has_preflight_p
 
 **Code-vs-bucket consistency check (Phase C)**: hashes local `multi_scenario/` package via the existing `CodeHasher` (F2.7), compares to a `.code_hash` blob written by `multi-scenario upload-code` to the OVH code bucket. Mismatch → 🔴 with the exact `multi-scenario upload-code` command embedded in the error.
 
-#### F7.7 — End-of-F7 polish — S
+#### F7.7 — Frontend hex-architecture compliance, extensibility, validation, tests — M
 
-- **Smoke data**: regenerate the canonical demo run with a slightly longer
-  config (e.g. `max_iters: 5`, `record_video: true`) so the dashboard ships
-  with non-degenerate charts/videos out of the box. Drop the smoke runs
-  that produced flat M-values once a richer reference exists.
-- Sweep visual nits surfaced during F7.1–F7.6 builds (one consolidated round
-  rather than per-page polish PRs).
+The original F7.7 was a small "smoke-data + visual nits" pass. After F7.5/F7.6
+landed the Submit workflow it became clear the frontend needed a deeper review
+to meet the project's clean-code + hex-architecture bar. F7.7 grew to cover
+that — the original polish work moves to Phase 6 below.
+
+**Phase 1 — Hex-architecture compliance** (highest priority):
+- **F7.7.A1** — Extend `OvhClient` with bucket verbs (`bucket_list`,
+  `bucket_list_objects`, `bucket_object_exists`, `bucket_get_object`) that
+  shell through `ovhai`. Reuses existing `_run` / `JobInfo` patterns; no new
+  ports.
+- **F7.7.A2** — Refactor the 4 OVH preflight probes (`_probe_results_bucket`,
+  `_probe_code_hash`, `_probe_yaml_in_bucket`, `_probe_prefix_collision`) to
+  call `OvhClient` instead of `boto3` directly. Drops the AWS-credentials
+  requirement for preflight and the `boto3` import from the frontend layer
+  entirely (the frontend should never import boto3 — that's a hex violation).
+- **F7.7.A3** — Drop `OvhJobConfig.s3_endpoint_url` + `s3_endpoint()`. After
+  A2 they have no callers; `S3StorageAdapter` reads its endpoint from a
+  separate `S3StorageConfig` (right place). STRICT model rejects stale
+  YAMLs with a clear migration error.
+
+**Phase 2 — Extensibility**:
+- **F7.7.B1** — Backend listing API in `application/factories.py`:
+  `available_scenarios()`, `available_algorithms()`, `available_storages()`,
+  `available_runners()`. Add `Algorithm.default_params()` to the port so
+  every algorithm declares its UI-visible knobs. Pure additions; no
+  behaviour change.
+- **F7.7.B2** — Data-driven `forms.py`: replace `SCENARIO_FORMS` /
+  `ALGORITHM_FORMS` dispatch tables with one generic
+  `render_params_from_defaults(schema, overrides)` that picks the widget
+  from the default value's Python type. Submit page reads
+  `available_scenarios()` etc. dynamically. Adding a new scenario now
+  requires zero frontend changes.
+
+**Phase 3 — Test coverage**:
+- **F7.7.C1** — `streamlit.testing.v1.AppTest` end-to-end tests for the
+  Submit workflow (no browser). Covers pick → edit → save → preflight →
+  submit for both runner targets. Local + OVH happy paths + cascade-on-
+  missing-ovh.yaml all reachable through `at.session_state`.
+- **F7.7.C2** — Add `pytest-bdd` to dev deps; one `submit.feature` Gherkin
+  file with the two highest-value journeys (OVH submit happy path; missing-
+  credentials error). Step definitions reuse the C1 fixtures.
+- **F7.7.C3** — Per-probe unit-coverage audit. Every probe gets happy +
+  failure paths against a fake `OvhClient`. Target >85% coverage on
+  `preflight.py`.
+
+**Phase 4 — Config validation hardening**:
+- **F7.7.D1** — Field validators (`gt`/`ge`/`le`) on every numeric in
+  `domain/models/config.py`; `Literal["cpu", "cuda"]` on `device`; pattern
+  on `experiment.id`; cross-field `model_validator` enforcing
+  `minibatch_size <= frames_per_batch`. Registry-aware type checks
+  (`scenario.type ∈ available_scenarios()`, etc.) so an unknown type fails
+  at parse time, not at runner-instantiation time.
+
+**Phase 5 — Audit**:
+- **F7.7.E1** — Mock / placeholder / phase-marker cleanup. Update stale
+  "Phase A" / "Phase B" / "Phase C" wording in `preflight.py`,
+  `submit.py`, `code_uploader.py`. Delete the placeholder
+  `render_navigation_params` / `_transport_params` / `_flocking_params`
+  shells (subsumed by B2). CI guard test asserts no `Phase B`/`Phase C`
+  markers remain in `src/`.
+
+**Phase 6 — Visual & data polish** (original F7.7 scope, retained):
+- **F7.7.K** — Smoke-data regen: regenerate the canonical demo run with a
+  longer config (e.g. `max_iters: 5`, `record_video: true`) so the
+  dashboard ships with non-degenerate charts/videos out of the box. Drop
+  the smoke runs that produced flat M-values once a richer reference exists.
+- **F7.7.L** — Sweep visual nits surfaced during F7.1–F7.6 builds — one
+  consolidated polish round rather than per-page PRs.
 
 > **Auto-regen videos on OVH pullback (landed early as part of F7.4 review):**
 > ``OvhRunner.run()`` now auto-invokes ``application.regenerate_videos`` on

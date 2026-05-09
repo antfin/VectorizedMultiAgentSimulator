@@ -3,9 +3,10 @@
 Launch: streamlit run Dashboard.py
 """
 
-import streamlit as st
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 st.set_page_config(
     page_title="Multi-Robot Discovery K-N Experiment",
@@ -21,18 +22,18 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-from src.theme import apply_theme
 from src.config import RESULTS_DIR
-from src.storage import ExperimentStorage
-from src.consolidate import load_latest_csv, list_experiments_with_data
+from src.consolidate import list_experiments_with_data, load_latest_csv
 from src.plotting import (
-    set_style,
     POLIMI_DARK_BLUE,
     POLIMI_GREEN,
-    POLIMI_RED,
     POLIMI_ORANGE,
+    POLIMI_RED,
+    set_style,
 )
+from src.storage import ExperimentStorage
+
+from src.theme import apply_theme
 
 apply_theme(title="Multi-Robot Discovery K-N Experiment")
 

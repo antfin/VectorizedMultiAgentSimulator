@@ -9,22 +9,22 @@ import pandas as pd
 import pytest
 
 from src.plotting import (
-    METRIC_LABELS,
     COLORS,
     LABELS,
-    set_style,
-    plot_sweep_heatmap,
-    plot_training_curves,
-    plot_seed_variance,
+    METRIC_LABELS,
     plot_baseline_comparison,
-    plot_metric_radar,
-    plot_success_vs_tokens,
-    plot_training_dashboard,
     plot_baseline_comparison_bars,
     plot_baseline_grouped_bars,
+    plot_metric_radar,
     plot_results_comparison,
+    plot_seed_variance,
+    plot_success_vs_tokens,
+    plot_sweep_heatmap,
     plot_sweep_overview,
+    plot_training_curves,
+    plot_training_dashboard,
     save_figure,
+    set_style,
 )
 
 

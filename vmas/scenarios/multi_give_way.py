@@ -279,10 +279,7 @@ class Scenario(BaseScenario):
 
         if self.obs_noise > 0:
             for i, obs in enumerate(observations):
-                noise = torch.zeros(
-                    *obs.shape,
-                    device=self.world.device,
-                ).uniform_(
+                noise = torch.zeros(*obs.shape, device=self.world.device,).uniform_(
                     -self.obs_noise,
                     self.obs_noise,
                 )

@@ -138,10 +138,7 @@ class Scenario(BaseScenario):
                             (self.world.batch_dim, self.world.dim_p),
                             device=self.world.device,
                             dtype=torch.float32,
-                        ).uniform_(
-                            -self.bound,
-                            self.bound,
-                        )[coll]
+                        ).uniform_(-self.bound, self.bound,)[coll]
                         a.state.vel[coll] = 0.0
 
         if agent.adversary:
@@ -179,7 +176,9 @@ class Scenario(BaseScenario):
             self.world.batch_dim, device=self.world.device, dtype=torch.float32
         )
         agents = self.good_agents()
-        if self.shape_adversary_rew:  # reward can optionally be shaped (decreased reward for increased distance from agents)
+        if (
+            self.shape_adversary_rew
+        ):  # reward can optionally be shaped (decreased reward for increased distance from agents)
             rew -= (
                 0.1
                 * torch.min(

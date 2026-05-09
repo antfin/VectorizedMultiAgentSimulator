@@ -58,7 +58,9 @@ class RunStateRecord(BaseModel):
     def transition_to(self, new_state: RunState, ts: datetime) -> "RunStateRecord":
         """Return a new record with the transition appended; raises if illegal."""
         if new_state not in _VALID_TRANSITIONS[self.state]:
-            raise ValueError(f"invalid transition {self.state.value} -> {new_state.value}")
+            raise ValueError(
+                f"invalid transition {self.state.value} -> {new_state.value}"
+            )
         return RunStateRecord(
             state=new_state,
             transitions=[

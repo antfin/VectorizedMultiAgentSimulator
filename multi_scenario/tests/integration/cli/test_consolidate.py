@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-from typer.testing import CliRunner
 
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
 from multi_scenario.cli import app
@@ -14,6 +13,7 @@ from multi_scenario.domain.models import (
     RunStateRecord,
     RunStateTransition,
 )
+from typer.testing import CliRunner
 
 
 def _seed_done_run(parent: Path, run_id: str) -> None:

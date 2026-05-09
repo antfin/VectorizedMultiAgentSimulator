@@ -4,6 +4,12 @@ Holds the deployment-side knobs that don't belong in per-experiment YAMLs:
 GPU type / count, region, container image, S3 buckets + mount points, and
 the entry-point script. The experiment YAML stays portable across runners;
 this file pins the OVH-specific defaults.
+
+S3 *credential* + *endpoint* config (for the boto3-based ``S3StorageAdapter``
+used by F6.3 sync-to-local) lives in a separate :class:`S3StorageConfig`
+schema — kept independent so the OVH-CLI-only preflight path doesn't drag
+boto3 into the frontend, and so the legacy boto3 path can target either OVH
+Object Storage or AWS S3 by swapping that file alone.
 """
 
 from pathlib import Path

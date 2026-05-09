@@ -25,6 +25,7 @@ class VmasTransportAdapter(VmasScenarioBase):
             "n_agents": 4,
             "n_packages": 1,
             "package_mass": 50,
+            "max_steps": 100,
         }
 
     def success_predicate(self, rollout: Any) -> Any:

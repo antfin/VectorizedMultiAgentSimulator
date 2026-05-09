@@ -43,7 +43,9 @@ class LocalStorageAdapter(StorageAdapterBase):
 
     def save_report(self, run_dir: Path, report: RunReport) -> None:
         """Write the run-end manifest to ``output/report.json`` (F2.10)."""
-        self._write_text(run_dir, "output/report.json", report.model_dump_json(indent=2))
+        self._write_text(
+            run_dir, "output/report.json", report.model_dump_json(indent=2)
+        )
 
     def save_eval_episodes(self, run_dir: Path, rollout: dict[str, Any]) -> None:
         """Write per-episode raw eval data to ``output/eval_episodes.json`` (F2.10.1).
@@ -60,7 +62,9 @@ class LocalStorageAdapter(StorageAdapterBase):
                 continue
             value = rollout[key]
             payload[key] = value.tolist() if hasattr(value, "tolist") else value
-        self._write_text(run_dir, "output/eval_episodes.json", json.dumps(payload, indent=2))
+        self._write_text(
+            run_dir, "output/eval_episodes.json", json.dumps(payload, indent=2)
+        )
 
     def save_eval_run(self, run_dir: Path, record: EvalRunRecord) -> None:
         """Write a re-evaluation record to ``output/eval_runs/<eval_id>.json`` (F5.8)."""

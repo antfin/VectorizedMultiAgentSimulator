@@ -1,7 +1,7 @@
 """Tests for the report module (generate_run_report, generate_sweep_report)."""
 
 from src.config import ExperimentSpec, SweepConfig, TaskConfig, TrainConfig
-from src.report import METRIC_DETAILS, generate_run_report, generate_sweep_report
+from src.report import generate_run_report, generate_sweep_report, METRIC_DETAILS
 
 
 # ── Helpers ───────────────────────────────────────────────────────

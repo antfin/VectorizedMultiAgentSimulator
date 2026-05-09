@@ -175,7 +175,9 @@ def _get_closest_points_line_line(
         torch.stack([line2_rot, line2_rot, line_rot, line_rot], dim=0),
         torch.stack([line2_length, line2_length, line_length, line_length], dim=0),
         torch.stack([point_a1, point_a2, point_b1, point_b2], dim=0),
-    ).unbind(0)
+    ).unbind(
+        0
+    )
 
     point_pairs = (
         (point_a1, point_a1_line_b),

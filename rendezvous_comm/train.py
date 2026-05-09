@@ -109,8 +109,8 @@ def main():
 
     # Rebuild videos for all completed runs
     if args.rebuild_videos:
-        from src.storage import ExperimentStorage
         from src.runner import generate_run_videos
+        from src.storage import ExperimentStorage
 
         storage = ExperimentStorage(spec.exp_id)
         run_dirs = storage.list_run_dirs()

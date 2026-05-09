@@ -172,7 +172,9 @@ def load_runs_inventory(run_dir: Path) -> dict[str, Any]:
     return out
 
 
-def categorise_bm_files(bm_inv: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def categorise_bm_files(
+    bm_inv: list[dict[str, Any]]
+) -> dict[str, list[dict[str, Any]]]:
     """Group BenchMARL scalar CSVs by prefix (train_/eval_/collection_/timers_/counters_)."""
     groups: dict[str, list[dict[str, Any]]] = {
         "train_": [],
@@ -280,13 +282,19 @@ def render_doc(run_dirs: list[Path], inv0: dict[str, Any]) -> str:
     # eval_episodes can have a long ``targets_covered`` series (100 zeros at random init).
     # Show with the discovery-specific arrays elided after the first 3 values for readability.
     ep = inv0["eval_episodes"]
-    add(f"### `{ep['path']}` — per-episode raw eval data (re-aggregatable into M1-M9)\n")
-    add(f"Size: **{fmt_size(ep['size'])}** · `json.loads` load time: **{ep['load_ms']:.2f} ms**\n")
+    add(
+        f"### `{ep['path']}` — per-episode raw eval data (re-aggregatable into M1-M9)\n"
+    )
+    add(
+        f"Size: **{fmt_size(ep['size'])}** · `json.loads` load time: **{ep['load_ms']:.2f} ms**\n"
+    )
     parsed = json.loads(ep["content"])
     if "targets_covered" in parsed and parsed["targets_covered"]:
         head = parsed["targets_covered"][0][:3]
         full_len = len(parsed["targets_covered"][0])
-        parsed["targets_covered"] = [head + [f"... ({full_len - 3} more entries elided)"]]
+        parsed["targets_covered"] = [
+            head + [f"... ({full_len - 3} more entries elided)"]
+        ]
     add("\n```json\n" + json.dumps(parsed, indent=2) + "\n```\n")
 
     show_full_json(
@@ -311,7 +319,9 @@ def render_doc(run_dirs: list[Path], inv0: dict[str, Any]) -> str:
         add("### `output/eval_steps.csv` — NOT PRODUCED (flag was off)\n")
 
     # 3. BenchMARL native scalar CSVs
-    add("\n## 3. BenchMARL native scalars (`output/benchmarl/<bm_run>/scalars/*.csv`)\n")
+    add(
+        "\n## 3. BenchMARL native scalars (`output/benchmarl/<bm_run>/scalars/*.csv`)\n"
+    )
     bm = inv0["benchmarl_scalars"]
     if bm is None:
         add("No BenchMARL scalars dir found.\n")
@@ -365,7 +375,9 @@ def render_doc(run_dirs: list[Path], inv0: dict[str, Any]) -> str:
     add("| Artefact | Size | Load time |\n|---|---|---|\n")
     for label in ("config", "provenance", "metrics", "eval_episodes", "report"):
         info = inv0[label]
-        add(f"| `{info['path']}` | {fmt_size(info['size'])} | {info['load_ms']:.2f} ms |\n")
+        add(
+            f"| `{info['path']}` | {fmt_size(info['size'])} | {info['load_ms']:.2f} ms |\n"
+        )
     if inv0["eval_steps"]:
         e = inv0["eval_steps"]
         add(

@@ -146,10 +146,7 @@ class Scenario(BaseScenario):
                 dtype=torch.float32,
                 device=self.world.device,
             )
-            + torch.zeros(
-                self.world.dim_p,
-                device=self.world.device,
-            ).uniform_(
+            + torch.zeros(self.world.dim_p, device=self.world.device,).uniform_(
                 -self.spawn_pos_noise,
                 self.spawn_pos_noise,
             ),
@@ -171,10 +168,7 @@ class Scenario(BaseScenario):
                 dtype=torch.float32,
                 device=self.world.device,
             )
-            + torch.zeros(
-                self.world.dim_p,
-                device=self.world.device,
-            ).uniform_(
+            + torch.zeros(self.world.dim_p, device=self.world.device,).uniform_(
                 -self.spawn_pos_noise,
                 self.spawn_pos_noise,
             ),
@@ -324,10 +318,7 @@ class Scenario(BaseScenario):
 
         if self.obs_noise > 0:
             for i, obs in enumerate(observations):
-                noise = torch.zeros(
-                    *obs.shape,
-                    device=self.world.device,
-                ).uniform_(
+                noise = torch.zeros(*obs.shape, device=self.world.device,).uniform_(
                     -self.obs_noise,
                     self.obs_noise,
                 )

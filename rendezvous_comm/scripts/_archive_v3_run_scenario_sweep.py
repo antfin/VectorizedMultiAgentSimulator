@@ -38,8 +38,8 @@ try:
 except ImportError:
     pass
 
-from src.lero.llm_client import LLMClient  # noqa: E402
 from src.lero.config import LLMConfig  # noqa: E402
+from src.lero.llm_client import LLMClient  # noqa: E402
 from tests.scenarios.fixtures import ALL_SCENARIOS  # noqa: E402
 from tests.scenarios.runner import check_expectations, run_scenario  # noqa: E402
 

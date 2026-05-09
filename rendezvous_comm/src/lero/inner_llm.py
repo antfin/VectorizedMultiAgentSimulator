@@ -24,11 +24,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from .codegen import (
-    _CODE_BLOCK_RE,
-    CandidateCode,
-    validate_function,
-)
+from .codegen import _CODE_BLOCK_RE, CandidateCode, validate_function
 from .llm_client import LLMClient
 from .schemas import InnerLLMOutput
 

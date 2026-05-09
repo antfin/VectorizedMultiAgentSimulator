@@ -255,16 +255,16 @@ class Scenario(BaseScenario):
             for a in self.world.agents:
                 for passage in self.passages:
                     if passage.collide:
-                        self.collision_rew[self.world.is_overlapping(a, passage)] += (
-                            self.collision_reward
-                        )
+                        self.collision_rew[
+                            self.world.is_overlapping(a, passage)
+                        ] += self.collision_reward
 
             # Ball collisions
             for p in self.passages:
                 if p.collide:
-                    self.collision_rew[self.world.is_overlapping(p, self.ball)] += (
-                        self.collision_reward
-                    )
+                    self.collision_rew[
+                        self.world.is_overlapping(p, self.ball)
+                    ] += self.collision_reward
 
             self.rew = self.pos_rew + self.collision_rew
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.runner import _write_sweep_csv, _extract_training_dynamics
+from src.runner import _extract_training_dynamics, _write_sweep_csv
 from src.storage import ExperimentStorage, RunStorage
 
 

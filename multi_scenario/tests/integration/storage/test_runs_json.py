@@ -24,7 +24,9 @@ def _ts(minute: int = 0) -> datetime:
     return datetime(2026, 5, 7, 14, minute, 0, tzinfo=timezone.utc)
 
 
-def _result(run_id: str, exp_id: str, algo: str, m1: float | None, m2: float) -> ExperimentResult:
+def _result(
+    run_id: str, exp_id: str, algo: str, m1: float | None, m2: float
+) -> ExperimentResult:
     return ExperimentResult(
         run_id=run_id,
         exp_id=exp_id,
@@ -115,7 +117,11 @@ def test_consolidate_writes_runs_json(tmp_path: Path) -> None:
     manifest = RunsManifest.model_validate_json(out.read_text(encoding="utf-8"))
     assert manifest.scope.n_runs == 3
     assert manifest.csv == "runs.csv"
-    assert {r.run_id for r in manifest.runs} == {"smoke_a_s0", "smoke_a_s1", "smoke_b_s0"}
+    assert {r.run_id for r in manifest.runs} == {
+        "smoke_a_s0",
+        "smoke_a_s1",
+        "smoke_b_s0",
+    }
 
 
 def test_scope_aggregates_unique_exp_ids_seeds_algorithms(tmp_path: Path) -> None:
@@ -176,7 +182,9 @@ def test_runs_entries_link_to_per_run_report(tmp_path: Path) -> None:
 
 def test_runs_entry_report_none_when_missing(tmp_path: Path) -> None:
     """If a run has no report.json yet, its runs[] entry has report=None."""
-    _seed_run(tmp_path, "no_report_s0", "smoke", "mappo", _done_state(), write_report=False)
+    _seed_run(
+        tmp_path, "no_report_s0", "smoke", "mappo", _done_state(), write_report=False
+    )
 
     manifest = RunsManifest.model_validate_json(
         RunsJsonWriter().consolidate(tmp_path).read_text(encoding="utf-8")
@@ -207,7 +215,9 @@ def test_atomic_overwrite_creates_previous(tmp_path: Path) -> None:
 
     assert (tmp_path / "runs.json").is_file()
     assert (tmp_path / "runs.previous.json").is_file()
-    assert (tmp_path / "runs.previous.json").read_text(encoding="utf-8") == first_content
+    assert (tmp_path / "runs.previous.json").read_text(
+        encoding="utf-8"
+    ) == first_content
 
 
 def test_empty_dir_writes_empty_manifest(tmp_path: Path) -> None:

@@ -6,11 +6,11 @@ import pytest
 import yaml
 
 from src.lero.meta.failmode import (
-    SLOT_POLICY_MAP,
+    classify_inner_result,
     FailMode,
     FailModeThresholds,
-    classify_inner_result,
     pick_slot_to_edit,
+    SLOT_POLICY_MAP,
 )
 from src.lero.meta.provenance import (
     lineage,
@@ -22,11 +22,11 @@ from src.lero.meta.provenance import (
     write_frozen_hashes,
 )
 from src.lero.meta.trigger import (
+    should_meta_iterate,
     TemplateRecord,
     TriggerConfig,
     TriggerDecision,
     TriggerReason,
-    should_meta_iterate,
 )
 from src.lero.prompts.loader import FrozenSlotMismatch, PromptLoader
 

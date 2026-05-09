@@ -11,9 +11,9 @@ from moto import mock_aws
 
 from multi_scenario.adapters.storage.code_uploader import (
     CODE_HASH_KEY,
-    DEFAULT_EXCLUDE_PATTERNS,
     CodeUploader,
     compute_local_code_hash,
+    DEFAULT_EXCLUDE_PATTERNS,
 )
 from multi_scenario.adapters.storage.s3 import S3StorageAdapter
 from multi_scenario.domain.models import S3StorageConfig
@@ -27,17 +27,21 @@ def _mk_repo(root: Path) -> None:
     (root / "src" / "multi_scenario").mkdir(parents=True)
     (root / "src" / "multi_scenario" / "cli.py").write_text("# cli", encoding="utf-8")
     (root / "src" / "multi_scenario" / "__pycache__").mkdir()
-    (root / "src" / "multi_scenario" / "__pycache__" / "x.pyc").write_text("c", encoding="utf-8")
+    (root / "src" / "multi_scenario" / "__pycache__" / "x.pyc").write_text(
+        "c", encoding="utf-8"
+    )
     (root / "experiments" / "discovery" / "baseline" / "configs").mkdir(parents=True)
-    (root / "experiments" / "discovery" / "baseline" / "configs" / "mappo_smoke.yaml").write_text(
-        "x: 1", encoding="utf-8"
-    )
+    (
+        root / "experiments" / "discovery" / "baseline" / "configs" / "mappo_smoke.yaml"
+    ).write_text("x: 1", encoding="utf-8")
     (root / "experiments" / "discovery" / "baseline" / "results").mkdir()
-    (root / "experiments" / "discovery" / "baseline" / "results" / "old.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    (
+        root / "experiments" / "discovery" / "baseline" / "results" / "old.json"
+    ).write_text("{}", encoding="utf-8")
     # Per-run folder (matches the §3.5.2 ``<run_id>__<timestamp>`` pattern).
-    run_folder = root / "experiments" / "discovery" / "baseline" / "smoke_s0__20260507_0000"
+    run_folder = (
+        root / "experiments" / "discovery" / "baseline" / "smoke_s0__20260507_0000"
+    )
     run_folder.mkdir()
     (run_folder / "run_state.json").write_text("{}", encoding="utf-8")
     (root / "pyproject.toml").write_text("[project]\nname='ms'", encoding="utf-8")
@@ -66,7 +70,9 @@ def test_upload_includes_curated_subset(tmp_path: Path, mocked_s3_with_bucket) -
 
     keys = sorted(
         obj["Key"]
-        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
+        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get(
+            "Contents", []
+        )
     )
     assert f"{_PREFIX}/src/multi_scenario/cli.py" in keys
     assert f"{_PREFIX}/pyproject.toml" in keys
@@ -76,14 +82,18 @@ def test_upload_includes_curated_subset(tmp_path: Path, mocked_s3_with_bucket) -
     assert Path("src/multi_scenario/cli.py") in uploaded
 
 
-def test_upload_excludes_pycache_and_results(tmp_path: Path, mocked_s3_with_bucket) -> None:
+def test_upload_excludes_pycache_and_results(
+    tmp_path: Path, mocked_s3_with_bucket
+) -> None:
     """__pycache__/*.pyc and results/* never appear in S3."""
     _mk_repo(tmp_path)
     _make_uploader(mocked_s3_with_bucket).upload(tmp_path)
 
     keys = [
         obj["Key"]
-        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
+        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get(
+            "Contents", []
+        )
     ]
     assert not any("__pycache__" in k for k in keys), keys
     assert not any(k.endswith(".pyc") for k in keys), keys
@@ -97,12 +107,16 @@ def test_upload_skips_run_folders(tmp_path: Path, mocked_s3_with_bucket) -> None
 
     keys = [
         obj["Key"]
-        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
+        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get(
+            "Contents", []
+        )
     ]
     assert not any("smoke_s0__20260507_0000" in k for k in keys), keys
 
 
-def test_dry_run_returns_list_without_uploading(tmp_path: Path, mocked_s3_with_bucket) -> None:
+def test_dry_run_returns_list_without_uploading(
+    tmp_path: Path, mocked_s3_with_bucket
+) -> None:
     """``dry_run=True`` returns paths but uploads nothing."""
     _mk_repo(tmp_path)
     uploader = _make_uploader(mocked_s3_with_bucket)
@@ -139,7 +153,9 @@ def test_custom_include_files_only(tmp_path: Path, mocked_s3_with_bucket) -> Non
     assert out == [Path("README.md")]
     keys = sorted(
         obj["Key"]
-        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
+        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get(
+            "Contents", []
+        )
     )
     assert keys == [f"{_PREFIX}/.code_hash", f"{_PREFIX}/README.md"]
 
@@ -151,9 +167,9 @@ def test_upload_writes_code_hash_blob_matching_local_compute(
     _mk_repo(tmp_path)
     _make_uploader(mocked_s3_with_bucket).upload(tmp_path)
     blob = (
-        mocked_s3_with_bucket.get_object(Bucket=_BUCKET, Key=f"{_PREFIX}/{CODE_HASH_KEY}")[
-            "Body"
-        ]
+        mocked_s3_with_bucket.get_object(
+            Bucket=_BUCKET, Key=f"{_PREFIX}/{CODE_HASH_KEY}"
+        )["Body"]
         .read()
         .decode("utf-8")
     )
@@ -166,6 +182,8 @@ def test_local_hash_changes_when_a_file_changes(tmp_path: Path) -> None:
     """Sanity: editing a tracked file shifts the local hash (so drift is detectable)."""
     _mk_repo(tmp_path)
     h1 = compute_local_code_hash(tmp_path)
-    (tmp_path / "src" / "multi_scenario" / "cli.py").write_text("# edited", encoding="utf-8")
+    (tmp_path / "src" / "multi_scenario" / "cli.py").write_text(
+        "# edited", encoding="utf-8"
+    )
     h2 = compute_local_code_hash(tmp_path)
     assert h1 != h2

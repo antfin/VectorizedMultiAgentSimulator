@@ -95,7 +95,9 @@ def test_evaluate_writes_long_format_csv_when_flag_on(tmp_path: Path):
     assert out.is_file()
     df = pd.read_csv(out)
     # Universal columns + at least one action dim.
-    assert {"env_idx", "step", "agent", "reward", "done", "terminated"} <= set(df.columns)
+    assert {"env_idx", "step", "agent", "reward", "done", "terminated"} <= set(
+        df.columns
+    )
     assert any(c.startswith("action_d") for c in df.columns)
     # Rows = num_envs × T × n_agents (smoke: 1 × max_steps × 2).
     assert len(df) > 0

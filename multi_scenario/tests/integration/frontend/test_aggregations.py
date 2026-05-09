@@ -15,7 +15,6 @@ from multi_scenario.frontend.aggregations import (
     flatten_config,
 )
 
-
 # ── aggregate_metric ──────────────────────────────────────────────────
 
 
@@ -31,20 +30,28 @@ def _df_two_scen_two_algo() -> pd.DataFrame:
 
 
 def test_aggregate_metric_groups_by_two_axes():
-    out = aggregate_metric(_df_two_scen_two_algo(), "M1_success_rate", by=["scenario", "algorithm"])
+    out = aggregate_metric(
+        _df_two_scen_two_algo(), "M1_success_rate", by=["scenario", "algorithm"]
+    )
     assert set(out.columns) == {"scenario", "algorithm", "mean", "sem"}
     # 3 groups: (discovery, mappo), (discovery, ippo), (navigation, mappo)
     assert len(out) == 3
 
 
 def test_aggregate_metric_mean_is_correct():
-    out = aggregate_metric(_df_two_scen_two_algo(), "M1_success_rate", by=["scenario", "algorithm"])
-    discovery_mappo = out[(out["scenario"] == "discovery") & (out["algorithm"] == "mappo")]
+    out = aggregate_metric(
+        _df_two_scen_two_algo(), "M1_success_rate", by=["scenario", "algorithm"]
+    )
+    discovery_mappo = out[
+        (out["scenario"] == "discovery") & (out["algorithm"] == "mappo")
+    ]
     assert discovery_mappo["mean"].iloc[0] == pytest.approx(0.7)
 
 
 def test_aggregate_metric_returns_empty_when_metric_missing():
-    out = aggregate_metric(_df_two_scen_two_algo(), "M99_does_not_exist", by=["scenario"])
+    out = aggregate_metric(
+        _df_two_scen_two_algo(), "M99_does_not_exist", by=["scenario"]
+    )
     assert out.empty
     assert list(out.columns) == ["scenario", "mean", "sem"]
 
@@ -56,7 +63,9 @@ def test_aggregate_metric_supports_median():
         by=["scenario", "algorithm"],
         how="median",
     )
-    discovery_mappo = out[(out["scenario"] == "discovery") & (out["algorithm"] == "mappo")]
+    discovery_mappo = out[
+        (out["scenario"] == "discovery") & (out["algorithm"] == "mappo")
+    ]
     assert discovery_mappo["mean"].iloc[0] == pytest.approx(0.7)
 
 

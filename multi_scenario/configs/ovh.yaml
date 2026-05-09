@@ -1,39 +1,77 @@
 # OVH AI Training deployment config — loaded by ``OvhJobConfig.from_yaml``.
 #
-# Fill in the bucket names + region for your project. Sensitive data
-# (tokens, passwords) NEVER goes here — use ``ovhai login`` for auth and
-# the standard ``~/.aws/credentials`` for S3.
+# This is the *single source of truth* for OVH/S3 settings. Per-experiment
+# YAMLs (e.g. ``experiments/<scenario>/<folder>/configs/*.yaml``) stay
+# portable across runners; this file pins the OVH-specific defaults.
+#
+# Sensitive data (API tokens, S3 access keys) NEVER goes here — use
+# ``ovhai login`` for OVH auth and the standard ``~/.aws/credentials``
+# (or env vars ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY``) for S3.
 
-region: GRA           # GRA / BHS / SBG / WAW
+# ── OVH region ───────────────────────────────────────────────
+# Run ``ovhai datastore list`` to see available regions.
+region: GRA           # GRA / BHS / SBG / WAW / DE / UK / SGP
+
+# ── Container ────────────────────────────────────────────────
 image: ovhcom/ai-training-pytorch:latest
-flavor: ai1-1-gpu
-gpu_type: V100S
+flavor: ai1-1-gpu     # ovhai flavor — see ``ovhai capabilities flavor list``
+gpu_type: V100S       # cost-registry key (display only; flavor is what ovhai uses)
 n_gpu: 1
 
-# S3 buckets — must already exist in your OVH Object Storage tenant.
-# ``bucket_code`` is mounted ``ro`` at submit time; ``bucket_results``
-# gets one prefix per run (``<exp_id>_s<seed>/``) so parallel jobs
-# don't clobber each other during OVH's FINALIZING sync.
-bucket_code: multi-scenario-code
-bucket_results: multi-scenario-results
+# ── S3 buckets ───────────────────────────────────────────────
+# Listed via ``ovhai bucket list <region>``. ``bucket_code`` is mounted
+# read-only at submit time; ``bucket_results`` gets one prefix per run
+# (``<exp_id>_s<seed>/``) so parallel jobs don't clobber each other
+# during OVH's FINALIZING sync (the rendezvous_comm 2026-04-16 lesson).
+bucket_code: ms-code
+bucket_results: ms-results
+
+# Mount points inside the OVH container. ``runtime.storage.path`` in
+# per-experiment YAMLs typically resolves to ``mount_results``.
 mount_code: /workspace/code
 mount_results: /workspace/results
 
+# NOTE: S3-credential / endpoint config for the legacy boto3 ``S3StorageAdapter``
+# (used by F6.3 sync-to-local) lives in a separate ``configs/s3.yaml`` →
+# :class:`S3StorageConfig`. The Submit-page preflight probes go through the
+# ovhai CLI directly (F7.7.A2), so no AWS-style S3 keys are needed for them —
+# ``ovhai login`` is sufficient.
+
+# ── Entry point ──────────────────────────────────────────────
 # Bash command that runs INSIDE the container. ``HOME=/tmp`` is mandatory
-# (pip can't write to /workspace). Substitution tokens: ``{mount_code}`` /
-# ``{mount_results}`` / ``{yaml_path_in_container}``.
+# (pip can't write to /workspace). Substitution tokens:
+#   ``{mount_code}``               — bucket_code mount path
+#   ``{mount_results}``            — bucket_results mount path
+#   ``{yaml_path_in_container}``   — absolute path of the experiment YAML
+#                                    inside the container, derived from
+#                                    OvhRunner.yaml_path_in_repo + mount_code
 default_runner: |
   export HOME=/tmp && pip install -e {mount_code} && cd {mount_code} && python -m multi_scenario.cli run {yaml_path_in_container}
 
+# ── Polling + cost gate ──────────────────────────────────────
 poll_interval_sec: 30.0
-timeout_sec: 7200.0
-cost_cap_eur: 5.0
+timeout_sec: 7200.0    # 2h default; bump for long matrix cells
+cost_cap_eur: 5.0      # F6.7 sweep gate; ``--yes`` required if exceeded
 
-# Cost registry — wrong ``gpu_type`` fails loudly via validate_gpu_choice.
+# ── GPU cost registry ────────────────────────────────────────
+# Wrong ``gpu_type`` fails loudly via ``OvhJobConfig.validate_gpu_choice``.
+# Prices: https://www.ovhcloud.com/en/public-cloud/ai-training/ (2026-Q1).
 gpu_models:
   V100S:
-    eur_per_hour: 2.5
-    description: NVIDIA V100S 32GB
+    eur_per_hour: 2.10
+    description: NVIDIA Tesla V100S 32GB (ai1-1-gpu)
+  A100:
+    eur_per_hour: 2.75
+    description: NVIDIA Ampere A100 80GB (a100-1-gpu)
+  A10:
+    eur_per_hour: 1.40
+    description: NVIDIA Ampere A10 24GB (a10-1-gpu)
+  H100:
+    eur_per_hour: 3.07
+    description: NVIDIA H100 80GB (h100-1-gpu)
+  L40S:
+    eur_per_hour: 1.93
+    description: NVIDIA L40s 48GB (l40s-1-gpu)
   CPU:
     eur_per_hour: 0.0
-    description: CPU-only (smoke debugging)
+    description: CPU-only (smoke debugging, ai1-1-cpu)

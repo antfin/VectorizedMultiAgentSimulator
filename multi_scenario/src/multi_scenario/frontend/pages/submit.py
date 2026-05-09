@@ -1,16 +1,16 @@
-"""F7.5 Phase A — Submit page (5-step workflow redesign).
+"""Submit page — 5-step workflow.
 
 Five always-visible cards:
 
 1. **Pick** — scenario / folder / config cascade picker.
 2. **Inspect & edit** — pre-filled accordion form with dirty detection.
 3. **Save** — auto-skipped if clean; "save as new" forced if edits exist.
-4. **Preflight** — mocked LEDs (real probes land in Phase B/C).
-5. **Submit** — gated until preflight green.
+4. **Preflight** — three rolled-up LEDs (Configuration / System / Storage)
+   driven by real probes; clicking a failure expands its root-cause detail.
+5. **Submit** — gated until preflight green; dispatches to LocalRunner or
+   OvhRunner depending on ``SubmitState.submit_target()``.
 
-Each card shows a status badge derived from :class:`SubmitState`. The page
-is still **Phase A** — the Submit button is disabled with a "Phase B"
-tooltip and Download YAML stays as the practical fallback.
+Each card shows a status badge derived from :class:`SubmitState`.
 """
 
 # pylint: disable=wrong-import-position,invalid-name
@@ -22,16 +22,24 @@ from typing import Any
 
 import streamlit as st
 import yaml
-from pydantic import ValidationError
 
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
+from multi_scenario.application.factories import (
+    available_algorithms,
+    available_runners,
+    available_scenarios,
+    runner_spec,
+)
 from multi_scenario.domain.models import ExperimentConfig, RunId
-from multi_scenario.frontend.forms import ALGORITHM_FORMS, SCENARIO_FORMS
+from multi_scenario.frontend.forms import (
+    render_algorithm_params,
+    render_scenario_params,
+)
 from multi_scenario.frontend.preflight import (
-    CheckStatus,
     applicable_checks,
     category_status,
+    CheckStatus,
     group_by_category,
     run_real_local_checks,
     run_real_ovh_checks,
@@ -41,11 +49,12 @@ from multi_scenario.frontend.sidebar import (
     render_active_root_caption,
 )
 from multi_scenario.frontend.submit_workflow import (
-    SubmitState,
     diff_summary,
     list_configs_grouped,
+    SubmitState,
 )
 from multi_scenario.frontend.theme import apply_theme
+from pydantic import ValidationError
 
 apply_theme(title="Submit", subtitle="Configure and launch a new run")
 render_active_root_caption()
@@ -174,14 +183,23 @@ def _try_load_ovh_config() -> tuple[Any, str | None]:
         return None, f"failed to parse {candidate}: {exc}"
 
 
-def _run_ovh_submission(cfg_dict: dict[str, Any]) -> None:
-    """Submit an OVH job (no polling); record status + job_id for the panel."""
+def _run_ovh_submission(cfg_dict: dict[str, Any], yaml_path_in_repo: str) -> None:
+    """Submit an OVH job (no polling); record status + job_id for the panel.
+
+    ``yaml_path_in_repo`` is the per-experiment config relative to the repo
+    root (NOT ``configs/ovh.yaml`` — that's the OVH deployment cfg loaded
+    separately by ``OvhJobConfig.from_yaml``). The runner concatenates it
+    with ``OvhJobConfig.mount_code`` to derive the in-container path the
+    bash entry point invokes.
+    """
     # pylint: disable=import-outside-toplevel
     from multi_scenario.adapters.runners.ovh import OvhRunner
     from multi_scenario.adapters.runners.ovh_cli import OvhClient
     from multi_scenario.adapters.secrets.fernet import FernetSecretsAdapter
+    from multi_scenario.application.config_validation import validate_known_types
 
     cfg = ExperimentConfig.model_validate(cfg_dict)
+    validate_known_types(cfg)
     ovh_cfg, err = _try_load_ovh_config()
     if err is not None:
         st.session_state["submit_submission_status"] = {
@@ -194,24 +212,33 @@ def _run_ovh_submission(cfg_dict: dict[str, Any]) -> None:
     run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
     storage_root = (
-        Path(cfg.runtime.storage.path) if cfg.runtime is not None else Path("experiments")
+        Path(cfg.runtime.storage.path)
+        if cfg.runtime is not None
+        else Path("experiments")
     )
     run_dir = storage_root / run_id.folder_name(timestamp)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     class _StreamlitLogger:
         # pylint: disable=missing-function-docstring,missing-class-docstring
-        def info(self, msg: str) -> None: ...
-        def debug(self, msg: str) -> None: ...
-        def warning(self, msg: str) -> None: ...
-        def error(self, msg: str) -> None: ...
+        def info(self, msg: str) -> None:
+            ...
+
+        def debug(self, msg: str) -> None:
+            ...
+
+        def warning(self, msg: str) -> None:
+            ...
+
+        def error(self, msg: str) -> None:
+            ...
 
     runner = OvhRunner(
         ovh_config=ovh_cfg,
         client=OvhClient(),
         secrets=FernetSecretsAdapter(),
         logger=_StreamlitLogger(),
-        yaml_path_in_repo="configs/ovh.yaml",  # placeholder; user can override later
+        yaml_path_in_repo=yaml_path_in_repo,
     )
     try:
         job_id = runner.submit(cfg, run_dir)
@@ -240,16 +267,22 @@ def _run_ovh_submission(cfg_dict: dict[str, Any]) -> None:
 def _run_local_submission(cfg_dict: dict[str, Any]) -> None:
     """Execute the run synchronously via LocalRunner; record status to session.
 
-    Phase B v1: blocks the page with ``st.spinner`` for the duration. v2 will
-    add background-thread + live-tail; for now this is the simplest reliable
-    path. The status panel below the Submit button reads the session_state
-    entry this writes.
+    Synchronous v1: blocks the page with ``st.spinner`` for the duration.
+    Background-thread + live-tail variant is **deferred** to a future
+    iteration; for now this is the simplest reliable path. The status
+    panel below the Submit button reads the session_state entry this writes.
     """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.application.config_validation import validate_known_types
+
     cfg = ExperimentConfig.model_validate(cfg_dict)
+    validate_known_types(cfg)
     run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
     storage_root = (
-        Path(cfg.runtime.storage.path) if cfg.runtime is not None else Path("experiments")
+        Path(cfg.runtime.storage.path)
+        if cfg.runtime is not None
+        else Path("experiments")
     )
     run_dir = storage_root / run_id.folder_name(timestamp)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -331,8 +364,10 @@ with st.container(border=True):
             SubmitState.reset()
             st.rerun()
     else:
-        # Active mode — render the cascading picker.
-        SCENARIOS = ("discovery", "navigation", "transport", "flocking")
+        # Active mode — render the cascading picker. Scenarios come from the
+        # backend factory so adding one in ``adapters/scenarios/`` shows up
+        # here automatically (F7.7.B2).
+        SCENARIOS = tuple(available_scenarios())
         pick_cols = st.columns(3)
         scenario = pick_cols[0].selectbox(
             "Scenario", SCENARIOS, format_func=str.capitalize, key="step1_scenario"
@@ -340,8 +375,12 @@ with st.container(border=True):
         folder_map = list_configs_grouped(experiments_dir, scenario)
         folder_options = list(folder_map.keys())
         if not folder_options:
-            pick_cols[1].selectbox("Folder", ["—"], disabled=True, key="step1_folder_empty")
-            pick_cols[2].selectbox("Config", ["—"], disabled=True, key="step1_config_empty")
+            pick_cols[1].selectbox(
+                "Folder", ["—"], disabled=True, key="step1_folder_empty"
+            )
+            pick_cols[2].selectbox(
+                "Config", ["—"], disabled=True, key="step1_config_empty"
+            )
             st.info(
                 f"No configs found under `{experiments_dir / scenario}`. "
                 "Add a YAML under `<scenario>/<folder>/configs/` to populate."
@@ -376,9 +415,7 @@ with st.container(border=True):
     s2_blocked = state.selected_path is None
     s2_active = state.active_step == 2  # never the "active" step strictly
     cols = st.columns([6, 2])
-    cols[0].markdown(
-        _step_badge(2, done=False, active=False, blocked=s2_blocked)
-    )
+    cols[0].markdown(_step_badge(2, done=False, active=False, blocked=s2_blocked))
     cols[0].markdown("**Inspect & edit**")
     if state.is_dirty:
         cols[1].markdown(
@@ -400,7 +437,9 @@ with st.container(border=True):
                 key="step2_exp_id",
             )
             seed = id_cols[1].number_input(
-                "Seed", min_value=0, step=1,
+                "Seed",
+                min_value=0,
+                step=1,
                 value=int(cfg_data.get("experiment", {}).get("seed", 0)),
                 key="step2_seed",
             )
@@ -416,36 +455,48 @@ with st.container(border=True):
                 height=80,
             )
 
-            # Scenario
+            # Scenario — type list + per-key widgets all flow from
+            # ``available_scenarios()`` + ``Scenario.default_params()`` so a
+            # new scenario adapter shows up here without editing this file.
             st.markdown("---")
             st.markdown("**Scenario**")
-            scen_type_default = cfg_data.get("scenario", {}).get("type", "discovery")
+            scen_choices = available_scenarios()
+            scen_type_default = cfg_data.get("scenario", {}).get(
+                "type", scen_choices[0]
+            )
             scen_type = st.selectbox(
                 "Scenario type",
-                list(SCENARIO_FORMS.keys()),
-                index=list(SCENARIO_FORMS.keys()).index(scen_type_default)
-                if scen_type_default in SCENARIO_FORMS else 0,
+                scen_choices,
+                index=scen_choices.index(scen_type_default)
+                if scen_type_default in scen_choices
+                else 0,
                 format_func=str.capitalize,
                 key="step2_scen_type",
             )
-            scen_params = SCENARIO_FORMS[scen_type](
+            scen_params = render_scenario_params(
+                scen_type,
                 cfg_data.get("scenario", {}).get("params", {}),
                 key_prefix=f"step2_scen_{scen_type}",
             )
 
-            # Algorithm
+            # Algorithm — same data-driven pattern as scenarios.
             st.markdown("---")
             st.markdown("**Algorithm**")
-            algo_type_default = cfg_data.get("algorithm", {}).get("type", "mappo")
+            algo_choices = available_algorithms()
+            algo_type_default = cfg_data.get("algorithm", {}).get(
+                "type", algo_choices[0]
+            )
             algo_type = st.selectbox(
                 "Algorithm type",
-                list(ALGORITHM_FORMS.keys()),
-                index=list(ALGORITHM_FORMS.keys()).index(algo_type_default)
-                if algo_type_default in ALGORITHM_FORMS else 0,
+                algo_choices,
+                index=algo_choices.index(algo_type_default)
+                if algo_type_default in algo_choices
+                else 0,
                 format_func=str.upper,
                 key="step2_algo_type",
             )
-            algo_params = ALGORITHM_FORMS[algo_type](
+            algo_params = render_algorithm_params(
+                algo_type,
                 cfg_data.get("algorithm", {}).get("params", {}),
                 key_prefix=f"step2_algo_{algo_type}",
             )
@@ -456,12 +507,14 @@ with st.container(border=True):
             tr_defaults = cfg_data.get("training", {})
             tr_cols = st.columns(3)
             max_iters = tr_cols[0].number_input(
-                "max_iters", min_value=1,
+                "max_iters",
+                min_value=1,
                 value=int(tr_defaults.get("max_iters", 10)),
                 key="step2_max_iters",
             )
             num_envs = tr_cols[1].number_input(
-                "num_envs", min_value=1,
+                "num_envs",
+                min_value=1,
                 value=int(tr_defaults.get("num_envs", 1)),
                 key="step2_num_envs",
             )
@@ -473,17 +526,20 @@ with st.container(border=True):
             )
             tr_cols2 = st.columns(3)
             fpb = tr_cols2[0].number_input(
-                "frames_per_batch", min_value=1,
+                "frames_per_batch",
+                min_value=1,
                 value=int(tr_defaults.get("frames_per_batch", 200)),
                 key="step2_fpb",
             )
             mbs = tr_cols2[1].number_input(
-                "minibatch_size", min_value=1,
+                "minibatch_size",
+                min_value=1,
                 value=int(tr_defaults.get("minibatch_size", 100)),
                 key="step2_mbs",
             )
             nmb = tr_cols2[2].number_input(
-                "n_minibatch_iters", min_value=1,
+                "n_minibatch_iters",
+                min_value=1,
                 value=int(tr_defaults.get("n_minibatch_iters", 1)),
                 key="step2_nmb",
             )
@@ -494,20 +550,27 @@ with st.container(border=True):
             ev_defaults = cfg_data.get("evaluation", {})
             ev_cols = st.columns(3)
             ev_int = ev_cols[0].number_input(
-                "interval_iters", min_value=1,
+                "interval_iters",
+                min_value=1,
                 value=int(ev_defaults.get("interval_iters", 1)),
                 key="step2_eval_int",
             )
             ev_eps = ev_cols[1].number_input(
-                "episodes", min_value=1,
+                "episodes",
+                min_value=1,
                 value=int(ev_defaults.get("episodes", 10)),
                 key="step2_eval_eps",
             )
-            rec_default = (cfg_data.get("runtime", {}).get("runner", {}).get("params", {}).get(
-                "record_video", not exp_id.endswith("_smoke"))
+            rec_default = (
+                cfg_data.get("runtime", {})
+                .get("runner", {})
+                .get("params", {})
+                .get("record_video", not exp_id.endswith("_smoke"))
             )
             rec_video = ev_cols[2].checkbox(
-                "record_video", value=bool(rec_default), key="step2_rec_video",
+                "record_video",
+                value=bool(rec_default),
+                key="step2_rec_video",
             )
 
             # Submit target — UI-only choice, **never** written to the YAML.
@@ -518,17 +581,21 @@ with st.container(border=True):
             st.markdown("---")
             st.markdown("**Submit target**")
             current_target = SubmitState.submit_target()
+            runner_choices = available_runners()
             submit_target_choice = st.radio(
                 "Where should this run be dispatched?",
-                options=["local", "ovh"],
-                index=0 if current_target == "local" else 1,
+                options=runner_choices,
+                index=runner_choices.index(current_target)
+                if current_target in runner_choices
+                else 0,
                 horizontal=True,
                 key="step2_submit_target",
                 help=(
                     "UI-only choice — the YAML's `runtime.runner.type` "
                     "stays `local` either way (LocalRunner runs the training "
-                    "loop in both cases). OVH only changes which orchestrator "
-                    "wraps the submission."
+                    "loop in both cases). The radio only changes which "
+                    "orchestrator wraps the submission. New runner adapters "
+                    "appear here automatically."
                 ),
             )
             if submit_target_choice != current_target:
@@ -544,10 +611,18 @@ with st.container(border=True):
             # ``runtime.storage`` only ever has ``{type: fs, path, params}`` —
             # S3 / bucket / region details live in ``configs/ovh.yaml`` (loaded
             # by OvhRunner), NOT here. For OVH-targeted runs, ``path`` is the
-            # *container mount* (e.g. ``/workspace/results``); for local it's a
-            # repo-relative directory.
+            # *container mount* (sourced from OvhJobConfig.mount_results so
+            # nothing here is hardcoded); for local it's a repo-relative dir.
+            # ``runner_spec(...).requires_ovh_cfg`` keeps the OVH-config load
+            # off the local path without an ``if target == "ovh"`` branch.
+            ovh_cfg_for_default, _ = (
+                _try_load_ovh_config()
+                if runner_spec(submit_target_choice).requires_ovh_cfg
+                else (None, None)
+            )
             default_path = storage_default.get("path") or (
-                "/workspace/results" if submit_target_choice == "ovh"
+                ovh_cfg_for_default.mount_results
+                if ovh_cfg_for_default is not None
                 else f"experiments/{scen_type}/baseline"
             )
             storage_path = st.text_input(
@@ -555,8 +630,9 @@ with st.container(border=True):
                 value=default_path,
                 key="step2_storage_path",
                 help=(
-                    "Container mount path (e.g. /workspace/results) for OVH "
-                    "runs; repo-relative dir for local."
+                    "OVH: container mount path — defaults to "
+                    "`OvhJobConfig.mount_results` from `configs/ovh.yaml`. "
+                    "Local: repo-relative directory."
                 ),
             )
             storage_extra: dict[str, Any] = {"path": storage_path}
@@ -605,8 +681,10 @@ with st.container(border=True):
 
         if state.is_dirty:
             changes = diff_summary(state.snapshot_form, state.current_form)
-            st.caption(f"**Modified fields:** {', '.join(changes[:10])}"
-                       + (f" *(+{len(changes) - 10} more)*" if len(changes) > 10 else ""))
+            st.caption(
+                f"**Modified fields:** {', '.join(changes[:10])}"
+                + (f" *(+{len(changes) - 10} more)*" if len(changes) > 10 else "")
+            )
 
 # ───────────────────────────────────────────────────────────────────────
 # Step 3 — Save
@@ -657,7 +735,9 @@ with st.container(border=True):
                 cfg_dict = _build_cfg_dict(state.current_form)
                 # Validate before writing — bad YAML on disk is worse than bad UI.
                 ExperimentConfig.model_validate(cfg_dict)
-                target.write_text(yaml.dump(cfg_dict, sort_keys=False), encoding="utf-8")
+                target.write_text(
+                    yaml.dump(cfg_dict, sort_keys=False), encoding="utf-8"
+                )
                 SubmitState.mark_saved(target, state.current_form)
                 st.success(f"Saved → `{target}`")
                 st.rerun()
@@ -707,16 +787,15 @@ with st.container(border=True):
             "(toggle in Step 2 to switch local/OVH)."
         )
         if run_clicked:
-            cfg_dict = (
-                _build_cfg_dict(state.current_form) if state.current_form else {}
-            )
+            cfg_dict = _build_cfg_dict(state.current_form) if state.current_form else {}
             if runner_now == "local":
                 run_real_local_checks(state.preflight, cfg_dict)
             else:
-                # Real boto3 + ovhai-CLI + code-hash probes. We pass
+                # OVH probes go through OvhClient (ovhai CLI shell-out) for
+                # bucket / object verbs + code-hash compare. We pass
                 # ``ovh_cfg`` (may be None) into ``run_real_ovh_checks`` —
-                # which knows how to cascade IDLE on the cloud-env rows when
-                # the YAML doesn't load, while still running the config-row
+                # it knows to cascade IDLE on the cloud-env rows when the
+                # YAML doesn't load, while still running the config-row
                 # probes regardless.
                 ovh_cfg, _ovh_err = _try_load_ovh_config()
                 repo_root = Path.cwd()
@@ -724,7 +803,9 @@ with st.container(border=True):
                 yaml_relpath: str | None
                 try:
                     yaml_relpath = (
-                        active_path.resolve().relative_to(repo_root.resolve()).as_posix()
+                        active_path.resolve()
+                        .relative_to(repo_root.resolve())
+                        .as_posix()
                         if active_path is not None
                         else None
                     )
@@ -750,9 +831,11 @@ with st.container(border=True):
 # Step 5 — Submit
 # ───────────────────────────────────────────────────────────────────────
 with st.container(border=True):
-    s5_blocked = not state.has_preflight_passed or (
-        state.is_dirty and state.saved_path is None
-    ) or state.selected_path is None
+    s5_blocked = (
+        not state.has_preflight_passed
+        or (state.is_dirty and state.saved_path is None)
+        or state.selected_path is None
+    )
     s5_active = state.active_step == 5
     cols = st.columns([6, 2])
     cols[0].markdown(_step_badge(5, done=False, active=s5_active, blocked=s5_blocked))
@@ -766,9 +849,9 @@ with st.container(border=True):
 
         if runner_now == "local":
             st.caption(
-                "All checks green — submitting will run **synchronously** in this "
-                "page (Phase B v1). Long runs will block the browser tab; v2 adds "
-                "background-thread + live tail."
+                "All checks green — submitting runs **synchronously** in this "
+                "page; long runs block the browser tab. Background-thread + "
+                "live tail variant is deferred."
             )
         else:
             st.caption(
@@ -789,7 +872,20 @@ with st.container(border=True):
             if runner_now == "local":
                 _run_local_submission(cfg_dict)
             else:
-                _run_ovh_submission(cfg_dict)
+                # Compute the active config's path relative to the repo
+                # root — the OVH container's bash entry point joins this
+                # with OvhJobConfig.mount_code to find the YAML on disk.
+                repo_root = Path.cwd().resolve()
+                active_path = state.active_config_path
+                try:
+                    yaml_relpath = (
+                        active_path.resolve().relative_to(repo_root).as_posix()
+                        if active_path is not None
+                        else ""
+                    )
+                except ValueError:
+                    yaml_relpath = ""
+                _run_ovh_submission(cfg_dict, yaml_relpath)
             st.rerun()
 
         if cfg_dict is not None:
@@ -827,9 +923,7 @@ with st.container(border=True):
                 "the run automatically."
             )
         elif sub_status["status"] == "done":
-            st.success(
-                f"✅ DONE: `{sub_status['run_id']}` → `{sub_status['run_dir']}`"
-            )
+            st.success(f"✅ DONE: `{sub_status['run_id']}` → `{sub_status['run_dir']}`")
             st.markdown(
                 f"[Open run detail →](/run_detail?run_id={sub_status['run_id']})"
             )

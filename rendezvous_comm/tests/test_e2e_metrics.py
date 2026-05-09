@@ -12,11 +12,11 @@ verify metrics match expected values.
 import pytest
 import torch
 
-from vmas import make_env
-
 from src.config import TaskConfig
 from src.metrics import EpisodeMetrics
 from src.runner import evaluate_with_vmas
+
+from vmas import make_env
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -45,14 +45,17 @@ def _make_env(max_steps=50, **overrides):
     """Create a Discovery env with SIMPLE_CONFIG + overrides."""
     config = {**SIMPLE_CONFIG, **overrides}
     ms = config.pop("max_steps", max_steps)
-    return make_env(
-        scenario="discovery",
-        num_envs=N_ENVS,
-        device="cpu",
-        continuous_actions=True,
-        max_steps=ms,
-        **config,
-    ), ms
+    return (
+        make_env(
+            scenario="discovery",
+            num_envs=N_ENVS,
+            device="cpu",
+            continuous_actions=True,
+            max_steps=ms,
+            **config,
+        ),
+        ms,
+    )
 
 
 def _zero_actions(env):
@@ -160,8 +163,8 @@ class TestM1EndToEnd:
                 env.agents[i].state.vel[:] = 0.0
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert (
-            result["M1_success_rate"] == pytest.approx(1.0)
+        assert result["M1_success_rate"] == pytest.approx(
+            1.0
         ), f"Expected M1=1.0 when agents placed on targets, got {result['M1_success_rate']}"
 
     def test_stationary_agents_far_from_targets_fail(self):
@@ -176,8 +179,8 @@ class TestM1EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert (
-            result["M1_success_rate"] == pytest.approx(0.0)
+        assert result["M1_success_rate"] == pytest.approx(
+            0.0
         ), f"Expected M1=0.0 with agents far from targets, got {result['M1_success_rate']}"
 
     def test_truncation_not_counted_as_success(self):
@@ -274,8 +277,8 @@ class TestM3EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert (
-            result["M3_avg_steps"] == pytest.approx(max_steps, abs=1.0)
+        assert result["M3_avg_steps"] == pytest.approx(
+            max_steps, abs=1.0
         ), f"Expected M3≈{max_steps} for incomplete episodes, got {result['M3_avg_steps']}"
 
 
@@ -313,8 +316,8 @@ class TestM4EndToEnd:
             )
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert (
-            result["M4_avg_collisions"] == pytest.approx(0.0)
+        assert result["M4_avg_collisions"] == pytest.approx(
+            0.0
         ), f"Expected 0 collisions when agents are 1.6 apart, got {result['M4_avg_collisions']}"
 
 
@@ -347,8 +350,8 @@ class TestM6EndToEnd:
                 env.agents[i].state.vel[:] = 0.0
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert (
-            result["M6_coverage_progress"] == pytest.approx(1.0)
+        assert result["M6_coverage_progress"] == pytest.approx(
+            1.0
         ), f"Expected M6=1.0 when all targets covered, got {result['M6_coverage_progress']}"
 
     def test_one_of_two_targets_covered(self):
@@ -366,8 +369,8 @@ class TestM6EndToEnd:
             targets[1].state.pos[:] = torch.tensor([-0.9, -0.9])
 
         result = _run_episode(env, max_steps, setup_fn=setup)
-        assert (
-            result["M6_coverage_progress"] == pytest.approx(0.5, abs=0.15)
+        assert result["M6_coverage_progress"] == pytest.approx(
+            0.5, abs=0.15
         ), f"Expected M6≈0.5 with 1/2 targets covered, got {result['M6_coverage_progress']}"
 
     def test_no_coverage(self):

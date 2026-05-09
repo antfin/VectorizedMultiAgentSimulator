@@ -1,8 +1,9 @@
 """Cross-experiment comparison, statistical tests, and Pareto frontiers."""
 
-import streamlit as st
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -11,18 +12,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
-from src.theme import apply_theme
 from src.config import RESULTS_DIR
-from src.storage import load_cross_experiment
-from src.consolidate import load_latest_csv, list_experiments_with_data
+from src.consolidate import list_experiments_with_data, load_latest_csv
 from src.plotting import (
+    METRIC_LABELS,
     plot_baseline_comparison,
     plot_metric_radar,
     plot_success_vs_tokens,
-    METRIC_LABELS,
 )
-from src.stats import compare_experiments, bootstrap_ci, pareto_frontier
+from src.stats import bootstrap_ci, compare_experiments, pareto_frontier
+from src.storage import load_cross_experiment
+
+from src.theme import apply_theme
 
 st.set_page_config(page_title="Cross-Experiment", layout="wide")
 apply_theme(title="Cross-Experiment Comparison")

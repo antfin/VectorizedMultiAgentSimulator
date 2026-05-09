@@ -17,7 +17,6 @@ import streamlit as st
 
 from .charts import bar_by_algo_with_stderr, box_by_algo, scatter_xy
 
-
 # ── Shared helpers ────────────────────────────────────────────────────
 
 
@@ -98,31 +97,63 @@ def render_discovery(df: pd.DataFrame) -> None:
         [
             ("Total Runs", len, "{:d}"),
             ("Best M1 Success", lambda d: _safe_max(d, "M1_success_rate"), "{:.0%}"),
-            ("Mean M6 Coverage", lambda d: _safe_mean(d, "M6_coverage_progress"), "{:.0%}"),
+            (
+                "Mean M6 Coverage",
+                lambda d: _safe_mean(d, "M6_coverage_progress"),
+                "{:.0%}",
+            ),
             ("Mean M3 Steps", lambda d: _safe_mean(d, "M3_steps"), "{:.1f}"),
         ],
     )
     st.markdown("---")
     _top_runs(
         df,
-        sort_cols=[("M1_success_rate", False), ("M6_coverage_progress", False), ("M3_steps", True)],
-        metric_cols=["M1_success_rate", "M6_coverage_progress", "M3_steps", "M4_collisions"],
+        sort_cols=[
+            ("M1_success_rate", False),
+            ("M6_coverage_progress", False),
+            ("M3_steps", True),
+        ],
+        metric_cols=[
+            "M1_success_rate",
+            "M6_coverage_progress",
+            "M3_steps",
+            "M4_collisions",
+        ],
     )
     st.markdown("---")
     left, right = st.columns(2)
     with left:
-        scatter_xy(df, "M1_success_rate", "M3_steps",
-                   "M1 vs M3 — Success vs Speed",
-                   xlabel="Success Rate", ylabel="Avg Steps")
-        box_by_algo(df, "M6_coverage_progress",
-                    "M6 Coverage by Algorithm", ylabel="Coverage Progress")
+        scatter_xy(
+            df,
+            "M1_success_rate",
+            "M3_steps",
+            "M1 vs M3 — Success vs Speed",
+            xlabel="Success Rate",
+            ylabel="Avg Steps",
+        )
+        box_by_algo(
+            df,
+            "M6_coverage_progress",
+            "M6 Coverage by Algorithm",
+            ylabel="Coverage Progress",
+        )
     with right:
-        scatter_xy(df, "M1_success_rate", "M4_collisions",
-                   "M1 vs M4 — Success vs Safety",
-                   xlabel="Success Rate", ylabel="Collisions")
-        scatter_xy(df, "M9_spatial_spread", "M1_success_rate",
-                   "Spatial Spread vs Success",
-                   xlabel="Spatial Spread (M9)", ylabel="Success Rate")
+        scatter_xy(
+            df,
+            "M1_success_rate",
+            "M4_collisions",
+            "M1 vs M4 — Success vs Safety",
+            xlabel="Success Rate",
+            ylabel="Collisions",
+        )
+        scatter_xy(
+            df,
+            "M9_spatial_spread",
+            "M1_success_rate",
+            "Spatial Spread vs Success",
+            xlabel="Spatial Spread (M9)",
+            ylabel="Success Rate",
+        )
 
 
 def render_navigation(df: pd.DataFrame) -> None:
@@ -139,24 +170,42 @@ def render_navigation(df: pd.DataFrame) -> None:
     st.markdown("---")
     _top_runs(
         df,
-        sort_cols=[("M1_success_rate", False), ("M4_collisions", True), ("M3_steps", True)],
+        sort_cols=[
+            ("M1_success_rate", False),
+            ("M4_collisions", True),
+            ("M3_steps", True),
+        ],
         metric_cols=["M1_success_rate", "M3_steps", "M4_collisions", "M2_avg_return"],
     )
     st.markdown("---")
     left, right = st.columns(2)
     with left:
-        scatter_xy(df, "M1_success_rate", "M3_steps",
-                   "M1 vs M3 — Success vs Speed",
-                   xlabel="Success Rate", ylabel="Avg Steps")
-        box_by_algo(df, "M4_collisions",
-                    "M4 Collisions by Algorithm", ylabel="Collisions")
+        scatter_xy(
+            df,
+            "M1_success_rate",
+            "M3_steps",
+            "M1 vs M3 — Success vs Speed",
+            xlabel="Success Rate",
+            ylabel="Avg Steps",
+        )
+        box_by_algo(
+            df, "M4_collisions", "M4 Collisions by Algorithm", ylabel="Collisions"
+        )
     with right:
-        scatter_xy(df, "M3_steps", "M4_collisions",
-                   "M3 vs M4 — Speed–Safety Pareto",
-                   xlabel="Avg Steps", ylabel="Collisions")
-        bar_by_algo_with_stderr(df, "M1_success_rate",
-                                "M1 by Algorithm (mean ± SE across seeds)",
-                                ylabel="Success Rate")
+        scatter_xy(
+            df,
+            "M3_steps",
+            "M4_collisions",
+            "M3 vs M4 — Speed–Safety Pareto",
+            xlabel="Avg Steps",
+            ylabel="Collisions",
+        )
+        bar_by_algo_with_stderr(
+            df,
+            "M1_success_rate",
+            "M1 by Algorithm (mean ± SE across seeds)",
+            ylabel="Success Rate",
+        )
 
 
 def render_transport(df: pd.DataFrame) -> None:
@@ -166,7 +215,11 @@ def render_transport(df: pd.DataFrame) -> None:
         [
             ("Total Runs", len, "{:d}"),
             ("Best M2 Avg Return", lambda d: _safe_max(d, "M2_avg_return"), "{:.2f}"),
-            ("Mean M8 Utilization", lambda d: _safe_mean(d, "M8_agent_utilization"), "{:.2f}"),
+            (
+                "Mean M8 Utilization",
+                lambda d: _safe_mean(d, "M8_agent_utilization"),
+                "{:.2f}",
+            ),
             ("Mean M4 Collisions", lambda d: _safe_mean(d, "M4_collisions"), "{:.1f}"),
         ],
     )
@@ -178,23 +231,45 @@ def render_transport(df: pd.DataFrame) -> None:
             ("M8_agent_utilization", False),
             ("M4_collisions", True),
         ],
-        metric_cols=["M2_avg_return", "M8_agent_utilization", "M4_collisions", "M3_steps"],
+        metric_cols=[
+            "M2_avg_return",
+            "M8_agent_utilization",
+            "M4_collisions",
+            "M3_steps",
+        ],
     )
     st.markdown("---")
     left, right = st.columns(2)
     with left:
-        scatter_xy(df, "M2_avg_return", "M3_steps",
-                   "M2 vs M3 — Return vs Speed",
-                   xlabel="Avg Return", ylabel="Avg Steps")
-        scatter_xy(df, "M8_agent_utilization", "M2_avg_return",
-                   "M8 vs M2 — Cooperation vs Return",
-                   xlabel="Agent Utilization", ylabel="Avg Return")
+        scatter_xy(
+            df,
+            "M2_avg_return",
+            "M3_steps",
+            "M2 vs M3 — Return vs Speed",
+            xlabel="Avg Return",
+            ylabel="Avg Steps",
+        )
+        scatter_xy(
+            df,
+            "M8_agent_utilization",
+            "M2_avg_return",
+            "M8 vs M2 — Cooperation vs Return",
+            xlabel="Agent Utilization",
+            ylabel="Avg Return",
+        )
     with right:
-        box_by_algo(df, "M8_agent_utilization",
-                    "M8 Utilization by Algorithm", ylabel="Agent Utilization")
-        bar_by_algo_with_stderr(df, "M2_avg_return",
-                                "M2 by Algorithm (mean ± SE across seeds)",
-                                ylabel="Avg Return")
+        box_by_algo(
+            df,
+            "M8_agent_utilization",
+            "M8 Utilization by Algorithm",
+            ylabel="Agent Utilization",
+        )
+        bar_by_algo_with_stderr(
+            df,
+            "M2_avg_return",
+            "M2 by Algorithm (mean ± SE across seeds)",
+            ylabel="Avg Return",
+        )
 
 
 def render_flocking(df: pd.DataFrame) -> None:
@@ -211,23 +286,40 @@ def render_flocking(df: pd.DataFrame) -> None:
     st.markdown("---")
     _top_runs(
         df,
-        sort_cols=[("M2_avg_return", False), ("M9_spatial_spread", True), ("M4_collisions", True)],
+        sort_cols=[
+            ("M2_avg_return", False),
+            ("M9_spatial_spread", True),
+            ("M4_collisions", True),
+        ],
         metric_cols=["M2_avg_return", "M9_spatial_spread", "M4_collisions", "M3_steps"],
     )
     st.markdown("---")
     left, right = st.columns(2)
     with left:
-        scatter_xy(df, "M2_avg_return", "M9_spatial_spread",
-                   "M2 vs M9 — Return vs Cohesion",
-                   xlabel="Avg Return", ylabel="Spatial Spread")
-        box_by_algo(df, "M4_collisions",
-                    "M4 Collisions by Algorithm", ylabel="Collisions")
+        scatter_xy(
+            df,
+            "M2_avg_return",
+            "M9_spatial_spread",
+            "M2 vs M9 — Return vs Cohesion",
+            xlabel="Avg Return",
+            ylabel="Spatial Spread",
+        )
+        box_by_algo(
+            df, "M4_collisions", "M4 Collisions by Algorithm", ylabel="Collisions"
+        )
     with right:
-        box_by_algo(df, "M9_spatial_spread",
-                    "M9 Spatial Spread by Algorithm", ylabel="Spatial Spread")
-        bar_by_algo_with_stderr(df, "M2_avg_return",
-                                "M2 by Algorithm (mean ± SE across seeds)",
-                                ylabel="Avg Return")
+        box_by_algo(
+            df,
+            "M9_spatial_spread",
+            "M9 Spatial Spread by Algorithm",
+            ylabel="Spatial Spread",
+        )
+        bar_by_algo_with_stderr(
+            df,
+            "M2_avg_return",
+            "M2 by Algorithm (mean ± SE across seeds)",
+            ylabel="Avg Return",
+        )
 
 
 # ── Dispatch table ────────────────────────────────────────────────────

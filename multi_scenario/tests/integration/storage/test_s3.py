@@ -70,7 +70,11 @@ def _provenance() -> Provenance:
         git_dirty=False,
         created_at=datetime(2026, 5, 7, 12, 0, tzinfo=timezone.utc),
         library_versions=LibraryVersions(
-            python="3.11", torch="2.4", vmas="1.4", benchmarl="1.3", multi_scenario="0.0.1"
+            python="3.11",
+            torch="2.4",
+            vmas="1.4",
+            benchmarl="1.3",
+            multi_scenario="0.0.1",
         ),
     )
 

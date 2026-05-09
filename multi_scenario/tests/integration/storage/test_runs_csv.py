@@ -116,7 +116,9 @@ def test_consolidate_skips_non_done_runs(tmp_path: Path) -> None:
 
 def test_consolidate_skips_dirs_without_metrics_json(tmp_path: Path) -> None:
     """Folders without output/metrics.json are silently skipped."""
-    (tmp_path / "configs").mkdir()  # sibling configs/ folder shouldn't break consolidation
+    (
+        tmp_path / "configs"
+    ).mkdir()  # sibling configs/ folder shouldn't break consolidation
     _seed_run(tmp_path, "ok_s0", "discovery", "mappo", _done_state())
 
     df = pd.read_csv(RunsCsvWriter().consolidate(tmp_path))

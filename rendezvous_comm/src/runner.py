@@ -16,7 +16,7 @@ import torch
 
 from .config import ExperimentSpec, TaskConfig, TrainConfig
 from .logging_setup import setup_run_logger, teardown_run_logger
-from .metrics import EpisodeMetrics, compute_m7_sample_efficiency
+from .metrics import compute_m7_sample_efficiency, EpisodeMetrics
 from .provenance import save_provenance
 from .report import generate_run_report, generate_sweep_report
 from .storage import ExperimentStorage
@@ -326,9 +326,9 @@ def build_experiment(
 
     # Model
     if train_config.model_type == "gnn":
-        from benchmarl.models import GnnConfig, SequenceModelConfig
         import torch.nn as _nn
         import torch_geometric.nn.conv as pyg_conv
+        from benchmarl.models import GnnConfig, SequenceModelConfig
 
         gnn_cls_map = {
             "GATv2Conv": pyg_conv.GATv2Conv,
@@ -1378,9 +1378,10 @@ def generate_run_videos(
 
 def _save_video(frames, path, fps=15):
     """Save list of RGB frames as MP4 using imageio."""
+    from pathlib import Path
+
     import imageio
     import numpy as np
-    from pathlib import Path
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 

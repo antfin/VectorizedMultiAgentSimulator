@@ -8,9 +8,9 @@ from pathlib import Path
 import boto3
 import pytest
 from moto import mock_aws
-from typer.testing import CliRunner
 
 from multi_scenario.cli import app
+from typer.testing import CliRunner
 
 _BUCKET = "ms-test-code-cli"
 _PREFIX = "code"
@@ -72,7 +72,9 @@ def test_upload_code_uploads_files(tmp_path: Path, mocked_s3_with_bucket) -> Non
 
     keys = sorted(
         obj["Key"]
-        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
+        for obj in mocked_s3_with_bucket.list_objects_v2(Bucket=_BUCKET).get(
+            "Contents", []
+        )
     )
     assert f"{_PREFIX}/pyproject.toml" in keys
     assert f"{_PREFIX}/src/multi_scenario/cli.py" in keys

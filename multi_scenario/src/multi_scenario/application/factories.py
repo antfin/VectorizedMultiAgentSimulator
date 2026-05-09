@@ -1,14 +1,21 @@
 """Name → adapter factories.
 
 Centralised registries keyed by the ``type`` field on each cfg section
-(``cfg.scenario.type``, ``cfg.algorithm.type``, ``cfg.runtime.storage.type``).
-Each ``make_*`` raises a clean ValueError on unknown names so config typos
-fail loudly with the registered names listed.
+(``cfg.scenario.type``, ``cfg.algorithm.type``, ``cfg.runtime.storage.type``,
+``cfg.runtime.runner.type``). Each ``make_*`` raises a clean ValueError on
+unknown names so config typos fail loudly with the registered names listed.
+
+The :func:`available_*` listing helpers mirror each registry — the Submit
+page's data-driven form reads them at render time so adding a new adapter
+in the backend automatically surfaces in the UI without touching any
+frontend code (F7.7.B2). Together with the ``default_params()`` method on
+each adapter port, the frontend stays generic.
 
 When a new adapter lands (next algorithm, next scenario, S3 storage, …) it
 gets one line added here.
 """
 
+from dataclasses import dataclass
 from typing import Callable
 
 from multi_scenario.adapters.algorithms.iddpg import IddpgAdapter
@@ -45,6 +52,25 @@ _STORAGES: dict[str, Callable[[], Storage]] = {
 }
 
 
+@dataclass(frozen=True)
+class RunnerSpec:
+    """Descriptive metadata about a runner the user can submit to.
+
+    The Submit page reads :attr:`requires_ovh_cfg` to decide whether to load
+    ``configs/ovh.yaml`` on this submit target — keeps the page free of
+    hardcoded ``if target == "ovh"`` branches.
+    """
+
+    name: str
+    requires_ovh_cfg: bool = False  # only True for runners that talk to OVH
+
+
+_RUNNERS: dict[str, RunnerSpec] = {
+    "local": RunnerSpec(name="local", requires_ovh_cfg=False),
+    "ovh": RunnerSpec(name="ovh", requires_ovh_cfg=True),
+}
+
+
 def make_scenario(name: str) -> Scenario:
     """Construct the registered Scenario adapter for ``name``."""
     if name not in _SCENARIOS:
@@ -64,3 +90,33 @@ def make_storage(name: str) -> Storage:
     if name not in _STORAGES:
         raise ValueError(f"unknown storage: {name!r}; known: {sorted(_STORAGES)}")
     return _STORAGES[name]()
+
+
+# ── Listing API for the data-driven frontend (F7.7.B1/B2) ───────────
+
+
+def available_scenarios() -> list[str]:
+    """Sorted names of every registered scenario adapter."""
+    return sorted(_SCENARIOS)
+
+
+def available_algorithms() -> list[str]:
+    """Sorted names of every registered algorithm adapter."""
+    return sorted(_ALGORITHMS)
+
+
+def available_storages() -> list[str]:
+    """Sorted names of every registered storage adapter."""
+    return sorted(_STORAGES)
+
+
+def available_runners() -> list[str]:
+    """Sorted names of every registered submit-target runner."""
+    return sorted(_RUNNERS)
+
+
+def runner_spec(name: str) -> RunnerSpec:
+    """Look up :class:`RunnerSpec` metadata by name; raises on unknown."""
+    if name not in _RUNNERS:
+        raise ValueError(f"unknown runner: {name!r}; known: {sorted(_RUNNERS)}")
+    return _RUNNERS[name]

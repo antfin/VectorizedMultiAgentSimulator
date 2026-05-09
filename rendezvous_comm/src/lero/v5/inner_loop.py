@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..codegen import CandidateCode
 from ..inner_llm import CandidateGenerationFailed, InnerLLM
-from ..loop import LeroLoop, _derive_seed
+from ..loop import _derive_seed, LeroLoop
 from ..meta.v4_analyzer import classify_shape
 from .feedback import build_v5_inner_feedback
 from .inner_fitness import m6_slope as m6_slope_fn, weighted_fitness

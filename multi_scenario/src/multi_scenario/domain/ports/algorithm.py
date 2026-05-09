@@ -23,6 +23,17 @@ class Algorithm(Protocol):
 
     name: str
 
+    def default_params(self) -> dict[str, Any]:
+        """UI-visible default knobs for this algorithm.
+
+        Returns ``param_name → primitive_value`` (str / int / float / bool)
+        which the Submit page's data-driven form renders into widgets of the
+        matching type. Empty dict means "no tunable knobs in the UI" — the
+        algorithm uses its own internal defaults verbatim. Concrete
+        subclasses override to surface their tunables; the
+        :class:`BenchmarlBaseAdapter` default returns ``{}``.
+        """
+
     def train(
         self,
         env: Any,

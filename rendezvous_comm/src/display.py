@@ -108,8 +108,9 @@ def display_figure(fig, close=True):
     Uses base64 encoding to bypass matplotlib's display backend,
     which avoids double-rendering in VS Code Output widgets.
     """
-    import matplotlib.pyplot as plt
     from io import BytesIO
+
+    import matplotlib.pyplot as plt
 
     buf = BytesIO()
     fig.savefig(
@@ -546,7 +547,7 @@ def scrollable_md(
         md_text = _embed_md_images(md_text, Path(image_base))
 
     if _in_notebook():
-        from IPython.display import display, Markdown, HTML
+        from IPython.display import display, HTML, Markdown
 
         if title:
             display(
@@ -837,10 +838,11 @@ def _display_selector_html(exp_id, rows_data):
             f'color:{done_color};font-weight:bold">'
             f'{r["done"]}/{r["total"]}</td>'
             f'<td style="padding:6px 10px;text-align:center">'
-            f'{badge}</td></tr>'
+            f"{badge}</td></tr>"
         )
 
-    _html(f"""
+    _html(
+        f"""
     <div style="margin:10px 0">
       <div style="padding:8px 12px;background:{_BG_HEADER};color:white;
                   border-radius:4px 4px 0 0;font-size:14px;
@@ -860,7 +862,8 @@ def _display_selector_html(exp_id, rows_data):
         </tr>
         {table_rows}
       </table>
-    </div>""")
+    </div>"""
+    )
 
 
 def _display_selector_text(exp_id, rows_data):
@@ -965,8 +968,9 @@ def display_baseline_comparison(
         display_metrics(random_metrics, "Random Baseline")
         return
 
-    import matplotlib.pyplot as plt
     from io import BytesIO
+
+    import matplotlib.pyplot as plt
 
     img_html = ""
     if fig is not None:
@@ -1030,11 +1034,13 @@ def display_baseline_comparison(
         f"</tr>{table_rows}</table>"
     )
 
-    _html(f"""
+    _html(
+        f"""
     <div style="margin:10px 0">
       <div>{img_html}</div>
       <div style="margin-top:12px">{table_html}</div>
-    </div>""")
+    </div>"""
+    )
 
 
 # ── Results dashboard (KPI cards + consolidated chart) ────────────
@@ -1055,8 +1061,9 @@ def display_results_dashboard(
     display_metric_cards(trained_metrics, title=f"Trained Policy — {run_id}")
 
     if comparison_fig is not None and _in_notebook():
-        import matplotlib.pyplot as plt
         from io import BytesIO
+
+        import matplotlib.pyplot as plt
 
         buf = BytesIO()
         comparison_fig.savefig(
@@ -1133,7 +1140,8 @@ def display_training_videos(run_storage):
     first_iter = first_video.stem.replace("eval_video_", "iter ")
     last_iter = last_video.stem.replace("eval_video_", "iter ")
 
-    _html(f"""
+    _html(
+        f"""
     <div style="margin:10px 0">
       <div style="padding:8px 12px;background:{_BG_HEADER};color:white;
                   border-radius:4px 4px 0 0;font-size:14px;
@@ -1146,7 +1154,8 @@ def display_training_videos(run_storage):
         {_video_tag(first_video, f"Early ({first_iter})")}
         {_video_tag(last_video, f"Final ({last_iter})")}
       </div>
-    </div>""")
+    </div>"""
+    )
 
 
 # ── Artifact tree ─────────────────────────────────────────────────
@@ -1221,7 +1230,8 @@ def display_artifact_tree(run_storage):
             f"({sz})</span></div>"
         )
 
-    _html(f"""
+    _html(
+        f"""
     <div style="margin:10px 0">
       <div style="padding:8px 12px;background:{_BG_HEADER};color:white;
                   border-radius:4px 4px 0 0;font-size:14px;
@@ -1235,7 +1245,8 @@ def display_artifact_tree(run_storage):
                     margin-bottom:8px">{base.name}/</div>
         {items}
       </div>
-    </div>""")
+    </div>"""
+    )
 
 
 # ── Run selector widget ──────────────────────────────────────────

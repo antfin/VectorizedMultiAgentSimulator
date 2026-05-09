@@ -3,9 +3,9 @@
 from datetime import datetime, timezone
 
 import pytest
-from pydantic import ValidationError
 
 from multi_scenario.domain.models import LibraryVersions, Provenance
+from pydantic import ValidationError
 
 
 def _ts() -> datetime:

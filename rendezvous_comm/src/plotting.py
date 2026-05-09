@@ -10,15 +10,14 @@ from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 # ── Polimi brand palette ─────────────────────────────────────────────
 from .theme import (
     POLIMI_DARK_BLUE,
-    POLIMI_LIGHT_BLUE,
-    POLIMI_GREEN,
-    POLIMI_RED,
-    POLIMI_ORANGE,
     POLIMI_GRAY,
+    POLIMI_GREEN,
+    POLIMI_LIGHT_BLUE,
+    POLIMI_ORANGE,
+    POLIMI_RED,
 )
 
 COLORS = {

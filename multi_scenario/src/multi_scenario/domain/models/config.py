@@ -2,15 +2,29 @@
 
 This module imports only stdlib + pydantic + yaml — no torch, no vmas, no
 benchmarl, no streamlit, no boto3 (enforced by F1.12).
+
+F7.7.D1: every numeric carries an explicit ``gt`` / ``ge`` / ``le`` so
+nonsense values (negative seeds, zero ``max_iters``, ``minibatch_size``
+larger than ``frames_per_batch``, ``device`` outside ``{cpu, cuda}``,
+``experiment.id`` containing path-unfriendly characters) are rejected at
+parse time with a clean Pydantic error. The registry-aware cross-field
+checks (``scenario.type ∈ available_scenarios()`` etc.) live on the
+top-level :class:`ExperimentConfig` so they only fire after Pydantic has
+validated each section in isolation.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ._common import STRICT
+
+#: ``experiment.id`` becomes a folder name (``<exp_id>_s<seed>__<timestamp>``)
+#: so it must avoid path separators / shell metacharacters. Allowed:
+#: alphanumerics + ``_`` + ``-``. Empty string forbidden via ``min_length``.
+_EXPERIMENT_ID_PATTERN = r"^[A-Za-z0-9_\-]+$"
 
 
 class ExperimentSection(BaseModel):
@@ -18,8 +32,8 @@ class ExperimentSection(BaseModel):
 
     model_config = STRICT
 
-    id: str
-    seed: int = 0
+    id: str = Field(min_length=1, pattern=_EXPERIMENT_ID_PATTERN)
+    seed: int = Field(default=0, ge=0)
     name: str | None = None
     description: str | None = None
 
@@ -29,7 +43,7 @@ class ScenarioSection(BaseModel):
 
     model_config = STRICT
 
-    type: str
+    type: str = Field(min_length=1)
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -38,7 +52,7 @@ class AlgorithmSection(BaseModel):
 
     model_config = STRICT
 
-    type: str
+    type: str = Field(min_length=1)
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -50,23 +64,36 @@ class TrainingSection(BaseModel):
     ``n_minibatch_iters``, ``share_policy_params``). Algorithm-specific
     knobs (``lmbda`` for PPO, ``entropy_coef``, ``clip_epsilon``, …) stay
     in ``cfg.algorithm.params``.
+
+    F7.7.D1 cross-field invariant: ``minibatch_size <= frames_per_batch``.
+    BenchMARL silently floors this in some code paths; we'd rather fail
+    loudly at config parse than have downstream training behave oddly.
     """
 
     model_config = STRICT
 
-    max_iters: int
-    num_envs: int = 1
-    device: str = "cpu"
-    lr: float = 3e-4
-    gamma: float = 0.99
-    frames_per_batch: int = 6000
-    minibatch_size: int = 400
-    n_minibatch_iters: int = 45
+    max_iters: int = Field(gt=0)
+    num_envs: int = Field(default=1, gt=0)
+    device: Literal["cpu", "cuda"] = "cpu"
+    lr: float = Field(default=3e-4, gt=0)
+    gamma: float = Field(default=0.99, ge=0, le=1)
+    frames_per_batch: int = Field(default=6000, gt=0)
+    minibatch_size: int = Field(default=400, gt=0)
+    n_minibatch_iters: int = Field(default=45, gt=0)
     share_policy_params: bool = True
     # F5.7: BenchMARL writes a checkpoint every N iters (sparse). Set to 0 to
     # disable interval checkpoints (final-only via checkpoint_at_end). Smoke
     # runs auto-disable in the adapter; this is the cadence for non-smoke runs.
-    checkpoint_interval_iters: int = 10
+    checkpoint_interval_iters: int = Field(default=10, ge=0)
+
+    @model_validator(mode="after")
+    def _minibatch_fits_in_batch(self) -> "TrainingSection":
+        if self.minibatch_size > self.frames_per_batch:
+            raise ValueError(
+                f"minibatch_size ({self.minibatch_size}) must be ≤ "
+                f"frames_per_batch ({self.frames_per_batch})"
+            )
+        return self
 
 
 class EvaluationSection(BaseModel):
@@ -74,8 +101,8 @@ class EvaluationSection(BaseModel):
 
     model_config = STRICT
 
-    interval_iters: int
-    episodes: int
+    interval_iters: int = Field(gt=0)
+    episodes: int = Field(gt=0)
 
 
 class RunnerSection(BaseModel):
@@ -83,7 +110,7 @@ class RunnerSection(BaseModel):
 
     model_config = STRICT
 
-    type: str = "local"
+    type: str = Field(default="local", min_length=1)
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -92,8 +119,8 @@ class StorageSection(BaseModel):
 
     model_config = STRICT
 
-    type: str = "fs"
-    path: str
+    type: str = Field(default="fs", min_length=1)
+    path: str = Field(min_length=1)
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -120,7 +147,16 @@ class ExperimentConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "ExperimentConfig":
-        """Load and validate an ExperimentConfig from a YAML file."""
+        """Load and validate an ExperimentConfig from a YAML file.
+
+        Schema-only validation. Registry-aware checks (``scenario.type ∈
+        available_scenarios()`` etc.) live in
+        :func:`multi_scenario.application.config_validation.validate_known_types`
+        — they belong in the application layer because they cross the domain
+        boundary into ``application.factories``. Entry points that need both
+        call ``from_yaml`` then the validator, or use the
+        ``application.config_loader.load_experiment_config`` wrapper.
+        """
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls.model_validate(data)

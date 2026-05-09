@@ -6,8 +6,8 @@ import pytest
 
 from multi_scenario.adapters.secrets.fernet import (
     ENCRYPTED_ENV_VAR,
-    PASSPHRASE_ENV_VAR,
     FernetSecretsAdapter,
+    PASSPHRASE_ENV_VAR,
 )
 
 
@@ -58,14 +58,18 @@ def test_decrypt_from_env_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "OPENAI_API_KEY" not in os.environ
 
 
-def test_decrypt_from_env_returns_empty_when_blob_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_decrypt_from_env_returns_empty_when_blob_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Missing ``MS_ENCRYPTED_SECRETS`` → returns empty dict (no-op when nothing to ship)."""
     monkeypatch.delenv(ENCRYPTED_ENV_VAR, raising=False)
     monkeypatch.delenv(PASSPHRASE_ENV_VAR, raising=False)
     assert FernetSecretsAdapter().decrypt_from_env() == {}
 
 
-def test_decrypt_from_env_raises_when_passphrase_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_decrypt_from_env_raises_when_passphrase_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Blob set but passphrase missing → clear error (misconfigured shipping)."""
     adapter = FernetSecretsAdapter()
     blob = adapter.encrypt({"K": "v"}, passphrase="pp")

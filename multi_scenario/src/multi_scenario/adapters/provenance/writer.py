@@ -9,11 +9,7 @@ from typing import Iterable
 
 from multi_scenario import __version__ as _MS_VERSION
 from multi_scenario.domain.hashing import compute_code_hash, compute_config_hash
-from multi_scenario.domain.models import (
-    ExperimentConfig,
-    LibraryVersions,
-    Provenance,
-)
+from multi_scenario.domain.models import ExperimentConfig, LibraryVersions, Provenance
 
 
 class ProvenanceWriter:
@@ -85,7 +81,9 @@ class ProvenanceWriter:
 
 def _library_versions() -> LibraryVersions:
     return LibraryVersions(
-        python=(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"),
+        python=(
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        ),
         torch=_pkg_version("torch"),
         vmas=_pkg_version("vmas"),
         benchmarl=_pkg_version("benchmarl"),

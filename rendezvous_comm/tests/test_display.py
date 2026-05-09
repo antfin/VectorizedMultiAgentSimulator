@@ -1,24 +1,24 @@
 """Tests for the display module (text fallback paths)."""
 
+from src.config import ExperimentSpec, SweepConfig, TaskConfig, TrainConfig
 from src.display import (
-    METRIC_INFO,
-    display_config,
-    display_metrics,
-    display_sweep_summary,
-    display_environment_info,
-    scrollable,
-    scrollable_md,
-    display_metric_cards,
-    display_verdict,
-    display_baseline_comparison,
-    display_results_dashboard,
     _in_notebook,
+    _m1_color,
+    _sweep_param_desc,
     _task_param_desc,
     _train_param_desc,
-    _sweep_param_desc,
-    _m1_color,
+    display_baseline_comparison,
+    display_config,
+    display_environment_info,
+    display_metric_cards,
+    display_metrics,
+    display_results_dashboard,
+    display_sweep_summary,
+    display_verdict,
+    METRIC_INFO,
+    scrollable,
+    scrollable_md,
 )
-from src.config import ExperimentSpec, TaskConfig, TrainConfig, SweepConfig
 
 
 # ── Helpers ───────────────────────────────────────────────────────

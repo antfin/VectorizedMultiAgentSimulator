@@ -10,9 +10,9 @@ import pytest
 import torch
 
 from src.lero.meta.peak_checkpoint import (
+    make_peak_m1_callback,
     PeakM1Callback,
     PeakM1Tracker,
-    make_peak_m1_callback,
 )
 
 

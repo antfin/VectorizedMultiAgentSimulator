@@ -339,8 +339,9 @@ def submit_training_job(
     # LLM API keys for LERO experiments — encrypted before submission
     # so they appear as opaque blobs in `ovhai job get`.
     if llm_env:
-        from .secrets_util import encrypt_env
         import secrets
+
+        from .secrets_util import encrypt_env
 
         passphrase = secrets.token_urlsafe(24)
         encrypted = encrypt_env(llm_env, passphrase)

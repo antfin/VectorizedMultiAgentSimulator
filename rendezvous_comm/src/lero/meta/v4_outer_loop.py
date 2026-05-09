@@ -30,16 +30,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...config import ExperimentSpec
-from ..config import LLMConfig
-from ..config import LeroConfig as InnerLeroConfig
+from ..config import LeroConfig as InnerLeroConfig, LLMConfig
 from ..llm_client import LLMClient
 from ..loop import LeroLoop
 from ..prompts import loader as _loader_mod
 from . import provenance as _prov_mod
-from .v4_analyzer import (
-    aggregate_round_analysis,
-    analyze_candidate_trajectory,
-)
+from .v4_analyzer import aggregate_round_analysis, analyze_candidate_trajectory
 from .v4_bootstrap import bootstrap_from_description
 from .v4_composer import compose_prompt_for_strategy
 from .v4_schemas import (

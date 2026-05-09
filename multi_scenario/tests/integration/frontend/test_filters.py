@@ -10,10 +10,30 @@ from multi_scenario.frontend.filters import filter_runs
 def _df() -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"run_id": "demo_a_s0", "scenario": "discovery", "algorithm": "mappo", "state": "DONE"},
-            {"run_id": "demo_a_s1", "scenario": "discovery", "algorithm": "mappo", "state": "CRASHED"},
-            {"run_id": "demo_b_s0", "scenario": "navigation", "algorithm": "ippo", "state": "DONE"},
-            {"run_id": "demo_c_s0", "scenario": "transport", "algorithm": "masac", "state": "RUNNING"},
+            {
+                "run_id": "demo_a_s0",
+                "scenario": "discovery",
+                "algorithm": "mappo",
+                "state": "DONE",
+            },
+            {
+                "run_id": "demo_a_s1",
+                "scenario": "discovery",
+                "algorithm": "mappo",
+                "state": "CRASHED",
+            },
+            {
+                "run_id": "demo_b_s0",
+                "scenario": "navigation",
+                "algorithm": "ippo",
+                "state": "DONE",
+            },
+            {
+                "run_id": "demo_c_s0",
+                "scenario": "transport",
+                "algorithm": "masac",
+                "state": "RUNNING",
+            },
         ]
     )
 
@@ -67,6 +87,10 @@ def test_empty_lists_treated_as_no_filter():
 
 def test_missing_columns_skipped_silently():
     """If a column the filter targets doesn't exist on df, the filter no-ops."""
-    df = pd.DataFrame([{"run_id": "x"}, {"run_id": "y"}])  # no scenario/algo/state columns
-    out = filter_runs(df, scenarios=["discovery"], algorithms=["mappo"], states=["DONE"])
+    df = pd.DataFrame(
+        [{"run_id": "x"}, {"run_id": "y"}]
+    )  # no scenario/algo/state columns
+    out = filter_runs(
+        df, scenarios=["discovery"], algorithms=["mappo"], states=["DONE"]
+    )
     assert len(out) == 2  # everything kept; columns absent → filter ignored

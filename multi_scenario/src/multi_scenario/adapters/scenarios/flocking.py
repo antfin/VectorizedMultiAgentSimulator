@@ -23,4 +23,5 @@ class VmasFlockingAdapter(VmasScenarioBase):
             "n_agents": 4,
             "collision_reward": -0.1,
             "dist_shaping_factor": 1,
+            "max_steps": 100,
         }

@@ -15,11 +15,7 @@ import logging
 import statistics
 from typing import Any, Dict, List, Sequence
 
-from .v4_schemas import (
-    CandidateAnalysis,
-    FitnessWeights,
-    ShapeTag,
-)
+from .v4_schemas import CandidateAnalysis, FitnessWeights, ShapeTag
 
 _log = logging.getLogger("rendezvous.lero.mp.v4")
 

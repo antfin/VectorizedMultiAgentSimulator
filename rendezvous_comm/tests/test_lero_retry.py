@@ -6,10 +6,7 @@ from typing import Dict, List
 
 import pytest
 
-from src.lero.inner_llm import (
-    CandidateGenerationFailed,
-    InnerLLM,
-)
+from src.lero.inner_llm import CandidateGenerationFailed, InnerLLM
 
 
 class _StubLLMClient:

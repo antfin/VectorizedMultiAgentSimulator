@@ -12,17 +12,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.lero.config import LLMConfig
 from src.lero.llm_client import LLMClient
-from src.lero.meta.critique import (
-    critique_and_revise,
-)
-from src.lero.meta.mutation import (
-    build_editor_prompt,
-    parse_mutation_response,
-)
-from src.lero.meta.strategy import (
-    build_strategist_prompt,
-    parse_strategy_card,
-)
+from src.lero.meta.critique import critique_and_revise
+from src.lero.meta.mutation import build_editor_prompt, parse_mutation_response
+from src.lero.meta.strategy import build_strategist_prompt, parse_strategy_card
 
 
 @dataclass

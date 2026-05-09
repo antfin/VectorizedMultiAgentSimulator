@@ -15,7 +15,9 @@ POLIMI_ORANGE = "#F39200"
 POLIMI_LIGHT_GRAY = "#F0F2F6"
 
 
-def apply_theme(title: str = "", subtitle: str = "Politecnico di Milano — PhD Research") -> None:
+def apply_theme(
+    title: str = "", subtitle: str = "Politecnico di Milano — PhD Research"
+) -> None:
     """Inject Polimi CSS + optional top banner into Streamlit.
 
     Args:

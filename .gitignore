@@ -50,6 +50,7 @@ cmake-build-*/
 .idea/**/mongoSettings.xml
 
 .playwright-mcp/
+.claude/
 
 # File-based project format
 *.iws

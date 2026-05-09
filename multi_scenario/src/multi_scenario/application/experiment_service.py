@@ -83,13 +83,17 @@ class ExperimentService:
             self._storage.save_config(run_dir, cfg)
             self._storage.save_provenance(run_dir, provenance)
 
-        env = self._scenario.make_env(cfg.scenario, cfg.training.num_envs, cfg.experiment.seed)
+        env = self._scenario.make_env(
+            cfg.scenario, cfg.training.num_envs, cfg.experiment.seed
+        )
 
         state = state.transition_to(RunState.RUNNING, self._now())
         self._storage.save_run_state(run_dir, state)
 
         self._logger.info(f"training {run_id}{' (resume)' if is_resume else ''}")
-        artifact = self._algorithm.train(env, cfg, run_dir=run_dir, resume_from=resume_from)
+        artifact = self._algorithm.train(
+            env, cfg, run_dir=run_dir, resume_from=resume_from
+        )
 
         self._logger.info(f"evaluating {run_id}")
         rollout = self._algorithm.evaluate(artifact, env, cfg, run_dir=run_dir)

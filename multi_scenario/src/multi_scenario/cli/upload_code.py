@@ -22,7 +22,9 @@ def upload_code(
     repo_root: Path = typer.Option(
         Path.cwd(), "--repo-root", help="Repo root to upload from (defaults to CWD)."
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print what would upload; no S3 calls."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print what would upload; no S3 calls."
+    ),
 ) -> None:
     """Upload local source tree to the OVH code bucket (F6.4)."""
     cfg = S3StorageConfig.from_yaml(s3_config)

@@ -59,7 +59,9 @@ class ReportBuilder:
             provenance=_required_rel(run_dir, run_dir / "input" / "provenance.json"),
             log=_optional_rel(run_dir, run_dir / "logs" / "run.log"),
             metrics=_required_rel(run_dir, run_dir / "output" / "metrics.json"),
-            eval_episodes=_optional_rel(run_dir, run_dir / "output" / "eval_episodes.json"),
+            eval_episodes=_optional_rel(
+                run_dir, run_dir / "output" / "eval_episodes.json"
+            ),
             videos=_videos(run_dir),
             policy=_latest_policy(run_dir, bm_run) if bm_run is not None else None,
             benchmarl=_benchmarl_block(run_dir, bm_run) if bm_run is not None else None,
@@ -107,7 +109,9 @@ def _find_bm_run(run_dir: Path) -> Path | None:
         return None
     # Find the shallowest dir that contains a `scalars/` subfolder — that's
     # the BenchMARL run root regardless of nesting depth.
-    candidates = [s.parent for s in bm_root.rglob("scalars") if s.is_dir() and s.parent.is_dir()]
+    candidates = [
+        s.parent for s in bm_root.rglob("scalars") if s.is_dir() and s.parent.is_dir()
+    ]
     if not candidates:
         return None
     return min(candidates, key=lambda p: len(p.parts))

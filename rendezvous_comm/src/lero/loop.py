@@ -21,7 +21,7 @@ import torch
 
 from ..config import ExperimentSpec
 from ..storage import ExperimentStorage
-from .codegen import CandidateCode, build_feedback
+from .codegen import build_feedback, CandidateCode
 from .config import LeroConfig, LLMConfig
 from .inner_llm import CandidateGenerationFailed, InnerLLM
 from .llm_client import LLMClient
@@ -396,11 +396,11 @@ def _build_patched_experiment(
     and passes it as a scenario instance to BenchMARL. This way TorchRL
     sees the patched observation size when computing specs during init.
     """
-    from ..runner import get_algorithm_config
-
     from benchmarl.environments import VmasTask
     from benchmarl.experiment import Experiment, ExperimentConfig
     from benchmarl.models.mlp import MlpConfig
+
+    from ..runner import get_algorithm_config
 
     # Create patched scenario class
     PatchedScenario = make_patched_scenario_class(
@@ -1072,10 +1072,7 @@ class LeroLoop:
         lero.md §5.1.
         """
         from ..runner import _BenchMARLCallback, _EvalMetricsCallback, evaluate_trained
-        from .meta.peak_checkpoint import (
-            PeakM1Tracker,
-            make_peak_m1_callback,
-        )
+        from .meta.peak_checkpoint import make_peak_m1_callback, PeakM1Tracker
 
         full_train = copy.copy(self.spec.train)
         full_train.max_n_frames = self.lero.full_frames

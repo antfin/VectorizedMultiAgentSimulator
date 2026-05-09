@@ -51,7 +51,9 @@ class StorageAdapterBase:
 
     def load_config(self, run_dir: Path) -> ExperimentConfig:
         """Read back ``input/config.json`` as :class:`ExperimentConfig`."""
-        return ExperimentConfig.model_validate_json(self._read_text(run_dir, _CONFIG_REL))
+        return ExperimentConfig.model_validate_json(
+            self._read_text(run_dir, _CONFIG_REL)
+        )
 
     def load_provenance(self, run_dir: Path) -> Provenance:
         """Read back ``input/provenance.json`` as :class:`Provenance`."""
@@ -59,11 +61,15 @@ class StorageAdapterBase:
 
     def load_result(self, run_dir: Path) -> ExperimentResult:
         """Read back ``output/metrics.json`` as :class:`ExperimentResult`."""
-        return ExperimentResult.model_validate_json(self._read_text(run_dir, _RESULT_REL))
+        return ExperimentResult.model_validate_json(
+            self._read_text(run_dir, _RESULT_REL)
+        )
 
     def load_run_state(self, run_dir: Path) -> RunStateRecord:
         """Read back ``run_state.json`` as :class:`RunStateRecord`."""
-        return RunStateRecord.model_validate_json(self._read_text(run_dir, _RUN_STATE_REL))
+        return RunStateRecord.model_validate_json(
+            self._read_text(run_dir, _RUN_STATE_REL)
+        )
 
     def _write_text(self, run_dir: Path, rel: str, body: str) -> None:
         raise NotImplementedError

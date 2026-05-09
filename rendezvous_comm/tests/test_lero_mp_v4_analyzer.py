@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from src.lero.meta.v4_analyzer import (
     aggregate_round_analysis,
     analyze_candidate_trajectory,

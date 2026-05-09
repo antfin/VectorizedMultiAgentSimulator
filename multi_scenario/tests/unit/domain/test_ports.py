@@ -76,6 +76,9 @@ class _FakeAlgorithm:
 
     name = "fake"
 
+    def default_params(self) -> dict[str, Any]:
+        return {}
+
     def train(
         self,
         env: Any,

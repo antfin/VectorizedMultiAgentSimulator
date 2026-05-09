@@ -51,8 +51,10 @@ def _seed_run(experiments_dir: Path) -> Path:
         ),
     )
     ts = datetime(2026, 5, 7, 15, 0, tzinfo=timezone.utc)
-    rec = RunStateRecord.initial(ts).transition_to(RunState.RUNNING, ts).transition_to(
-        RunState.DONE, ts
+    rec = (
+        RunStateRecord.initial(ts)
+        .transition_to(RunState.RUNNING, ts)
+        .transition_to(RunState.DONE, ts)
     )
     storage.save_run_state(run_dir, rec)
     return run_dir
@@ -61,10 +63,10 @@ def _seed_run(experiments_dir: Path) -> Path:
 @pytest.mark.slow
 def test_run_detail_renders_with_seeded_run(tmp_path: Path) -> None:
     """Seed one run, point the page at it, expect no exception + metrics rendered."""
+    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
+
     # pylint: disable=import-outside-toplevel
     from streamlit.testing.v1 import AppTest
-
-    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
 
     _seed_run(tmp_path)
     page_path = (
@@ -87,10 +89,10 @@ def test_run_detail_renders_with_seeded_run(tmp_path: Path) -> None:
 @pytest.mark.slow
 def test_run_detail_empty_state_when_no_runs(tmp_path: Path) -> None:
     """Empty experiments dir → page short-circuits with 'No runs' info, no exception."""
+    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
+
     # pylint: disable=import-outside-toplevel
     from streamlit.testing.v1 import AppTest
-
-    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
 
     page_path = (
         Path(__file__).resolve().parents[3]

@@ -26,8 +26,8 @@ from typing import Dict, Optional
 
 def _derive_key(passphrase: str, salt: bytes = b"lero-ovh-v1") -> bytes:
     """Derive a 32-byte Fernet key from a passphrase via PBKDF2."""
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),

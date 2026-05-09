@@ -108,7 +108,11 @@ def _build_final_row(result: Any, state: Any) -> dict[str, Any]:
     started = state.transitions[0].ts
     finished = state.transitions[-1].ts
     duration = (finished - started).total_seconds()
-    return {"record_type": "final", **result.to_flat_dict(), "duration_seconds": duration}
+    return {
+        "record_type": "final",
+        **result.to_flat_dict(),
+        "duration_seconds": duration,
+    }
 
 
 def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:

@@ -310,6 +310,7 @@ def make_patched_scenario_class(
                     agent_idx = self.world.agents.index(agent)
                     state = _build_reward_state(self, agent, agent_idx)
                     return _sanitize_reward(reward_fn(state), _rc)
+
             else:
 
                 def reward(self, agent, _bonus_scale=_bs, _rc=_clip):

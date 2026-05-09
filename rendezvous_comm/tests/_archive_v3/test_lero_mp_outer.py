@@ -28,9 +28,9 @@ from src.lero.config import (
 from src.lero.meta.failmode import FailMode
 from src.lero.meta.mutation import SLOT_BEGIN, SLOT_END
 from src.lero.meta.outer_loop import (
+    build_template_record,
     LeroMpOuterLoop,
     OuterLoopResult,
-    build_template_record,
 )
 from src.lero.meta.provenance import sha256_text
 from src.lero.meta.trigger import TriggerReason
@@ -64,10 +64,11 @@ def tmp_prompts(tmp_path: Path, monkeypatch) -> Path:
             sort_keys=False,
         )
     )
+    from src.lero.meta import provenance as prov_mod
+
     # Point BOTH the loader and provenance at tmp_path so mutation
     # resolves root_v + writes mutated versions here.
     from src.lero.prompts import loader as loader_mod
-    from src.lero.meta import provenance as prov_mod
 
     monkeypatch.setattr(loader_mod, "_PROMPTS_DIR", tmp_path)
     monkeypatch.setattr(prov_mod, "_PROMPTS_DIR", tmp_path)

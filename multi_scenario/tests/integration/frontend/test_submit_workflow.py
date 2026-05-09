@@ -8,9 +8,9 @@ import pytest
 
 from multi_scenario.frontend.preflight import CheckStatus, default_checks
 from multi_scenario.frontend.submit_workflow import (
-    SubmitState,
     diff_summary,
     list_configs_grouped,
+    SubmitState,
 )
 
 
@@ -148,7 +148,9 @@ def test_list_configs_grouped_empty_for_unknown_scenario(synth_experiments: Path
     assert list_configs_grouped(synth_experiments, "no_such_scenario") == {}
 
 
-def test_list_configs_grouped_skips_folders_without_configs_dir(synth_experiments: Path):
+def test_list_configs_grouped_skips_folders_without_configs_dir(
+    synth_experiments: Path,
+):
     """A scenario subfolder without ``configs/`` is silently dropped."""
     (synth_experiments / "discovery" / "no_configs_here").mkdir()
     grouped = list_configs_grouped(synth_experiments, "discovery")

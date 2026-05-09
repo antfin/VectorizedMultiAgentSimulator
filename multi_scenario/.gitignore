@@ -14,6 +14,7 @@ env/
 .env
 
 # Test and lint caches
+.claude/
 .pytest_cache/
 .playwright-mcp/
 .ruff_cache/

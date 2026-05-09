@@ -28,16 +28,13 @@ from src.lero.config import (
     MetaPromptTrigger,
 )
 from src.lero.meta.fairness import (
-    LOCAL_ALLOWED_KEYS,
-    LOCAL_FORBIDDEN_KEYS,
     AllowedKeysDict,
     FairnessViolation,
+    LOCAL_ALLOWED_KEYS,
+    LOCAL_FORBIDDEN_KEYS,
 )
 from src.lero.prompts.loader import FrozenSlotMismatch, PromptLoader
-from src.lero.scenario_patch import (
-    _maybe_wrap_obs_state,
-    make_patched_scenario_class,
-)
+from src.lero.scenario_patch import _maybe_wrap_obs_state, make_patched_scenario_class
 
 
 # ── PromptLoader: slot assembly + frozen-hash guard ─────────────

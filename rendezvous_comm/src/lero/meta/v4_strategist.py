@@ -22,11 +22,7 @@ import time
 from typing import List, Optional, Sequence
 
 from ..llm_client import LLMClient
-from .v4_schemas import (
-    BootstrapCard,
-    RoundResult,
-    StrategyBundle,
-)
+from .v4_schemas import BootstrapCard, RoundResult, StrategyBundle
 
 _log = logging.getLogger("rendezvous.lero.mp.v4.strategist")
 

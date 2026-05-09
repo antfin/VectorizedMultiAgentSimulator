@@ -8,14 +8,13 @@ same task+train params are treated as equivalent.
 import json
 from unittest.mock import MagicMock
 
-
 from src.provenance import (
-    Freshness,
-    Provenance,
     check_freshness,
     compute_code_hash,
     compute_config_hash,
+    Freshness,
     load_provenance,
+    Provenance,
     save_provenance,
 )
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import List
 
-
 from src.lero.inner_llm import InnerLLM
 from src.lero.meta.behavioral_summary import format_behavioral_block
 from src.lero.meta.critique import critique_and_revise

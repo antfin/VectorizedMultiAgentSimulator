@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.runner import _in_notebook, _fmt_elapsed, make_heuristic_policy_fn
+from src.runner import _fmt_elapsed, _in_notebook, make_heuristic_policy_fn
 
 
 def _has_benchmarl():

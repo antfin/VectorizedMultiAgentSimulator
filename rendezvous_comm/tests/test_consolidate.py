@@ -2,14 +2,13 @@
 
 from pathlib import Path
 
-
 from src.consolidate import (
-    consolidate_csvs,
-    load_latest_csv,
-    list_experiments_with_data,
     _build_sweep_row,
     _classify_scalars,
     _scalars_to_wide_df,
+    consolidate_csvs,
+    list_experiments_with_data,
+    load_latest_csv,
 )
 from src.storage import ExperimentStorage, RunStorage
 

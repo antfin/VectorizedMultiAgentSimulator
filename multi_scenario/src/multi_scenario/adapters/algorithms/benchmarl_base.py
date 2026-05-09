@@ -21,8 +21,10 @@ from typing import Any
 
 import torch
 from benchmarl.environments import VmasTask
-from benchmarl.experiment import Experiment
-from benchmarl.experiment import ExperimentConfig as BenchmarlExperimentConfig
+from benchmarl.experiment import (
+    Experiment,
+    ExperimentConfig as BenchmarlExperimentConfig,
+)
 from benchmarl.models.mlp import MlpConfig
 from torchrl.envs.utils import ExplorationType, set_exploration_type
 
@@ -54,6 +56,18 @@ class BenchmarlBaseAdapter:
 
     name: str = "benchmarl_base"
     _config_class: type | None = None  # subclass sets this
+
+    def default_params(self) -> dict[str, Any]:
+        """Empty by default — F2.4.2 will surface BenchMARL's tunables here.
+
+        The Submit page's data-driven form reads this via
+        :func:`multi_scenario.application.factories.make_algorithm` to render
+        per-algorithm widgets. Today every algorithm uses BenchMARL's
+        config-class defaults verbatim (``cfg.algorithm.params: {}`` in
+        every YAML on disk); when F2.4.2 lands and we expose model arch /
+        critic config knobs, subclasses override this to declare them.
+        """
+        return {}
 
     def _algorithm_config(self, cfg: ExperimentConfig) -> Any:
         """Default: instantiate ``_config_class`` from YAML + apply param overrides."""
@@ -109,7 +123,9 @@ class BenchmarlBaseAdapter:
         bm.buffer_device = cfg.training.device
         # Eval cadence: cfg expresses it in iters; BenchMARL wants frames.
         bm.evaluation = True
-        bm.evaluation_interval = cfg.evaluation.interval_iters * cfg.training.frames_per_batch
+        bm.evaluation_interval = (
+            cfg.evaluation.interval_iters * cfg.training.frames_per_batch
+        )
         bm.evaluation_episodes = cfg.evaluation.episodes
         bm.loggers = ["csv"]  # avoid wandb default; we don't need its setup
         bm.create_json = False
@@ -129,7 +145,9 @@ class BenchmarlBaseAdapter:
             bm.save_folder = save_folder
         return bm
 
-    def build_experiment(self, cfg: ExperimentConfig, run_dir: Path | None) -> Experiment:
+    def build_experiment(
+        self, cfg: ExperimentConfig, run_dir: Path | None
+    ) -> Experiment:
         """Construct the BenchMARL ``Experiment`` without running it.
 
         Exposed so callers (and the F2.11 video recorder) can access the
@@ -242,11 +260,15 @@ class BenchmarlBaseAdapter:
                     break_when_any_done=False,
                 )
                 ne = rollout_td.batch_size[0]
-                rollout_t = rollout_td.batch_size[1] if len(rollout_td.batch_size) > 1 else 1
+                rollout_t = (
+                    rollout_td.batch_size[1] if len(rollout_td.batch_size) > 1 else 1
+                )
 
                 self._extract_returns(rollout_td, ne, experiment.group_map, all_returns)
                 all_lengths.extend([rollout_t] * ne)
-                self._extract_collisions(rollout_td, ne, experiment.group_map, all_collisions)
+                self._extract_collisions(
+                    rollout_td, ne, experiment.group_map, all_collisions
+                )
                 self._extract_terminated(rollout_td, ne, all_terminated)
 
                 if cfg.scenario.type == "discovery":
@@ -257,16 +279,26 @@ class BenchmarlBaseAdapter:
 
         # F5.4: opt-in long-format CSV. Saves the LAST rollout's per-step data;
         # multi-rollout aggregation deferred (most evals fit in one rollout).
-        if last_rollout_td is not None and run_dir is not None and _long_format_enabled(cfg):
+        if (
+            last_rollout_td is not None
+            and run_dir is not None
+            and _long_format_enabled(cfg)
+        ):
             LocalStorageAdapter().save_eval_steps_long(
                 run_dir, last_rollout_td, dict(experiment.group_map)
             )
 
         rollout_dict: dict[str, Any] = {
-            "episode_returns": torch.tensor(all_returns[:n_episodes], dtype=torch.float),
+            "episode_returns": torch.tensor(
+                all_returns[:n_episodes], dtype=torch.float
+            ),
             "episode_lengths": torch.tensor(all_lengths[:n_episodes], dtype=torch.long),
-            "episode_collisions": torch.tensor(all_collisions[:n_episodes], dtype=torch.float),
-            "episode_terminated": torch.tensor(all_terminated[:n_episodes], dtype=torch.bool),
+            "episode_collisions": torch.tensor(
+                all_collisions[:n_episodes], dtype=torch.float
+            ),
+            "episode_terminated": torch.tensor(
+                all_terminated[:n_episodes], dtype=torch.bool
+            ),
         }
         if cfg.scenario.type == "discovery":
             rollout_dict["n_targets"] = cfg.scenario.params.get(
@@ -274,11 +306,15 @@ class BenchmarlBaseAdapter:
                 self._default_n_targets_from_task(),
             )
             if all_targets_covered:
-                rollout_dict["targets_covered"] = torch.cat(all_targets_covered, dim=0)[:n_episodes]
+                rollout_dict["targets_covered"] = torch.cat(all_targets_covered, dim=0)[
+                    :n_episodes
+                ]
         return rollout_dict
 
     @staticmethod
-    def _extract_returns(rollout_td: Any, ne: int, group_map: Any, out: list[float]) -> None:
+    def _extract_returns(
+        rollout_td: Any, ne: int, group_map: Any, out: list[float]
+    ) -> None:
         for group in group_map:
             key = ("next", group, "reward")
             if key in rollout_td.keys(include_nested=True):
@@ -287,13 +323,19 @@ class BenchmarlBaseAdapter:
                 return
 
     @staticmethod
-    def _extract_collisions(rollout_td: Any, ne: int, group_map: Any, out: list[float]) -> None:
+    def _extract_collisions(
+        rollout_td: Any, ne: int, group_map: Any, out: list[float]
+    ) -> None:
         # Different scenarios surface collisions under different info keys:
         # discovery → ``collision_rew``; navigation → ``agent_collisions``;
         # flocking → ``agent_collision_rew``. All three encode collisions as
         # negative rewards; same aggregation logic.
         for group in group_map:
-            for info_key in ("collision_rew", "agent_collisions", "agent_collision_rew"):
+            for info_key in (
+                "collision_rew",
+                "agent_collisions",
+                "agent_collision_rew",
+            ):
                 key = ("next", group, "info", info_key)
                 if key in rollout_td.keys(include_nested=True):
                     coll = rollout_td[key]
@@ -323,7 +365,9 @@ class BenchmarlBaseAdapter:
         out.extend([False] * ne)
 
     @staticmethod
-    def _extract_targets_covered(rollout_td: Any, group_map: Any, out: list[torch.Tensor]) -> None:
+    def _extract_targets_covered(
+        rollout_td: Any, group_map: Any, out: list[torch.Tensor]
+    ) -> None:
         for group in group_map:
             key = ("next", group, "info", "targets_covered")
             if key in rollout_td.keys(include_nested=True):

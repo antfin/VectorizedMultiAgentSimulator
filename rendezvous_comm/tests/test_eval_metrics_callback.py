@@ -15,14 +15,10 @@ import pickle
 from unittest.mock import MagicMock
 
 import torch
-from tensordict import TensorDict
 
-from src.runner import (
-    _EvalMetricsCallback,
-    _TqdmProgressCallback,
-    _suppress_noise,
-)
+from src.runner import _EvalMetricsCallback, _suppress_noise, _TqdmProgressCallback
 from src.storage import RunStorage
+from tensordict import TensorDict
 
 
 # ── Helpers ──────────────────────────────────────────────────────

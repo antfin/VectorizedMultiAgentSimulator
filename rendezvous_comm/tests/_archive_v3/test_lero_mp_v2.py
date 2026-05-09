@@ -10,22 +10,22 @@ import yaml
 
 from src.lero.meta.failmode import FailMode
 from src.lero.meta.mutation_log import (
-    MutationLogEntry,
     append_entry,
     classify_verdict,
+    MutationLogEntry,
     new_entry,
     read_recent,
     summarize_for_prompt,
     update_last_entry_with_post,
 )
 from src.lero.meta.strategy import (
-    SEED_STRATEGY_BIAS,
-    StrategyCard,
-    StrategyParseError,
     bias_for_seed,
     build_strategist_prompt,
     parse_strategy_card,
+    SEED_STRATEGY_BIAS,
     strategize,
+    StrategyCard,
+    StrategyParseError,
 )
 from src.lero.meta.trigger import TemplateRecord
 
@@ -583,8 +583,8 @@ class TestMultiPathReadRecent:
 
     def test_merge_two_logs_sorted_by_ts(self, tmp_path):
         from src.lero.meta.mutation_log import (
-            MutationLogEntry,
             append_entry,
+            MutationLogEntry,
             read_recent,
         )
 
@@ -618,11 +618,7 @@ class TestMultiPathReadRecent:
         assert [e.new_version for e in merged] == ["v1", "v2", "v3", "v4"]
 
     def test_single_path_still_works(self, tmp_path):
-        from src.lero.meta.mutation_log import (
-            append_entry,
-            new_entry,
-            read_recent,
-        )
+        from src.lero.meta.mutation_log import append_entry, new_entry, read_recent
 
         p = tmp_path / "log.jsonl"
         e = new_entry(
@@ -725,8 +721,8 @@ class TestPerSeedMetaTemperature:
 
     def test_three_way_cycle(self):
         from src.lero.meta.outer_loop import (
-            SEED_META_TEMPERATURE,
             meta_temperature_for_seed,
+            SEED_META_TEMPERATURE,
         )
 
         assert meta_temperature_for_seed(0) == 0.1

@@ -55,7 +55,9 @@ class FernetSecretsAdapter:
             ) from exc
         return json.loads(payload)
 
-    def encrypt_for_env(self, secrets: dict[str, str], passphrase: str) -> dict[str, str]:
+    def encrypt_for_env(
+        self, secrets: dict[str, str], passphrase: str
+    ) -> dict[str, str]:
         """Wrap an encrypted blob into the two env-var pair shipped to OVH jobs."""
         return {
             ENCRYPTED_ENV_VAR: self.encrypt(secrets, passphrase),

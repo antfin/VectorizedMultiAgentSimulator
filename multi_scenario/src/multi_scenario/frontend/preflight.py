@@ -6,9 +6,14 @@ code match what's uploaded to the OVH bucket, etc. Each check has a
 :class:`CheckStatus` (idle / checking / pass / fail) which the UI renders
 as an LED dot, plus a short ``detail`` string surfaced once the check ran.
 
-Phase B replaces the mocked outcomes with **real probes** for the local
-runner (config schema, storage writable). OVH-only checks remain mocked
-until Phase C wires the boto3/ovhai-CLI probes.
+Each row carries a ``category`` (config / system / storage) — the Submit
+page rolls them up into three top-level LED cards. ``run_real_local_checks``
+and ``run_real_ovh_checks`` dispatch the active rows to real probes (Pydantic
+schema validation, local filesystem checks, and — for the OVH probes —
+``ovhai`` CLI bucket verbs via :class:`OvhClient`). The frontend layer
+deliberately never imports ``boto3``: every OVH-side operation goes through
+the existing :class:`OvhClient` adapter so credentials stay unified at
+``ovhai login`` and the hex-architecture port boundary stays clean.
 """
 
 from __future__ import annotations
@@ -167,7 +172,10 @@ def default_checks() -> list[PreflightCheck]:
         PreflightCheck(
             name="Results bucket reachable",
             runners=("ovh",),
-            description="boto3.head_bucket against the OVH results bucket.",
+            description=(
+                "`ovhai bucket list <region>` reports the configured results "
+                "bucket. Reuses ovhai's OAuth — no separate AWS S3 keys needed."
+            ),
             category="storage",
         ),
         PreflightCheck(
@@ -224,7 +232,9 @@ def applicable_checks(
     return out
 
 
-def group_by_category(checks: list[PreflightCheck]) -> list[tuple[str, list[PreflightCheck]]]:
+def group_by_category(
+    checks: list[PreflightCheck],
+) -> list[tuple[str, list[PreflightCheck]]]:
     """Group ``checks`` by ``category``, preserving :data:`CATEGORY_ORDER`.
 
     Returns a list of ``(category_label, [checks...])`` tuples — the page
@@ -257,91 +267,7 @@ def category_status(rows: list[PreflightCheck]) -> CheckStatus:
     return CheckStatus.IDLE
 
 
-# ── Mock outcomes for Phase A ────────────────────────────────────────
-
-
-@dataclass
-class MockOutcome:
-    """A scripted result the page applies to checks for UI preview."""
-
-    status: CheckStatus
-    detail_template: str = ""  # ``"{name}"`` placeholder substituted at apply time
-
-
-# Three mockup scenarios the user can flip through in Phase A.
-_PASS = CheckStatus.PASS
-_FAIL = CheckStatus.FAIL
-
-MOCK_OUTCOMES: dict[str, dict[str, MockOutcome]] = {
-    "all_ok": {
-        "Config schema valid": MockOutcome(_PASS, "OK"),
-        "OVH config valid": MockOutcome(_PASS, "configs/ovh.yaml parsed"),
-        "Required deps importable": MockOutcome(_PASS, "torch · vmas · benchmarl · imageio"),
-        "Storage path writable": MockOutcome(_PASS, "writable"),
-        "Run dir does not collide": MockOutcome(_PASS, "demo_s0__YYYYMMDD_HHMM is fresh"),
-        "GPU available": MockOutcome(_PASS, "1 GPU(s) visible"),
-        "OVH CLI installed": MockOutcome(_PASS, "ovhai 3.35.0"),
-        "Results bucket reachable": MockOutcome(_PASS, "ms-results bucket reachable"),
-        "Code matches OVH bucket": MockOutcome(
-            _PASS, "local sha a1b2c3 = remote sha a1b2c3 (uploaded 2h ago)"
-        ),
-        "Per-run prefix not occupied": MockOutcome(_PASS, "ms-results/<run_id>/ clear"),
-        "Submitted YAML present in bucket": MockOutcome(
-            _PASS, "ms-code/experiments/.../mappo_smoke.yaml present"
-        ),
-        "No active OVH job with this run_id": MockOutcome(
-            _PASS, "no active job collides"
-        ),
-        "Cost cap not exceeded": MockOutcome(_PASS, "€0.42 < €5.00 cap"),
-    },
-    "code_drift": {
-        "Config schema valid": MockOutcome(_PASS, "OK"),
-        "Storage path writable": MockOutcome(_PASS, "writable"),
-        "OVH CLI installed": MockOutcome(_PASS, "ovhai 3.35.0"),
-        "Results bucket reachable": MockOutcome(_PASS, "ms-results reachable"),
-        "Code matches OVH bucket": MockOutcome(
-            _FAIL,
-            "local sha a1b2c3 ≠ remote sha 9d8e7f (uploaded 12d ago) — "
-            "run `multi-scenario upload-code` first",
-        ),
-        "Per-run prefix not occupied": MockOutcome(_PASS, "ms-results/<run_id>/ clear"),
-        "Submitted YAML present in bucket": MockOutcome(
-            _PASS, "ms-code/experiments/.../mappo_smoke.yaml present"
-        ),
-        "No active OVH job with this run_id": MockOutcome(
-            _PASS, "no active job collides"
-        ),
-        "Cost cap not exceeded": MockOutcome(_PASS, "€0.42 < €5.00 cap"),
-    },
-    "cloud_unreachable": {
-        "Config schema valid": MockOutcome(_PASS, "OK"),
-        "Storage path writable": MockOutcome(_PASS, "writable"),
-        "OVH CLI installed": MockOutcome(_FAIL, "command 'ovhai' not found on PATH"),
-        "Results bucket reachable": MockOutcome(_FAIL, "boto3.head_bucket → 403 Forbidden"),
-        "Code matches OVH bucket": MockOutcome(_FAIL, "couldn't query bucket"),
-        "Per-run prefix not occupied": MockOutcome(_FAIL, "couldn't list bucket"),
-        "Submitted YAML present in bucket": MockOutcome(_FAIL, "couldn't head_object"),
-        "No active OVH job with this run_id": MockOutcome(
-            _FAIL, "couldn't query running jobs"
-        ),
-        "Cost cap not exceeded": MockOutcome(_PASS, "€0.42 < €5.00 cap"),
-    },
-}
-
-
-def apply_mock(checks: list[PreflightCheck], scenario: str) -> list[PreflightCheck]:
-    """Update ``checks`` in-place with the named mock outcome (Phase A fallback)."""
-    outcomes = MOCK_OUTCOMES.get(scenario, MOCK_OUTCOMES["all_ok"])
-    for check in checks:
-        m = outcomes.get(check.name)
-        if m is None:
-            continue
-        check.status = m.status
-        check.detail = m.detail_template
-    return checks
-
-
-# ── Real probes (Phase B for local; Phase C will add OVH ones) ──────
+# ── Real probes ──────────────────────────────────────────────────────
 
 
 def _probe_config_schema(form_dict: dict[str, Any]) -> tuple[CheckStatus, str]:
@@ -452,10 +378,12 @@ def _probe_run_dir_collision(form: dict[str, Any]) -> tuple[CheckStatus, str]:
 def run_real_local_checks(
     checks: list[PreflightCheck], form_dict: dict[str, Any]
 ) -> list[PreflightCheck]:
-    """Phase B: run the real local probes; OVH-only rows stay IDLE / mocked.
+    """Run the local-target probes; rows the dispatch table doesn't know
+    are left untouched.
 
     Mutates and returns ``checks`` so the page can re-render the same list
-    with updated statuses + details.
+    with updated statuses + details. OVH-only rows are not in the dispatch
+    table — they stay in their incoming state (caller decides cascade).
     """
     real_probes = {
         "Config schema valid": _probe_config_schema,
@@ -467,8 +395,6 @@ def run_real_local_checks(
     for check in checks:
         probe = real_probes.get(check.name)
         if probe is None:
-            # OVH-only rows — leave for Phase C; mark idle so the user sees
-            # they're not yet checked instead of confusingly green.
             continue
         status, detail = probe(form_dict)
         check.status = status
@@ -476,7 +402,7 @@ def run_real_local_checks(
     return checks
 
 
-# ── Real OVH probes (Phase C) ───────────────────────────────────────
+# ── Real OVH probes ─────────────────────────────────────────────────
 
 
 def _probe_ovh_cli() -> tuple[CheckStatus, str]:
@@ -491,40 +417,46 @@ def _probe_ovh_cli() -> tuple[CheckStatus, str]:
     return CheckStatus.PASS, "ovhai CLI on PATH"
 
 
-def _probe_results_bucket(ovh_cfg: Any) -> tuple[CheckStatus, str]:
-    """``boto3.head_bucket`` against the configured results bucket."""
+def _probe_results_bucket(ovh_cfg: Any, *, client: Any) -> tuple[CheckStatus, str]:
+    """Verify the configured results bucket exists in the project's OVH region.
+
+    Uses ``ovhai bucket list <region>`` (via :class:`OvhClient`) instead of
+    ``boto3.head_bucket`` so the user doesn't need to maintain separate AWS-
+    style S3 credentials — ovhai's OAuth session is sufficient.
+    """
     # pylint: disable=import-outside-toplevel
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
+    from multi_scenario.adapters.runners.ovh_cli import OvhCliError
 
     if ovh_cfg is None:
         return CheckStatus.FAIL, "no OVH config loaded"
     bucket = ovh_cfg.bucket_results
     region = ovh_cfg.region
     try:
-        client = boto3.client("s3", region_name=region)
-        client.head_bucket(Bucket=bucket)
-    except (BotoCoreError, ClientError) as exc:
-        return CheckStatus.FAIL, f"head_bucket {bucket}: {exc}"
+        buckets = client.bucket_list(region)
+    except OvhCliError as exc:
+        return CheckStatus.FAIL, f"ovhai bucket list {region}: {exc}"
+    names = {b.name for b in buckets}
+    if bucket not in names:
+        return (
+            CheckStatus.FAIL,
+            f"{bucket} not in {region} (found: {sorted(names) or '∅'})",
+        )
     return CheckStatus.PASS, f"{bucket}@{region} reachable"
 
 
-# 17 locals here is intrinsic — boto3, hash compute, blob fetch, age format,
-# remote compare. Splitting helpers would just spread the linear flow across
-# four functions without simplifying anything.
-# pylint: disable-next=too-many-locals
-def _probe_code_hash(ovh_cfg: Any, repo_root: Path) -> tuple[CheckStatus, str]:
+def _probe_code_hash(
+    ovh_cfg: Any, repo_root: Path, *, client: Any
+) -> tuple[CheckStatus, str]:
     """Compare local source hash to the ``.code_hash`` blob in the OVH code bucket.
 
-    On success, the detail string includes a "(uploaded N ago)" suffix derived
-    from the blob's ``LastModified`` so the user can spot a stale upload even
-    when the hash matches (e.g. they edited code, uploaded, then reverted
-    locally — hashes match again but the *bucket version* may still be old).
+    Uses :meth:`OvhClient.bucket_get_object` for the blob and
+    :meth:`OvhClient.bucket_list_objects` for the freshness suffix
+    (``last_modified`` lives on the listing entry, not the download).
+    On success, the detail string carries a "(uploaded N ago)" suffix so
+    the user can spot a stale upload even when the hash matches.
     """
     # pylint: disable=import-outside-toplevel
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
-
+    from multi_scenario.adapters.runners.ovh_cli import OvhCliError
     from multi_scenario.adapters.storage.code_uploader import (
         CODE_HASH_KEY,
         compute_local_code_hash,
@@ -537,33 +469,50 @@ def _probe_code_hash(ovh_cfg: Any, repo_root: Path) -> tuple[CheckStatus, str]:
         local = compute_local_code_hash(repo_root)
     except OSError as exc:
         return CheckStatus.FAIL, f"local hash failed: {exc}"
-    key = CODE_HASH_KEY  # bucket is shared between configs; prefix not used here
     try:
-        client = boto3.client("s3", region_name=ovh_cfg.region)
-        obj = client.get_object(Bucket=bucket, Key=key)
-        body = obj["Body"].read().decode("utf-8")
-        last_modified = obj.get("LastModified")
-    except (BotoCoreError, ClientError) as exc:
+        body = client.bucket_get_object(ovh_cfg.region, bucket, CODE_HASH_KEY)
+    except OvhCliError as exc:
         return (
             CheckStatus.FAIL,
             f"no .code_hash in {bucket}: {exc} — run `multi-scenario upload-code`",
         )
-    remote = body.strip()
-    age_suffix = f" (uploaded {_format_age(last_modified)})" if last_modified else ""
+    remote = body.decode("utf-8").strip()
+    # Best-effort age suffix — list with prefix to find the entry's
+    # last_modified. If the listing fails we still succeed on hash match.
+    age_suffix = ""
+    try:
+        objs = client.bucket_list_objects(ovh_cfg.region, bucket, prefix=CODE_HASH_KEY)
+        match = next((o for o in objs if o.name == CODE_HASH_KEY), None)
+        if match is not None and match.last_modified:
+            age_suffix = f" (uploaded {_format_age(match.last_modified)})"
+    except OvhCliError:
+        pass
     if local != remote:
         return (
             CheckStatus.FAIL,
             f"local {local[:18]}… ≠ remote {remote[:18]}…{age_suffix} "
             "— run `multi-scenario upload-code`",
         )
-    return CheckStatus.PASS, f"local hash matches {bucket}/{key}{age_suffix}"
+    return CheckStatus.PASS, f"local hash matches {bucket}/{CODE_HASH_KEY}{age_suffix}"
 
 
 def _format_age(last_modified: Any) -> str:
-    """Render a ``LastModified`` datetime as "5m ago" / "3h ago" / "2d ago"."""
+    """Render an ISO-string or datetime timestamp as "5m ago" / "3h ago" / "2d ago".
+
+    Accepts ``str`` (the ``ovhai`` CLI returns ISO-format timestamps), an
+    aware ``datetime``, or anything ``fromisoformat`` can parse. On parse
+    failure returns "?" so the caller's caption still reads cleanly.
+    """
     # pylint: disable=import-outside-toplevel
     from datetime import datetime, timezone
 
+    if isinstance(last_modified, str):
+        try:
+            last_modified = datetime.fromisoformat(last_modified)
+        except ValueError:
+            return "?"
+    if last_modified.tzinfo is None:
+        last_modified = last_modified.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
     delta = now - last_modified
     secs = int(delta.total_seconds())
@@ -577,7 +526,7 @@ def _format_age(last_modified: Any) -> str:
 
 
 def _probe_yaml_in_bucket(
-    ovh_cfg: Any, yaml_relpath: str | None
+    ovh_cfg: Any, yaml_relpath: str | None, *, client: Any
 ) -> tuple[CheckStatus, str]:
     """Verify the to-be-submitted YAML is actually present in the code bucket.
 
@@ -585,21 +534,14 @@ def _probe_yaml_in_bucket(
     <yaml_path_in_repo>`` against a path *inside* the code bucket — if the
     user picked / saved a YAML that hasn't been ``upload-code``'d yet, the
     container will fail with FileNotFoundError. Catching it here saves a
-    minutes-long round-trip.
+    minutes-long round-trip. Uses :meth:`OvhClient.bucket_object_exists`.
     """
-    # pylint: disable=import-outside-toplevel
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
-
     if ovh_cfg is None:
         return CheckStatus.FAIL, "no OVH config loaded"
     if not yaml_relpath:
         return CheckStatus.FAIL, "no YAML path supplied (active config unset)"
     bucket = ovh_cfg.bucket_code
-    try:
-        client = boto3.client("s3", region_name=ovh_cfg.region)
-        client.head_object(Bucket=bucket, Key=yaml_relpath)
-    except (BotoCoreError, ClientError):
+    if not client.bucket_object_exists(ovh_cfg.region, bucket, yaml_relpath):
         return (
             CheckStatus.FAIL,
             f"{bucket}/{yaml_relpath} not found — `multi-scenario upload-code` "
@@ -638,12 +580,17 @@ def _probe_no_active_collision(
 
 
 def _probe_prefix_collision(
-    ovh_cfg: Any, exp_id: str, seed: int
+    ovh_cfg: Any, exp_id: str, seed: int, *, client: Any
 ) -> tuple[CheckStatus, str]:
-    """List ``<bucket>/<prefix>/<run_id>/`` keys; must be empty (rendezvous lesson)."""
+    """List ``<bucket>/<run_id>/`` keys; must be empty (rendezvous lesson).
+
+    Reusing the same prefix would let parallel jobs FINALIZING-clobber each
+    other (the rendezvous_comm 2026-04-16 incident). Uses
+    :meth:`OvhClient.bucket_list_objects` with ``max_keys=1`` — we only need
+    to know whether *any* object exists under the prefix.
+    """
     # pylint: disable=import-outside-toplevel
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
+    from multi_scenario.adapters.runners.ovh_cli import OvhCliError
 
     if ovh_cfg is None:
         return CheckStatus.FAIL, "no OVH config loaded"
@@ -651,11 +598,12 @@ def _probe_prefix_collision(
     bucket = ovh_cfg.bucket_results
     prefix = f"{run_id}/"
     try:
-        client = boto3.client("s3", region_name=ovh_cfg.region)
-        resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
-    except (BotoCoreError, ClientError) as exc:
-        return CheckStatus.FAIL, f"list_objects_v2 failed: {exc}"
-    if resp.get("KeyCount", 0) > 0:
+        objs = client.bucket_list_objects(
+            ovh_cfg.region, bucket, prefix=prefix, max_keys=1
+        )
+    except OvhCliError as exc:
+        return CheckStatus.FAIL, f"ovhai bucket object list failed: {exc}"
+    if objs:
         return (
             CheckStatus.FAIL,
             f"{bucket}/{prefix} already has data — pick a different exp_id/seed",
@@ -680,6 +628,15 @@ def _probe_cost_cap(
             f"cost_cap_eur={ovh_cfg.cost_cap_eur:.2f} (no seconds_per_run estimate provided)",
         )
     estimate = ovh_cfg.estimate_cost_eur(seconds_per_run / 3600.0)
+    if estimate is None:
+        # No ``eur_per_hour`` registered for this gpu_type → can't project
+        # a number, but the cap itself is set; treat as PASS and tell the
+        # user how to make the projection real.
+        return (
+            CheckStatus.PASS,
+            f"cost_cap_eur={ovh_cfg.cost_cap_eur:.2f} (no eur_per_hour for "
+            f"{ovh_cfg.gpu_type!r} in gpu_models — projection skipped)",
+        )
     if estimate > ovh_cfg.cost_cap_eur:
         return (
             CheckStatus.FAIL,
@@ -703,17 +660,25 @@ def run_real_ovh_checks(
     seconds_per_run: float | None = None,
     ovh_client: Any = None,
 ) -> list[PreflightCheck]:
-    """Phase C: run the local + OVH probes against ``ovh_cfg`` + ``repo_root``.
+    """Run the configuration / system / storage probes against the active form.
 
     Args:
         ovh_client: optional pre-built ``OvhClient`` (for tests / DI). When
-            ``None`` a fresh ``OvhClient()`` is created per probe that needs it.
+            ``None`` a fresh ``OvhClient()`` is created here and threaded into
+            every probe that needs it — so probes don't each spin up their own
+            subprocess wrapper.
         yaml_relpath: path of the to-be-submitted YAML, relative to ``repo_root``
             (matches how it sits in the code bucket). Only used by the
             "Submitted YAML present in bucket" probe.
     """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.adapters.runners.ovh_cli import OvhClient
+
     exp_id = form_dict.get("experiment", {}).get("id", "")
     seed = int(form_dict.get("experiment", {}).get("seed", 0))
+    # Single OvhClient threaded through every probe that talks to ovhai —
+    # keeps the credentials / binary-discovery cost down to one lookup.
+    client = ovh_client or OvhClient()
 
     # If the OVH config didn't load, "OVH config valid" fails and every
     # downstream OVH probe stays IDLE — the user can't fix anything else
@@ -737,16 +702,20 @@ def run_real_ovh_checks(
             else (CheckStatus.PASS, "configs/ovh.yaml parsed")
         ),
         "OVH CLI installed": lambda _f: _probe_ovh_cli(),
-        "Results bucket reachable": lambda _f: _probe_results_bucket(ovh_cfg),
-        "Code matches OVH bucket": lambda _f: _probe_code_hash(ovh_cfg, repo_root),
+        "Results bucket reachable": lambda _f: _probe_results_bucket(
+            ovh_cfg, client=client
+        ),
+        "Code matches OVH bucket": lambda _f: _probe_code_hash(
+            ovh_cfg, repo_root, client=client
+        ),
         "Per-run prefix not occupied": lambda _f: _probe_prefix_collision(
-            ovh_cfg, exp_id, seed
+            ovh_cfg, exp_id, seed, client=client
         ),
         "Submitted YAML present in bucket": lambda _f: _probe_yaml_in_bucket(
-            ovh_cfg, yaml_relpath
+            ovh_cfg, yaml_relpath, client=client
         ),
         "No active OVH job with this run_id": lambda _f: _probe_no_active_collision(
-            exp_id, seed, client=ovh_client
+            exp_id, seed, client=client
         ),
         "Cost cap not exceeded": lambda _f: _probe_cost_cap(ovh_cfg, seconds_per_run),
     }

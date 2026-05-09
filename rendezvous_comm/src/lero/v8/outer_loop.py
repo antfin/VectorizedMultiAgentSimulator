@@ -36,10 +36,7 @@ from ..v7.outer_loop import (
 )
 from ..v7.strategy import V7StrategyBundle
 from .diagnosis import diagnose_inner_result_v8
-from .meta_strategist import (
-    enumerate_bundle_v8,
-    reflect_and_decide_v8,
-)
+from .meta_strategist import enumerate_bundle_v8, reflect_and_decide_v8
 
 _log = logging.getLogger("rendezvous.lero.v8.outer")
 

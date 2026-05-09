@@ -55,7 +55,9 @@ def test_evaluation_interval_in_frames_not_iters():
 
 def test_save_folder_is_propagated():
     """Explicit save_folder lands on the BenchMARL config."""
-    bm = MappoAdapter()._experiment_config(_cfg(), save_folder="/tmp/runs")  # noqa: SLF001
+    bm = MappoAdapter()._experiment_config(
+        _cfg(), save_folder="/tmp/runs"
+    )  # noqa: SLF001
     assert bm.save_folder == "/tmp/runs"
 
 

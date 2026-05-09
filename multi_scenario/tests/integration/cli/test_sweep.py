@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from multi_scenario.cli import app
+from typer.testing import CliRunner
 
 
 def _smoke_config_dict(exp_id: str, seed: int, storage_path: Path) -> dict:
@@ -50,14 +50,18 @@ def test_sweep_dry_run_single_yaml_with_seeds(tmp_path: Path) -> None:
     """Single yaml × 3 seeds → dry-run prints 3 expanded cells."""
     cfg_path = _write_yaml(tmp_path / "smoke.yaml", "x_smoke", 0, tmp_path)
 
-    result = CliRunner().invoke(app, ["sweep", str(cfg_path), "--seeds", "0,1,2", "--dry-run"])
+    result = CliRunner().invoke(
+        app, ["sweep", str(cfg_path), "--seeds", "0,1,2", "--dry-run"]
+    )
     assert result.exit_code == 0, result.output
     # All three seed-tagged exp_ids appear in the preview.
     assert "x_smoke_s0" in result.output
     assert "x_smoke_s1" in result.output
     assert "x_smoke_s2" in result.output
     # No actual run folders were created.
-    assert not any(p.name.startswith("x_smoke_s") for p in tmp_path.iterdir() if p.is_dir())
+    assert not any(
+        p.name.startswith("x_smoke_s") for p in tmp_path.iterdir() if p.is_dir()
+    )
 
 
 def test_sweep_dry_run_directory_input(tmp_path: Path) -> None:
@@ -85,7 +89,9 @@ def test_sweep_dry_run_glob_pattern(tmp_path: Path) -> None:
     _write_yaml(configs_dir / "abs_two.yaml", "abs_two", 0, tmp_path)
     _write_yaml(configs_dir / "other.yaml", "other", 0, tmp_path)
 
-    result = CliRunner().invoke(app, ["sweep", str(configs_dir / "abs_*.yaml"), "--dry-run"])
+    result = CliRunner().invoke(
+        app, ["sweep", str(configs_dir / "abs_*.yaml"), "--dry-run"]
+    )
     assert result.exit_code == 0, result.output
     assert "abs_one_s0" in result.output
     assert "abs_two_s0" in result.output
@@ -99,10 +105,14 @@ def test_sweep_directory_with_seeds_cartesian(tmp_path: Path) -> None:
     _write_yaml(configs_dir / "a_smoke.yaml", "a_smoke", 0, tmp_path)
     _write_yaml(configs_dir / "b_smoke.yaml", "b_smoke", 0, tmp_path)
 
-    result = CliRunner().invoke(app, ["sweep", str(configs_dir), "--seeds", "0,1,2", "--dry-run"])
+    result = CliRunner().invoke(
+        app, ["sweep", str(configs_dir), "--seeds", "0,1,2", "--dry-run"]
+    )
     assert result.exit_code == 0, result.output
     # 6 cells: 2 yamls × 3 seeds.
-    assert "6 cell" in result.output or "6 runs" in result.output or "(6)" in result.output
+    assert (
+        "6 cell" in result.output or "6 runs" in result.output or "(6)" in result.output
+    )
     expected_ids = (
         "a_smoke_s0",
         "a_smoke_s1",
@@ -122,7 +132,15 @@ def test_sweep_size_cap_exceeded_exits_nonzero(tmp_path: Path) -> None:
     # 5 seeds with max-runs=3 → cap exceeded.
     result = CliRunner().invoke(
         app,
-        ["sweep", str(cfg_path), "--seeds", "0,1,2,3,4", "--max-runs", "3", "--dry-run"],
+        [
+            "sweep",
+            str(cfg_path),
+            "--seeds",
+            "0,1,2,3,4",
+            "--max-runs",
+            "3",
+            "--dry-run",
+        ],
     )
     assert result.exit_code == 2
     assert "5" in result.output  # actual cell count
@@ -166,8 +184,16 @@ def test_sweep_executes_each_cell_when_not_dry_run(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
     # Two run folders should exist with the expected prefix patterns.
-    s0_dirs = [p for p in tmp_path.iterdir() if p.is_dir() and p.name.startswith("x_smoke_s0__")]
-    s1_dirs = [p for p in tmp_path.iterdir() if p.is_dir() and p.name.startswith("x_smoke_s1__")]
+    s0_dirs = [
+        p
+        for p in tmp_path.iterdir()
+        if p.is_dir() and p.name.startswith("x_smoke_s0__")
+    ]
+    s1_dirs = [
+        p
+        for p in tmp_path.iterdir()
+        if p.is_dir() and p.name.startswith("x_smoke_s1__")
+    ]
     assert len(s0_dirs) == 1
     assert len(s1_dirs) == 1
     # Each has the §3.5.2 layout.

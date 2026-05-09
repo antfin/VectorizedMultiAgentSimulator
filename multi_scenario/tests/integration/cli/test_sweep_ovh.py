@@ -8,10 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import yaml
-from typer.testing import CliRunner
 
 from multi_scenario.adapters.runners.ovh_cli import JobInfo
 from multi_scenario.cli import app
+from typer.testing import CliRunner
 
 
 def _smoke_yaml_dict(exp_id: str, storage_path: Path) -> dict:
@@ -68,7 +68,9 @@ def _write_yamls(tmp_path: Path, exp_ids: list[str]) -> tuple[list[Path], Path]:
     yaml_paths = []
     for exp_id in exp_ids:
         p = cfgs_dir / f"{exp_id}.yaml"
-        p.write_text(yaml.safe_dump(_smoke_yaml_dict(exp_id, tmp_path)), encoding="utf-8")
+        p.write_text(
+            yaml.safe_dump(_smoke_yaml_dict(exp_id, tmp_path)), encoding="utf-8"
+        )
         yaml_paths.append(p)
     ovh_path = tmp_path / "ovh.yaml"
     ovh_path.write_text(yaml.safe_dump(_ovh_yaml_dict()), encoding="utf-8")

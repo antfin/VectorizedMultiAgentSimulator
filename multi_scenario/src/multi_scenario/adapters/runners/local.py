@@ -24,11 +24,7 @@ from multi_scenario.application.factories import (
     make_scenario,
     make_storage,
 )
-from multi_scenario.domain.models import (
-    ExperimentConfig,
-    ExperimentResult,
-    Provenance,
-)
+from multi_scenario.domain.models import ExperimentConfig, ExperimentResult, Provenance
 from multi_scenario.domain.ports import Logger, MetricsBundle
 
 
@@ -70,7 +66,9 @@ class LocalRunner:
         # F2.10.1: opt in the LocalStorageAdapter writer so eval_episodes.json
         # gets produced. Off the Storage Protocol on purpose (F1.9 minimalism).
         eval_writer = (
-            storage.save_eval_episodes if isinstance(storage, LocalStorageAdapter) else None
+            storage.save_eval_episodes
+            if isinstance(storage, LocalStorageAdapter)
+            else None
         )
 
         service = ExperimentService(

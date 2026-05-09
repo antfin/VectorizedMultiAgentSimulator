@@ -357,9 +357,9 @@ class TestMemoryStore(unittest.TestCase):
 class TestBundleNextPendingIdx(unittest.TestCase):
     def _strat(self, name, score, attempts=0, excluded=False):
         from src.lero.v9.strategy import (
+            V9ChainOfThought,
             V9Strategy,
             V9SuccessSignature,
-            V9ChainOfThought,
         )
 
         return V9Strategy(
@@ -715,8 +715,8 @@ class TestPreEvalValidator(unittest.TestCase):
     """v9.1 §2.1 mandatory_features pre-eval check."""
 
     def setUp(self):
-        from src.lero.v9.outer_loop import make_pre_eval_validator
         from src.lero.codegen import CandidateCode
+        from src.lero.v9.outer_loop import make_pre_eval_validator
 
         self.CandidateCode = CandidateCode
         self.td = {
@@ -866,9 +866,9 @@ class TestProductionReplayPreEvalValidator(unittest.TestCase):
     8 candidates that lacked role_one_hot (saving 8×9=~72 min training)."""
 
     def setUp(self):
-        from src.lero.v9.outer_loop import make_pre_eval_validator
-        from src.lero.prompts.loader import PromptLoader
         from src.lero.codegen import CandidateCode
+        from src.lero.prompts.loader import PromptLoader
+        from src.lero.v9.outer_loop import make_pre_eval_validator
 
         self.CandidateCode = CandidateCode
         loader = PromptLoader("v3_modular_taskdomain")
@@ -1102,8 +1102,8 @@ class TestProductionReplaySlotValidator(unittest.TestCase):
     outer_1..outer_4's edits FAIL — exactly the regression points."""
 
     def setUp(self):
-        from src.lero.v9.slot_validator import validate_slot_edits
         from src.lero.prompts.loader import PromptLoader
+        from src.lero.v9.slot_validator import validate_slot_edits
 
         self.fn = validate_slot_edits
         loader = PromptLoader("v3_modular_taskdomain")

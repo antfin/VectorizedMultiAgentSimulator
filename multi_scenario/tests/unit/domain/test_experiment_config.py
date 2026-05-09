@@ -3,9 +3,9 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from multi_scenario.domain.models import ExperimentConfig
+from pydantic import ValidationError
 
 
 def _minimal_dict() -> dict:

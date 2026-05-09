@@ -121,7 +121,11 @@ def _build_rankings(
         entries: list[RankingEntry] = []
         for run_dir, result in runs_data:
             value = next(
-                (m.value for m in result.metrics if m.name == metric and m.value is not None),
+                (
+                    m.value
+                    for m in result.metrics
+                    if m.name == metric and m.value is not None
+                ),
                 None,
             )
             if value is None:

@@ -12,7 +12,9 @@ from ._app import app
 
 @app.command()
 def consolidate(
-    exp_type_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
+    exp_type_dir: Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True
+    ),
 ) -> None:
     """Build ``runs.csv`` + ``runs.json`` from all DONE runs (F5.2 + F5.3)."""
     csv_path = RunsCsvWriter().consolidate(exp_type_dir)

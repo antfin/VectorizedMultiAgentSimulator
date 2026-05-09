@@ -9,11 +9,8 @@ import pytest
 
 from src.lero.config import LLMConfig
 from src.lero.meta.v4_composer import compose_prompt_for_strategy
+from src.lero.meta.v4_schemas import BootstrapCard, StrategyV4
 from src.lero.meta.v4_strategist import _parse_bundle, emit_strategies
-from src.lero.meta.v4_schemas import (
-    BootstrapCard,
-    StrategyV4,
-)
 
 
 # ── Fixtures ────────────────────────────────────────────────────

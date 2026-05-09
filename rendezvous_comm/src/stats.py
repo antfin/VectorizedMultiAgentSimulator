@@ -1,7 +1,8 @@
 """Statistical analysis utilities for experiment comparison."""
 
-import numpy as np
 from typing import Dict, List, Tuple
+
+import numpy as np
 
 
 def compare_experiments(

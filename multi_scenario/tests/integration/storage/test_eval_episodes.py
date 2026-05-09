@@ -18,7 +18,9 @@ def test_save_eval_episodes_universal_keys(tmp_path: Path) -> None:
 
     LocalStorageAdapter().save_eval_episodes(tmp_path, rollout)
 
-    on_disk = json.loads((tmp_path / "output" / "eval_episodes.json").read_text(encoding="utf-8"))
+    on_disk = json.loads(
+        (tmp_path / "output" / "eval_episodes.json").read_text(encoding="utf-8")
+    )
     assert on_disk["episode_returns"] == [1.5, 2.5, 3.5]
     assert on_disk["episode_lengths"] == [10, 20, 30]
     assert on_disk["episode_collisions"] == [0.0, 1.0, 2.0]
@@ -36,7 +38,9 @@ def test_save_eval_episodes_with_discovery_keys(tmp_path: Path) -> None:
 
     LocalStorageAdapter().save_eval_episodes(tmp_path, rollout)
 
-    on_disk = json.loads((tmp_path / "output" / "eval_episodes.json").read_text(encoding="utf-8"))
+    on_disk = json.loads(
+        (tmp_path / "output" / "eval_episodes.json").read_text(encoding="utf-8")
+    )
     assert on_disk["targets_covered"] == [[0, 0, 1, 1, 2]]
     assert on_disk["n_targets"] == 7
 
@@ -53,7 +57,9 @@ def test_save_eval_episodes_skips_unknown_keys(tmp_path: Path) -> None:
 
     LocalStorageAdapter().save_eval_episodes(tmp_path, rollout)
 
-    on_disk = json.loads((tmp_path / "output" / "eval_episodes.json").read_text(encoding="utf-8"))
+    on_disk = json.loads(
+        (tmp_path / "output" / "eval_episodes.json").read_text(encoding="utf-8")
+    )
     assert "future_token_field" not in on_disk
     assert "internal_state" not in on_disk
     assert "episode_returns" in on_disk

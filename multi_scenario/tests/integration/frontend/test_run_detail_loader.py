@@ -15,7 +15,7 @@ from multi_scenario.domain.models import (
     RunState,
     RunStateRecord,
 )
-from multi_scenario.frontend.run_detail_loader import RunDetail, load_run_detail
+from multi_scenario.frontend.run_detail_loader import load_run_detail, RunDetail
 
 
 def _seed_required(run_dir: Path) -> None:
@@ -68,7 +68,9 @@ def happy_run_dir(tmp_path: Path) -> Path:
     # (``benchmarl/<exp>/<exp>/scalars/*.csv``); the loader walks recursively.
     inner = run_dir / "output" / "benchmarl" / "demo_inner" / "demo_inner"
     (inner / "scalars").mkdir(parents=True)
-    (inner / "scalars" / "reward.csv").write_text("step,value\n0,0.0\n1,1.0\n", encoding="utf-8")
+    (inner / "scalars" / "reward.csv").write_text(
+        "step,value\n0,0.0\n1,1.0\n", encoding="utf-8"
+    )
     (inner / "scalars" / "loss.csv").write_text("step,value\n0,0.5\n", encoding="utf-8")
     # Videos
     videos = run_dir / "output" / "videos"
@@ -88,7 +90,9 @@ def test_load_run_detail_returns_none_when_dir_missing(tmp_path: Path) -> None:
     assert load_run_detail(tmp_path / "nope") is None
 
 
-def test_load_run_detail_returns_none_when_required_artefacts_missing(tmp_path: Path) -> None:
+def test_load_run_detail_returns_none_when_required_artefacts_missing(
+    tmp_path: Path,
+) -> None:
     """Missing config or metrics → loader bails early with None."""
     run_dir = tmp_path / "empty"
     run_dir.mkdir()

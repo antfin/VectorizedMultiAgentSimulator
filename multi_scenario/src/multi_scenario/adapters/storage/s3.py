@@ -78,7 +78,9 @@ class S3StorageAdapter(StorageAdapterBase):
         self._put(run_dir, rel, body)
 
     def _read_text(self, run_dir: Path, rel: str) -> str:
-        obj = self._client.get_object(Bucket=self._config.bucket, Key=self._key(run_dir, rel))
+        obj = self._client.get_object(
+            Bucket=self._config.bucket, Key=self._key(run_dir, rel)
+        )
         return obj["Body"].read().decode("utf-8")
 
     # ── internals ──────────────────────────────────────────────────────
@@ -94,7 +96,9 @@ class S3StorageAdapter(StorageAdapterBase):
         """Bytes-or-str put — used by ``_write_text`` and the bytes-mode sync helper."""
         if isinstance(body, str):
             body = body.encode("utf-8")
-        self._client.put_object(Bucket=self._config.bucket, Key=self._key(run_dir, rel), Body=body)
+        self._client.put_object(
+            Bucket=self._config.bucket, Key=self._key(run_dir, rel), Body=body
+        )
 
     def _list(self, prefix: str) -> list[str]:
         """Page-aware list of keys under ``prefix``."""

@@ -23,9 +23,9 @@ from ..config import LLMConfig
 from ..llm_client import LLMClient
 from ..v6.meta_strategist import _META_SYSTEM as V0_META_SYSTEM
 from .harness import (
-    PromptTrialResult,
     load_v6_old_best_obs,
     make_synthetic_inner_result,
+    PromptTrialResult,
     run_harness_trial,
 )
 

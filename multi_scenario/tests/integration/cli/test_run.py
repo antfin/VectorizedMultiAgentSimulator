@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from multi_scenario.cli import app
+from typer.testing import CliRunner
 
 
 def _smoke_yaml(storage_path: Path) -> dict:

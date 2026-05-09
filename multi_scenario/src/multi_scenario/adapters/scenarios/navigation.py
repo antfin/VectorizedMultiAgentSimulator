@@ -26,6 +26,7 @@ class VmasNavigationAdapter(VmasScenarioBase):
             "agents_with_same_goal": 1,
             "observe_all_goals": False,
             "shared_rew": True,
+            "max_steps": 100,
         }
 
     def success_predicate(self, rollout: Any) -> Any:

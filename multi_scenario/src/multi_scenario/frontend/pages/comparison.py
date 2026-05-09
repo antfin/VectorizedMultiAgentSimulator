@@ -29,17 +29,13 @@ from multi_scenario.frontend.aggregations import (
     build_config_diff_table,
     stringify_diff_value,
 )
-from multi_scenario.frontend.charts import (
-    box_by_algo,
-    grouped_bar_with_se,
-    scatter_xy,
-)
+from multi_scenario.frontend.charts import box_by_algo, grouped_bar_with_se, scatter_xy
 from multi_scenario.frontend.sidebar import (
     load_runs_with_cache,
     persist_widget_state,
     render_active_root_caption,
 )
-from multi_scenario.frontend.theme import POLIMI_LIGHT_BLUE, apply_theme
+from multi_scenario.frontend.theme import apply_theme, POLIMI_LIGHT_BLUE
 
 apply_theme(title="Compare", subtitle="Cross-experiment leaderboard")
 
@@ -72,7 +68,9 @@ def _options(col: str) -> list[str]:
 
 
 def _available_metrics() -> list[str]:
-    return [m for m in ALL_M_METRICS if m in runs_df.columns and runs_df[m].notna().any()]
+    return [
+        m for m in ALL_M_METRICS if m in runs_df.columns and runs_df[m].notna().any()
+    ]
 
 
 # Filter selections persist across page nav via shadow keys (Streamlit's
@@ -132,8 +130,13 @@ sorted_df = filtered.sort_values(metric, ascending=sort_asc).reset_index(drop=Tr
 # ── 1. Headline KPIs ─────────────────────────────────────────────────
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Runs", len(filtered))
-k2.metric("Scenarios", filtered["scenario"].nunique() if "scenario" in filtered.columns else 0)
-k3.metric("Algorithms", filtered["algorithm"].nunique() if "algorithm" in filtered.columns else 0)
+k2.metric(
+    "Scenarios", filtered["scenario"].nunique() if "scenario" in filtered.columns else 0
+)
+k3.metric(
+    "Algorithms",
+    filtered["algorithm"].nunique() if "algorithm" in filtered.columns else 0,
+)
 k4.metric("Seeds", filtered["seed"].nunique() if "seed" in filtered.columns else 0)
 st.markdown("---")
 
@@ -259,7 +262,10 @@ with st.expander("Config differences across selected runs", expanded=False):
                 1
                 for k in diff_table.index
                 for v in (stringify_diff_value(x) for x in diff_table.loc[k])
-                if v != Counter(stringify_diff_value(x) for x in diff_table.loc[k]).most_common(1)[0][0]
+                if v
+                != Counter(
+                    stringify_diff_value(x) for x in diff_table.loc[k]
+                ).most_common(1)[0][0]
             )
             st.caption(
                 f"{n_diff_cells} cell(s) differ from their row's most-common value "

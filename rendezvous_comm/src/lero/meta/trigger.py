@@ -42,9 +42,9 @@ class TemplateRecord:
     best_M2: float = 0.0
     seed_M1_std: float = 0.0  # σ of M1 across seeds, at best cand
     fail_mode: FailMode = FailMode.HEALTHY
-    mutation_target_slot: Optional[str] = (
-        None  # which slot was edited to MAKE this version
-    )
+    mutation_target_slot: Optional[
+        str
+    ] = None  # which slot was edited to MAKE this version
     mutation_rationale: Optional[str] = None
 
 

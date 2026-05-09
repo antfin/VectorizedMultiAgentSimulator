@@ -143,13 +143,11 @@ def test_discrete_action_nvec(scenario, multidiscrete_actions, num_envs=10, n_st
                         assert (
                             aj != 0 or uj == 0
                         ), f"discrete action {aj} maps to control {uj} (n={n}), U={U}, k={k})"
-                        assert (
-                            (aj < 1 or aj > n // 2)
-                            or torch.isclose(uj / k, (2 * U * (aj - 1)) / (n - 1) - U)
+                        assert (aj < 1 or aj > n // 2) or torch.isclose(
+                            uj / k, (2 * U * (aj - 1)) / (n - 1) - U
                         ), f"discrete action {aj} maps to control {uj} (n={n}, U={U}, k={k})"
-                        assert (
-                            (aj <= n // 2)
-                            or torch.isclose(uj / k, 2 * U * (aj / (n - 1)) - U)
+                        assert (aj <= n // 2) or torch.isclose(
+                            uj / k, 2 * U * (aj / (n - 1)) - U
                         ), f"discrete action {aj} maps to control {uj} (n={n}), U={U}, k={k})"
                     else:
                         assert torch.isclose(

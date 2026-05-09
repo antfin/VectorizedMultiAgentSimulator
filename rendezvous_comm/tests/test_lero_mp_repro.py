@@ -8,12 +8,7 @@ import pytest
 
 from src.lero.llm_cache import LLMCache
 from src.lero.llm_client import _cache_key_for
-from src.lero.schemas import (
-    EditorCritique,
-    EditorOutput,
-    InnerLLMOutput,
-    StrategyCard,
-)
+from src.lero.schemas import EditorCritique, EditorOutput, InnerLLMOutput, StrategyCard
 
 
 # ── Cache keys ───────────────────────────────────────────────────

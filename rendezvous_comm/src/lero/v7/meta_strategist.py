@@ -33,11 +33,7 @@ from typing import Dict, List, Optional, Tuple
 from ..llm_client import LLMClient
 from ..v5.inner_loop import InnerResult
 from .diagnosis import V7Diagnosis
-from .strategy import (
-    SuccessSignature,
-    V7Strategy,
-    V7StrategyBundle,
-)
+from .strategy import SuccessSignature, V7Strategy, V7StrategyBundle
 
 _log = logging.getLogger("rendezvous.lero.v7.meta")
 
@@ -314,13 +310,16 @@ def reflect_and_decide(
                     add.append(_parse_strategy(b))
                 except Exception as e:  # noqa: BLE001
                     _log.warning("v7 reflect: bundle.add parse skipped: %s", e)
-            return V7ReflectionDecision(
-                next_action=str(data["next_action"]),
-                rationale=str(data.get("rationale", "")),
-                slot_edits=slot_edits,
-                bundle_demote=demote,
-                bundle_add=add,
-            ), raw
+            return (
+                V7ReflectionDecision(
+                    next_action=str(data["next_action"]),
+                    rationale=str(data.get("rationale", "")),
+                    slot_edits=slot_edits,
+                    bundle_demote=demote,
+                    bundle_add=add,
+                ),
+                raw,
+            )
         except Exception as e:  # noqa: BLE001
             last_err = e
             _log.warning("v7 reflect parse fail attempt %d: %s", attempt, e)

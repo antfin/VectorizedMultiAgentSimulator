@@ -4,13 +4,13 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
 from multi_scenario.adapters.storage.local import LocalStorageAdapter
 from multi_scenario.cli import app
 from multi_scenario.domain.models import EvalRunRecord, ExperimentConfig, RunId
+from typer.testing import CliRunner
 
 
 def _smoke_cfg_dict(storage_path: Path) -> dict:
@@ -59,7 +59,9 @@ def test_eval_refuses_when_no_checkpoint(tmp_path: Path) -> None:
     run_dir = tmp_path / "no_ckpt"
     run_dir.mkdir()
     storage = LocalStorageAdapter()
-    storage.save_config(run_dir, ExperimentConfig.model_validate(_smoke_cfg_dict(tmp_path)))
+    storage.save_config(
+        run_dir, ExperimentConfig.model_validate(_smoke_cfg_dict(tmp_path))
+    )
     result = CliRunner().invoke(app, ["eval", str(run_dir)])
     assert result.exit_code == 2
     assert "checkpoint" in result.output.lower()

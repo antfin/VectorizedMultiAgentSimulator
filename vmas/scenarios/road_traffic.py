@@ -1129,9 +1129,9 @@ class Scenario(BaseScenario):
                     random_point_id = torch.randint(6, int(num_points / 2), (1,)).item()
                 else:
                     random_point_id = torch.randint(3, num_points - 5, (1,)).item()
-                self.ref_paths_agent_related.point_id[env_i, i_agent] = (
-                    random_point_id  # Update
-                )
+                self.ref_paths_agent_related.point_id[
+                    env_i, i_agent
+                ] = random_point_id  # Update
                 position_start = ref_path["center_line"][random_point_id]
                 agents[i_agent].set_pos(position_start, batch_index=env_i)
 
@@ -1220,9 +1220,9 @@ class Scenario(BaseScenario):
             ) :,
             :,
         ] = extended_points[path_id, -1, :]
-        self.ref_paths_agent_related.n_points_long_term[env_i, i_agent] = (
-            n_points_long_term
-        )
+        self.ref_paths_agent_related.n_points_long_term[
+            env_i, i_agent
+        ] = n_points_long_term
 
         self.ref_paths_agent_related.long_term_vec_normalized[
             env_i, i_agent, 0 : n_points_long_term - 1, :
@@ -1456,9 +1456,10 @@ class Scenario(BaseScenario):
             1
         )  # Vector of the current movement
 
-        ref_points_vecs = (
-            self.ref_paths_agent_related.short_term[:, agent_index]
-            - latest_state[:, agent_index, 0:2].unsqueeze(1)
+        ref_points_vecs = self.ref_paths_agent_related.short_term[
+            :, agent_index
+        ] - latest_state[:, agent_index, 0:2].unsqueeze(
+            1
         )  # Vectors from the previous position to the points on the short-term reference path
         move_projected = torch.sum(move_vec * ref_points_vecs, dim=-1)
         move_projected_weighted = torch.matmul(
@@ -1916,44 +1917,44 @@ class Scenario(BaseScenario):
                         )
 
                         # Store new observation - reference paths
-                        ref_i_others[:, a_i, a_j] = (
-                            transform_from_global_to_local_coordinate(
-                                pos_i=pos_i,
-                                pos_j=self.ref_paths_agent_related.short_term[:, a_j],
-                                rot_i=rot_i,
-                            )
+                        ref_i_others[
+                            :, a_i, a_j
+                        ] = transform_from_global_to_local_coordinate(
+                            pos_i=pos_i,
+                            pos_j=self.ref_paths_agent_related.short_term[:, a_j],
+                            rot_i=rot_i,
                         )
 
                         # Store new observation - left boundary
                         if not self.parameters.is_observe_distance_to_boundaries:
-                            l_b_i_others[:, a_i, a_j] = (
-                                transform_from_global_to_local_coordinate(
-                                    pos_i=pos_i,
-                                    pos_j=self.ref_paths_agent_related.nearing_points_left_boundary[
-                                        :, a_j
-                                    ],
-                                    rot_i=rot_i,
-                                )
+                            l_b_i_others[
+                                :, a_i, a_j
+                            ] = transform_from_global_to_local_coordinate(
+                                pos_i=pos_i,
+                                pos_j=self.ref_paths_agent_related.nearing_points_left_boundary[
+                                    :, a_j
+                                ],
+                                rot_i=rot_i,
                             )
 
                             # Store new observation - right boundary
-                            r_b_i_others[:, a_i, a_j] = (
-                                transform_from_global_to_local_coordinate(
-                                    pos_i=pos_i,
-                                    pos_j=self.ref_paths_agent_related.nearing_points_right_boundary[
-                                        :, a_j
-                                    ],
-                                    rot_i=rot_i,
-                                )
+                            r_b_i_others[
+                                :, a_i, a_j
+                            ] = transform_from_global_to_local_coordinate(
+                                pos_i=pos_i,
+                                pos_j=self.ref_paths_agent_related.nearing_points_right_boundary[
+                                    :, a_j
+                                ],
+                                rot_i=rot_i,
                             )
 
                         # Store new observation - vertices
-                        ver_i_others[:, a_i, a_j] = (
-                            transform_from_global_to_local_coordinate(
-                                pos_i=pos_i,
-                                pos_j=self.vertices[:, a_j, 0:4, :],
-                                rot_i=rot_i,
-                            )
+                        ver_i_others[
+                            :, a_i, a_j
+                        ] = transform_from_global_to_local_coordinate(
+                            pos_i=pos_i,
+                            pos_j=self.vertices[:, a_j, 0:4, :],
+                            rot_i=rot_i,
                         )
 
                 # Add new observations & normalize
@@ -2099,25 +2100,25 @@ class Scenario(BaseScenario):
             obs_pos_other_agents = self.observations.past_pos.get_latest()[
                 indexing_tuple_1
             ]  # [batch_size, n_nearing_agents, 2]
-            obs_pos_other_agents[mask_nearing_agents_too_far] = (
-                self.constants.mask_one
-            )  # Position mask
+            obs_pos_other_agents[
+                mask_nearing_agents_too_far
+            ] = self.constants.mask_one  # Position mask
 
             # Rotations of nearing agents
             obs_rot_other_agents = self.observations.past_rot.get_latest()[
                 indexing_tuple_1
             ]  # [batch_size, n_nearing_agents]
-            obs_rot_other_agents[mask_nearing_agents_too_far] = (
-                self.constants.mask_zero
-            )  # Rotation mask
+            obs_rot_other_agents[
+                mask_nearing_agents_too_far
+            ] = self.constants.mask_zero  # Rotation mask
 
             # Velocities of nearing agents
             obs_vel_other_agents = self.observations.past_vel.get_latest()[
                 indexing_tuple_1
             ]  # [batch_size, n_nearing_agents]
-            obs_vel_other_agents[mask_nearing_agents_too_far] = (
-                self.constants.mask_zero
-            )  # Velocity mask
+            obs_vel_other_agents[
+                mask_nearing_agents_too_far
+            ] = self.constants.mask_zero  # Velocity mask
 
             # Reference paths of nearing agents
             obs_ref_path_other_agents = (
@@ -2125,17 +2126,17 @@ class Scenario(BaseScenario):
                     indexing_tuple_1
                 ]
             )  # [batch_size, n_nearing_agents, n_points_short_term, 2]
-            obs_ref_path_other_agents[mask_nearing_agents_too_far] = (
-                self.constants.mask_one
-            )  # Reference-path mask
+            obs_ref_path_other_agents[
+                mask_nearing_agents_too_far
+            ] = self.constants.mask_one  # Reference-path mask
 
             # vertices of nearing agents
             obs_vertices_other_agents = self.observations.past_vertices.get_latest()[
                 indexing_tuple_1
             ]  # [batch_size, n_nearing_agents, 4, 2]
-            obs_vertices_other_agents[mask_nearing_agents_too_far] = (
-                self.constants.mask_one
-            )  # Reference-path mask
+            obs_vertices_other_agents[
+                mask_nearing_agents_too_far
+            ] = self.constants.mask_one  # Reference-path mask
 
             # Distances to nearing agents
             obs_distance_other_agents = (
@@ -2145,9 +2146,9 @@ class Scenario(BaseScenario):
                     nearing_agents_indices,
                 ]
             )  # [batch_size, n_nearing_agents]
-            obs_distance_other_agents[mask_nearing_agents_too_far] = (
-                self.constants.mask_one
-            )  # Distance mask
+            obs_distance_other_agents[
+                mask_nearing_agents_too_far
+            ] = self.constants.mask_one  # Distance mask
 
         else:
             obs_pos_other_agents = self.observations.past_pos.get_latest()[
@@ -2170,9 +2171,9 @@ class Scenario(BaseScenario):
             obs_distance_other_agents = (
                 self.observations.past_distance_to_agents.get_latest()[:, agent_index]
             )  # [batch_size, n_agents]
-            obs_distance_other_agents[:, agent_index] = (
-                0  # Reset self-self distance to zero
-            )
+            obs_distance_other_agents[
+                :, agent_index
+            ] = 0  # Reset self-self distance to zero
 
         # Flatten the last dimensions to combine all features into a single dimension
         obs_pos_other_agents_flat = obs_pos_other_agents.reshape(
@@ -2252,7 +2253,9 @@ class Scenario(BaseScenario):
             ),  # [own] velocity
             self.observations.past_short_term_ref_points.get_latest()[
                 indexing_tuple_3
-            ].reshape(self.world.batch_dim, -1),  # [own] short-term reference path
+            ].reshape(
+                self.world.batch_dim, -1
+            ),  # [own] short-term reference path
             self.observations.past_distance_to_ref_path.get_latest()[
                 :, agent_index
             ].reshape(self.world.batch_dim, -1)
@@ -2264,14 +2267,18 @@ class Scenario(BaseScenario):
             if self.parameters.is_observe_distance_to_boundaries
             else self.observations.past_left_boundary.get_latest()[
                 indexing_tuple_3
-            ].reshape(self.world.batch_dim, -1),  # [own] left boundaries
+            ].reshape(
+                self.world.batch_dim, -1
+            ),  # [own] left boundaries
             self.observations.past_distance_to_right_boundary.get_latest()[
                 :, agent_index
             ].reshape(self.world.batch_dim, -1)
             if self.parameters.is_observe_distance_to_boundaries
             else self.observations.past_right_boundary.get_latest()[
                 indexing_tuple_3
-            ].reshape(self.world.batch_dim, -1),  # [own] right boundaries
+            ].reshape(
+                self.world.batch_dim, -1
+            ),  # [own] right boundaries
         ]
         return obs_self
 
@@ -2286,7 +2293,9 @@ class Scenario(BaseScenario):
         """
         is_collision_with_agents = self.collisions.with_agents.view(
             self.world.batch_dim, -1
-        ).any(dim=-1)  # [batch_dim]
+        ).any(
+            dim=-1
+        )  # [batch_dim]
         is_collision_with_lanelets = self.collisions.with_lanelets.any(dim=-1)
 
         if self.parameters.map_type == "2":  # Record into the initial state buffer

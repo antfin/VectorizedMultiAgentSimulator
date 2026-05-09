@@ -329,13 +329,16 @@ def reflect_and_decide_v8(
                     add.append(_parse_strategy(b))
                 except Exception:  # noqa: BLE001
                     pass
-            return V8ReflectionDecision(
-                next_action=str(data["next_action"]),
-                rationale=str(data.get("rationale", "")),
-                slot_edits=slot_edits,
-                bundle_demote=demote,
-                bundle_add=add,
-            ), raw
+            return (
+                V8ReflectionDecision(
+                    next_action=str(data["next_action"]),
+                    rationale=str(data.get("rationale", "")),
+                    slot_edits=slot_edits,
+                    bundle_demote=demote,
+                    bundle_add=add,
+                ),
+                raw,
+            )
         except Exception as e:  # noqa: BLE001
             last_err = e
             _log.warning("v8 reflect parse fail attempt %d: %s", attempt, e)

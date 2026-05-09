@@ -1,9 +1,9 @@
 """F1.2 tests: MetricRecord and ExperimentResult models."""
 
 import pytest
-from pydantic import ValidationError
 
 from multi_scenario.domain.models import ExperimentResult, MetricRecord
+from pydantic import ValidationError
 
 
 def _minimal_result() -> ExperimentResult:

@@ -79,7 +79,9 @@ class Environment(TorchVectorizedObject):
         **kwargs,
     ):
         if multidiscrete_actions:
-            assert not continuous_actions, "When asking for multidiscrete_actions, make sure continuous_actions=False"
+            assert (
+                not continuous_actions
+            ), "When asking for multidiscrete_actions, make sure continuous_actions=False"
 
         self.scenario = scenario
         self.num_envs = num_envs

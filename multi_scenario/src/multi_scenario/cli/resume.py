@@ -42,7 +42,10 @@ def resume(
 
     checkpoint = latest_checkpoint(run_dir)
     if checkpoint is None:
-        typer.echo(f"✗ no BenchMARL checkpoint found under {run_dir}/output/benchmarl/", err=True)
+        typer.echo(
+            f"✗ no BenchMARL checkpoint found under {run_dir}/output/benchmarl/",
+            err=True,
+        )
         raise typer.Exit(code=2)
 
     now = datetime.now(timezone.utc)

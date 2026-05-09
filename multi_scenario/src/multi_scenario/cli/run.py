@@ -17,6 +17,7 @@ import typer
 
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
+from multi_scenario.application.config_validation import validate_known_types
 from multi_scenario.domain.models import ExperimentConfig, RunId
 
 from ._app import app
@@ -28,11 +29,16 @@ def run(
 ) -> None:
     """Execute one experiment run from a YAML config file."""
     cfg = ExperimentConfig.from_yaml(yaml_path)
+    # Schema's done; now the registry-aware check (lives in application
+    # layer to keep the hex dependency arrow one-way).
+    validate_known_types(cfg)
 
     run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
     storage_root = (
-        Path(cfg.runtime.storage.path) if cfg.runtime is not None else Path("experiments")
+        Path(cfg.runtime.storage.path)
+        if cfg.runtime is not None
+        else Path("experiments")
     )
     run_dir = storage_root / run_id.folder_name(timestamp)
     run_dir.mkdir(parents=True, exist_ok=True)

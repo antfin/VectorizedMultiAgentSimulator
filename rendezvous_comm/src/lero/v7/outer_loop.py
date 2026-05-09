@@ -43,10 +43,7 @@ from ..llm_client import LLMClient
 from ..loop import LeroLoop
 from ..v5.inner_loop import run_inner_loop
 from .diagnosis import diagnose_inner_result
-from .meta_strategist import (
-    enumerate_bundle,
-    reflect_and_decide,
-)
+from .meta_strategist import enumerate_bundle, reflect_and_decide
 from .strategy import V7Strategy, V7StrategyBundle
 
 _log = logging.getLogger("rendezvous.lero.v7.outer")

@@ -354,6 +354,7 @@ def append_to_master_csv(
     Creates the file with headers if it doesn't exist.
     """
     import csv
+
     from .config import RESULTS_DIR
 
     csv_path = RESULTS_DIR / "master_results.csv"

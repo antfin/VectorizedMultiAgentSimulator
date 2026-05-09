@@ -31,6 +31,7 @@ from .theme import (  # noqa: E402
     POLIMI_ORANGE,
     POLIMI_RED,
 )
+
 # pylint: enable=wrong-import-position
 
 # Cycle order matches ``rendezvous_comm/src/plotting.py`` so the two
@@ -109,10 +110,13 @@ def scatter_xy(
     sub = df.dropna(subset=[x, y])
     for i, (algo, grp) in enumerate(sub.groupby("algorithm")):
         ax.scatter(
-            grp[x], grp[y],
+            grp[x],
+            grp[y],
             label=algo,
             color=_color_for(algo, i),
-            s=70, alpha=0.85, edgecolors="white",
+            s=70,
+            alpha=0.85,
+            edgecolors="white",
         )
     ax.set_xlabel(xlabel or x)
     ax.set_ylabel(ylabel or y)
@@ -124,7 +128,9 @@ def scatter_xy(
     plt.close(fig)
 
 
-def box_by_algo(df: pd.DataFrame, metric: str, title: str, ylabel: str | None = None) -> None:
+def box_by_algo(
+    df: pd.DataFrame, metric: str, title: str, ylabel: str | None = None
+) -> None:
     """Box plot of ``metric`` grouped by ``algorithm``."""
     if not _check(df, [metric, "algorithm"], title):
         return
@@ -138,7 +144,10 @@ def box_by_algo(df: pd.DataFrame, metric: str, title: str, ylabel: str | None = 
     data = [sub[sub["algorithm"] == a][metric].values for a in algos]
     fig, ax = plt.subplots()
     bp = ax.boxplot(
-        data, tick_labels=algos, patch_artist=True, widths=0.55,
+        data,
+        tick_labels=algos,
+        patch_artist=True,
+        widths=0.55,
     )
     for i, patch in enumerate(bp["boxes"]):
         patch.set_facecolor(_color_for(algos[i], i))
@@ -185,7 +194,8 @@ def line_plot_csvs(csv_paths: list["Path"], title: str) -> None:  # noqa: F821
         y_col = numeric_cols[0]
         x = df[x_col] if x_col else df.index
         ax.plot(
-            x, df[y_col],
+            x,
+            df[y_col],
             label=path.stem,
             color=_color_for(path.stem, i),
             linewidth=1.6,
@@ -332,8 +342,12 @@ def bar_by_algo_with_stderr(
     fig, ax = plt.subplots()
     colors = [_color_for(a, i) for i, a in enumerate(means.index)]
     bars = ax.bar(
-        range(len(means)), means.values, yerr=sem.values,
-        capsize=4, color=colors, alpha=0.85,
+        range(len(means)),
+        means.values,
+        yerr=sem.values,
+        capsize=4,
+        color=colors,
+        alpha=0.85,
     )
     ax.set_xticks(range(len(means)))
     ax.set_xticklabels(means.index, rotation=20, ha="right")
@@ -341,8 +355,11 @@ def bar_by_algo_with_stderr(
     for rect, val in zip(bars, means.values):
         ax.text(
             rect.get_x() + rect.get_width() / 2,
-            rect.get_height(), f"{val:.2f}",
-            ha="center", va="bottom", fontsize=9,
+            rect.get_height(),
+            f"{val:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
         )
     fig.tight_layout()
     st.subheader(title)

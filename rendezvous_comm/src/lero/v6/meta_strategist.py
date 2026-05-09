@@ -18,11 +18,7 @@ import time
 from typing import Dict, List, Optional
 
 from ..llm_client import LLMClient
-from .decision import (
-    V6MetaDecision,
-    classify_inner_result,
-    enforce_decision,
-)
+from .decision import classify_inner_result, enforce_decision, V6MetaDecision
 
 _log = logging.getLogger("rendezvous.lero.v6.meta")
 

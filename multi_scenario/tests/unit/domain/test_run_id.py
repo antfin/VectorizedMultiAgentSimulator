@@ -1,9 +1,9 @@
 """F1.3 tests: RunId — parametric, hashable identity for one experiment run."""
 
 import pytest
-from pydantic import ValidationError
 
 from multi_scenario.domain.models import RunId
+from pydantic import ValidationError
 
 
 def test_construction():
@@ -40,7 +40,10 @@ def test_different_seed():
 def test_folder_name():
     """folder_name(timestamp) returns <run_id>__<timestamp>."""
     rid = RunId(exp_id="disc_baseline_smoke_mappo", seed=0)
-    assert rid.folder_name("20260506_1423") == "disc_baseline_smoke_mappo_s0__20260506_1423"
+    assert (
+        rid.folder_name("20260506_1423")
+        == "disc_baseline_smoke_mappo_s0__20260506_1423"
+    )
 
 
 def test_from_string():

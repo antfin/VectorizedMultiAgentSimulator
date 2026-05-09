@@ -46,7 +46,9 @@ class CommonMetricsBundle:
             "M5_tokens": m5 if scenario.has_comm() else None,
             "M6_coverage_progress": _mean_or_none(scenario.coverage_progress(rollout)),
             "M7_sample_efficiency": None,
-            "M8_agent_utilization": _mean_or_none(scenario.utilization_predicate(rollout)),
+            "M8_agent_utilization": _mean_or_none(
+                scenario.utilization_predicate(rollout)
+            ),
             "M9_spatial_spread": None,
         }
 

@@ -25,7 +25,6 @@ To set them for a single run:
 
 import os
 
-
 from src.lero.codegen import extract_candidates
 from src.lero.config import LLMConfig
 from src.lero.llm_client import LLMClient

@@ -4,18 +4,18 @@ import pytest
 import yaml
 
 from src.ovh import (
-    GPU_MODELS,
-    load_ovh_config,
-    default_region,
+    _OVH_CONFIG_PATH,
     default_bucket_code,
     default_bucket_results,
     default_gpu,
-    default_n_gpu,
     default_image,
     default_mount_code,
     default_mount_results,
+    default_n_gpu,
+    default_region,
     estimate_cost,
-    _OVH_CONFIG_PATH,
+    GPU_MODELS,
+    load_ovh_config,
 )
 
 

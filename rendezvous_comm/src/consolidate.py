@@ -218,7 +218,7 @@ def consolidate_csvs(
     Returns:
         {"sweep": Path, "iter": Path, "eval": Path}
     """
-    from .storage import ExperimentStorage, _extract_run_id
+    from .storage import _extract_run_id, ExperimentStorage
 
     storage = ExperimentStorage(exp_id, results_root)
     run_dirs = storage.list_run_dirs()

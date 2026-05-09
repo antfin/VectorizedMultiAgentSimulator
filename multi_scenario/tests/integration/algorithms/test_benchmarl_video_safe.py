@@ -17,7 +17,9 @@ def test_record_video_safe_swallows_exception_and_warns(
     def boom(**_kwargs):
         raise RuntimeError("pyglet.gl import failed: no OpenGL")
 
-    with patch("multi_scenario.adapters.algorithms.benchmarl_base.VideoRecorder") as fake:
+    with patch(
+        "multi_scenario.adapters.algorithms.benchmarl_base.VideoRecorder"
+    ) as fake:
         fake.return_value.record.side_effect = boom
         with caplog.at_level(logging.WARNING):
             _record_video_safe(
@@ -29,7 +31,8 @@ def test_record_video_safe_swallows_exception_and_warns(
             )
 
     assert any(
-        "before_training" in rec.message and "pyglet" in rec.message for rec in caplog.records
+        "before_training" in rec.message and "pyglet" in rec.message
+        for rec in caplog.records
     ), [r.message for r in caplog.records]
 
 
@@ -37,7 +40,9 @@ def test_record_video_safe_no_warning_on_success(
     caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
     """Recorder succeeds → no warning logged; the recorder was actually invoked."""
-    with patch("multi_scenario.adapters.algorithms.benchmarl_base.VideoRecorder") as fake:
+    with patch(
+        "multi_scenario.adapters.algorithms.benchmarl_base.VideoRecorder"
+    ) as fake:
         fake.return_value.record.return_value = None
         with caplog.at_level(logging.WARNING):
             _record_video_safe(

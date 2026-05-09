@@ -2246,10 +2246,7 @@ class World(TorchVectorizedObject):
             rotate = rotate_prior.unsqueeze(0).expand(self.batch_dim, -1).unsqueeze(-1)
             joint_rot = torch.stack(joint_rot, dim=-2)
 
-            (
-                force_a_attractive,
-                force_b_attractive,
-            ) = self._get_constraint_forces(
+            (force_a_attractive, force_b_attractive,) = self._get_constraint_forces(
                 pos_joint_a,
                 pos_joint_b,
                 dist_min=dist,

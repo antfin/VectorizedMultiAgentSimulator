@@ -1,26 +1,27 @@
 """OVH AI Training job management."""
 
-import streamlit as st
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import CONFIGS_DIR, RESULTS_DIR
 from src.ovh import (
-    GPU_MODELS,
     check_cli_available,
-    submit_training_job,
-    list_jobs,
-    get_job_logs,
-    stop_job,
-    upload_code,
-    download_results,
-    estimate_cost,
     default_bucket_code,
     default_bucket_results,
-    default_region,
     default_gpu,
+    default_region,
+    download_results,
+    estimate_cost,
+    get_job_logs,
+    GPU_MODELS,
+    list_jobs,
+    stop_job,
+    submit_training_job,
+    upload_code,
 )
 
 from src.theme import apply_theme

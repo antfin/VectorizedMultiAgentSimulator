@@ -16,7 +16,9 @@ from multi_scenario.domain.models import (
 from multi_scenario.frontend.runs_loader import load_runs
 
 
-def _seed_run(run_dir: Path, run_id: str, m1: float, state: RunState | None = None) -> None:
+def _seed_run(
+    run_dir: Path, run_id: str, m1: float, state: RunState | None = None
+) -> None:
     """Write a minimal output/metrics.json (+ optional run_state.json) under run_dir."""
     storage = LocalStorageAdapter()
     result = ExperimentResult(

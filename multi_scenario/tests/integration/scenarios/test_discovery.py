@@ -59,7 +59,10 @@ def test_success_predicate_returns_none_when_data_missing():
     """Missing targets_covered or n_targets → None (graceful degradation)."""
     assert VmasDiscoveryAdapter().success_predicate({}) is None
     assert VmasDiscoveryAdapter().success_predicate({"n_targets": 3}) is None
-    assert VmasDiscoveryAdapter().success_predicate({"targets_covered": torch.zeros(2, 3)}) is None
+    assert (
+        VmasDiscoveryAdapter().success_predicate({"targets_covered": torch.zeros(2, 3)})
+        is None
+    )
 
 
 def test_coverage_progress_returns_max_fraction():

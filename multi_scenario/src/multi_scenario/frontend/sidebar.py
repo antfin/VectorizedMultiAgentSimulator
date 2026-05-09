@@ -54,6 +54,7 @@ def persist_widget_state(widget_key: str, default: Any) -> str:
         st.session_state[widget_key] = st.session_state[persist_key]
     return persist_key
 
+
 #: ``st.session_state`` key under which the active experiments root lives.
 #: Settings page writes it; other pages read it via :func:`active_experiments_dir`.
 EXPERIMENTS_ROOT_KEY = "experiments_root_path"

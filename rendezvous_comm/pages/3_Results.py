@@ -1,8 +1,9 @@
 """Results Dashboard — merged view for sweep overview, run detail, and training curves."""
 
-import streamlit as st
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -10,24 +11,24 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-from src.theme import apply_theme
 from src.config import RESULTS_DIR
-from src.storage import ExperimentStorage
 from src.consolidate import (
-    load_latest_csv,
     consolidate_csvs,
     list_experiments_with_data,
+    load_latest_csv,
 )
 from src.plotting import (
+    METRIC_LABELS,
     plot_sweep_heatmap,
     plot_sweep_overview,
     plot_training_dashboard,
-    set_style,
-    METRIC_LABELS,
     POLIMI_DARK_BLUE,
     POLIMI_RED,
+    set_style,
 )
+from src.storage import ExperimentStorage
+
+from src.theme import apply_theme
 
 st.set_page_config(page_title="Results Dashboard", layout="wide")
 apply_theme(title="Results Dashboard")

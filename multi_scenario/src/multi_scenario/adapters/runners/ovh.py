@@ -108,7 +108,9 @@ class OvhRunner:
         info = self._poll_until_terminal(job_id)
         if info.state.upper() != "DONE":
             tail = _safe_logs_tail(self._client, job_id)
-            raise OvhJobError(f"OVH job {job_id} ended in state={info.state}; last logs:\n{tail}")
+            raise OvhJobError(
+                f"OVH job {job_id} ended in state={info.state}; last logs:\n{tail}"
+            )
         self._logger.info(f"OVH job {job_id} DONE; loading result from {run_dir}")
         # F6.3: when an S3 storage adapter is wired, pull the whole run-folder
         # back from S3 before reading metrics.json locally. Without it, the
@@ -119,7 +121,9 @@ class OvhRunner:
         self._regenerate_videos_if_needed(cfg, run_dir)
         return self._storage.load_result(run_dir)
 
-    def _regenerate_videos_if_needed(self, cfg: ExperimentConfig, run_dir: Path) -> None:
+    def _regenerate_videos_if_needed(
+        self, cfg: ExperimentConfig, run_dir: Path
+    ) -> None:
         """If ``record_video=true`` and no videos came back, render them locally.
 
         OVH containers are headless — the in-job Pyglet recorder fails fail-soft
@@ -138,8 +142,8 @@ class OvhRunner:
         # Local import keeps BenchMARL/torch off the OvhRunner import path.
         # pylint: disable=import-outside-toplevel
         from multi_scenario.application.regenerate_videos import (
-            VideoRegenerationError,
             regenerate_videos,
+            VideoRegenerationError,
         )
 
         self._logger.info(f"regenerating videos locally for {run_dir.name}…")
@@ -213,7 +217,9 @@ class OvhRunner:
         # Encrypted secret env vars (F6.1) — ship as one --env per key,
         # placed before the image in the arg list.
         if self._secret_env and self._secret_passphrase:
-            ship = self._secrets.encrypt_for_env(self._secret_env, self._secret_passphrase)
+            ship = self._secrets.encrypt_for_env(
+                self._secret_env, self._secret_passphrase
+            )
             env_flags: list[str] = []
             for k, v in ship.items():
                 env_flags.extend(["--env", f"{k}={v}"])

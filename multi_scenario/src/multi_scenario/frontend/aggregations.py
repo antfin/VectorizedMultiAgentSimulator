@@ -5,6 +5,7 @@ to build the cross-experiment leaderboard, distribution, and config-diff
 sections.
 """
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -37,7 +38,9 @@ def aggregate_metric(
     if sub.empty:
         return pd.DataFrame(columns=[*by, "mean", "sem"])
     grouped = sub.groupby(by)[metric]
-    agg_fn = {"mean": "mean", "median": "median", "max": "max", "min": "min"}.get(how, "mean")
+    agg_fn = {"mean": "mean", "median": "median", "max": "max", "min": "min"}.get(
+        how, "mean"
+    )
     out = grouped.agg(agg_fn).reset_index().rename(columns={metric: "mean"})
     sem = grouped.sem().reset_index().rename(columns={metric: "sem"})
     out = out.merge(sem, on=by, how="left")
@@ -61,8 +64,8 @@ def flatten_config(payload: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return out
 
 
-def build_config_diff_table(  # noqa: F821
-    run_dirs: "list[Path]",
+def build_config_diff_table(
+    run_dirs: list[Path],
 ) -> "tuple[pd.DataFrame, list[str]]":
     """Build a per-run config table where rows are flattened param paths.
 
@@ -74,9 +77,6 @@ def build_config_diff_table(  # noqa: F821
     Returns an empty DataFrame and empty diff list if ``run_dirs`` is empty
     or no run yields a loadable config.
     """
-    # pylint: disable=import-outside-toplevel
-    from pathlib import Path  # noqa: F401
-
     if not run_dirs:
         return pd.DataFrame(), []
     storage = LocalStorageAdapter()
@@ -97,7 +97,8 @@ def build_config_diff_table(  # noqa: F821
     )
     # A row "differs" if any pair of columns has different stringified values.
     diff_keys = [
-        k for k in all_keys
+        k
+        for k in all_keys
         if len({stringify_diff_value(table.loc[k, c]) for c in columns}) > 1
     ]
     return table, diff_keys

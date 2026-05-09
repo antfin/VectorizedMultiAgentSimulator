@@ -95,7 +95,9 @@ def _find_benchmarl_dir(run_dir: Path) -> Path | None:
     if not bm_root.is_dir():
         return None
     # BenchMARL nests one folder per experiment; pick the most recent if many.
-    inner = sorted((p for p in bm_root.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime)
+    inner = sorted(
+        (p for p in bm_root.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime
+    )
     return inner[-1] if inner else None
 
 

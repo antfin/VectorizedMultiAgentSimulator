@@ -35,7 +35,9 @@ runs_df = load_runs_with_cache(experiments_dir)
 
 SCENARIO_ORDER = ("discovery", "navigation", "transport", "flocking")
 present_scenarios = (
-    set(runs_df["scenario"].dropna().unique()) if "scenario" in runs_df.columns else set()
+    set(runs_df["scenario"].dropna().unique())
+    if "scenario" in runs_df.columns
+    else set()
 )
 # Default to the first scenario that has data, falling back to the first option.
 default_idx = next(
@@ -44,7 +46,9 @@ default_idx = next(
 )
 
 st.sidebar.header("Scenario")
-_picker_persist = persist_widget_state("home_scenario_picker", SCENARIO_ORDER[default_idx])
+_picker_persist = persist_widget_state(
+    "home_scenario_picker", SCENARIO_ORDER[default_idx]
+)
 selected_scenario = st.sidebar.selectbox(
     "Pick a scenario",
     SCENARIO_ORDER,

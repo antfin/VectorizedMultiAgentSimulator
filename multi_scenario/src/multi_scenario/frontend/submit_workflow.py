@@ -111,7 +111,12 @@ class SubmitState:
     def reset() -> None:
         """Wipe the whole workflow (Start over button)."""
         for key in (
-            _SELECTED_PATH, _SNAPSHOT, _CURRENT, _SAVED_PATH, _PREFLIGHT, _SUBMIT_TARGET,
+            _SELECTED_PATH,
+            _SNAPSHOT,
+            _CURRENT,
+            _SAVED_PATH,
+            _PREFLIGHT,
+            _SUBMIT_TARGET,
         ):
             st.session_state.pop(key, None)
 
@@ -191,9 +196,10 @@ def _normalise_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Make a YAML-loaded dict shape-compatible with the form's output.
 
     The Submit form always emits certain fields (``record_video``, empty
-    ``params: {}`` blocks, …) even when the source YAML omits them. We
-    pre-fill those on the snapshot so dirty-detection compares apples to
-    apples — only flagging changes the user actually drove.
+    ``params: {}`` blocks, the union of schema-defaults + YAML-overrides
+    for scenario/algorithm params, …) even when the source YAML omits
+    them. We pre-fill those on the snapshot so dirty-detection compares
+    apples to apples — only flagging changes the user actually drove.
     """
     snap = copy.deepcopy(snapshot)
     runtime = snap.setdefault("runtime", {"runner": {"type": "local"}, "storage": {}})
@@ -213,9 +219,7 @@ def _normalise_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         exp_id = snap.get("experiment", {}).get("id", "")
         params["record_video"] = not exp_id.endswith("_smoke")
 
-    storage = runtime.setdefault("storage", {"type": "fs"})
-    storage.setdefault("type", "fs")
-    storage.setdefault("params", {})
+    _fill_schema_defaults(snap)
 
     # Normalise empty-string optional experiment fields to "absent" so the
     # form (which emits None → drops them) stays consistent.
@@ -224,6 +228,40 @@ def _normalise_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         if exp.get(opt_key) in (None, ""):
             exp.pop(opt_key, None)
     return snap
+
+
+def _fill_schema_defaults(snap: dict[str, Any]) -> None:
+    """Fold ``Scenario.default_params()`` + ``Algorithm.default_params()`` into ``snap``.
+
+    F7.7.B2: the data-driven form renders every key in
+    ``default_params() ∪ YAML overrides`` — so we pre-fill the snapshot
+    with the same union, otherwise loading any YAML that omits a schema
+    key would falsely flag dirty.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.application.factories import (
+        available_algorithms,
+        available_scenarios,
+        make_algorithm,
+        make_scenario,
+    )
+
+    scen = snap.setdefault("scenario", {})
+    scen_type = scen.get("type")
+    if scen_type in available_scenarios():
+        scen_params = scen.setdefault("params", {})
+        for key, default in make_scenario(scen_type).default_params().items():
+            scen_params.setdefault(key, default)
+    algo = snap.setdefault("algorithm", {})
+    algo_type = algo.get("type")
+    if algo_type in available_algorithms():
+        algo_params = algo.setdefault("params", {})
+        for key, default in make_algorithm(algo_type).default_params().items():
+            algo_params.setdefault(key, default)
+    runtime = snap.setdefault("runtime", {})
+    storage = runtime.setdefault("storage", {"type": "fs"})
+    storage.setdefault("type", "fs")
+    storage.setdefault("params", {})
 
 
 # ── Browser helpers ──────────────────────────────────────────────────

@@ -11,16 +11,16 @@ import yaml
 
 from src.lero.meta.failmode import FailMode
 from src.lero.meta.mutation import (
-    MAX_SLOT_CHARS,
-    MIN_SLOT_CHARS,
-    SLOT_BEGIN,
-    SLOT_END,
-    MutationParseError,
-    MutationResult,
     _is_fairness_restatement,
     build_meta_prompt,
+    MAX_SLOT_CHARS,
+    MIN_SLOT_CHARS,
+    MutationParseError,
+    MutationResult,
     parse_mutation_response,
     propose_new_template,
+    SLOT_BEGIN,
+    SLOT_END,
 )
 from src.lero.meta.provenance import load_meta, sha256_text
 from src.lero.meta.trigger import TemplateRecord

@@ -6,10 +6,7 @@ import json
 
 import pytest
 
-from src.lero.meta.critique import (
-    critique_and_revise,
-    parse_critique,
-)
+from src.lero.meta.critique import critique_and_revise, parse_critique
 from src.lero.meta.strategy import StrategyCard
 
 

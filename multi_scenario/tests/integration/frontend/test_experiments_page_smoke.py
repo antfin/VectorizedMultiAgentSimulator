@@ -10,10 +10,10 @@ import pytest
 @pytest.mark.slow
 def test_experiments_page_empty_state(tmp_path: Path) -> None:
     """Empty experiments dir → 'No runs found' info, no exception."""
+    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
+
     # pylint: disable=import-outside-toplevel
     from streamlit.testing.v1 import AppTest
-
-    from multi_scenario.frontend.sidebar import EXPERIMENTS_ROOT_KEY
 
     page_path = (
         Path(__file__).resolve().parents[3]

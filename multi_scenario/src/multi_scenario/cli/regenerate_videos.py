@@ -10,8 +10,8 @@ from pathlib import Path
 import typer
 
 from multi_scenario.application.regenerate_videos import (
-    VideoRegenerationError,
     regenerate_videos,
+    VideoRegenerationError,
 )
 
 from ._app import app

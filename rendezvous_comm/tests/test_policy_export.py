@@ -7,9 +7,9 @@ Verifies that:
   4. BenchMARL experiment policy survives export/import (integration)
 """
 
+import pytest
 import torch
 import torch.nn as nn
-import pytest
 
 from src.storage import RunStorage
 

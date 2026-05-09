@@ -14,9 +14,9 @@ import streamlit as st
 
 from multi_scenario.frontend.charts import pie_by_category
 from multi_scenario.frontend.sidebar import (
-    EXPERIMENTS_ROOT_KEY,
     active_experiments_dir,
     default_experiments_dir,
+    EXPERIMENTS_ROOT_KEY,
     load_runs_with_cache,
 )
 from multi_scenario.frontend.theme import apply_theme
@@ -46,7 +46,9 @@ st.text_input(
 )
 
 resolved = active_experiments_dir()
-st.caption(f"Resolved → `{resolved}`  &nbsp;·&nbsp;  exists: **{'yes' if resolved.is_dir() else 'no'}**")
+st.caption(
+    f"Resolved → `{resolved}`  &nbsp;·&nbsp;  exists: **{'yes' if resolved.is_dir() else 'no'}**"
+)
 
 if resolved != default_experiments_dir():
     if st.button("Reset to default"):

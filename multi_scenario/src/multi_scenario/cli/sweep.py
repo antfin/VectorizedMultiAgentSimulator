@@ -33,7 +33,8 @@ from ._app import app
 @app.command()
 def sweep(
     input_path: str = typer.Argument(
-        ..., help="Single yaml, a directory, or a glob pattern (e.g. 'configs/abs_*.yaml')."
+        ...,
+        help="Single yaml, a directory, or a glob pattern (e.g. 'configs/abs_*.yaml').",
     ),
     seeds: str = typer.Option(
         "",
@@ -102,11 +103,17 @@ def sweep(
         )
         raise typer.Exit(code=2)
 
-    typer.echo(f"sweep: {len(cells)} cell(s) from {len(yaml_paths)} yaml(s) (runner={runner_kind})")
+    typer.echo(
+        f"sweep: {len(cells)} cell(s) from {len(yaml_paths)} yaml(s) (runner={runner_kind})"
+    )
     if seconds_per_run > 0:
-        typer.echo(f"  estimated wall time: {_format_estimate(len(cells), seconds_per_run)}")
+        typer.echo(
+            f"  estimated wall time: {_format_estimate(len(cells), seconds_per_run)}"
+        )
     for i, (cfg, run_dir, _yaml) in enumerate(cells, start=1):
-        typer.echo(f"  [{i}/{len(cells)}] {cfg.experiment.id}_s{cfg.experiment.seed} -> {run_dir}")
+        typer.echo(
+            f"  [{i}/{len(cells)}] {cfg.experiment.id}_s{cfg.experiment.seed} -> {run_dir}"
+        )
 
     if runner_kind == "ovh":
         _sweep_run_ovh(
@@ -122,7 +129,9 @@ def sweep(
         return
 
     if runner_kind != "local":
-        typer.echo(f"✗ unknown --runner {runner_kind!r}; expected 'local' or 'ovh'.", err=True)
+        typer.echo(
+            f"✗ unknown --runner {runner_kind!r}; expected 'local' or 'ovh'.", err=True
+        )
         raise typer.Exit(code=2)
 
     if dry_run:
@@ -187,7 +196,9 @@ def _expand_cells(
             cfg.experiment.seed = seed
             run_id = RunId(exp_id=cfg.experiment.id, seed=seed)
             storage_root = (
-                Path(cfg.runtime.storage.path) if cfg.runtime is not None else Path("experiments")
+                Path(cfg.runtime.storage.path)
+                if cfg.runtime is not None
+                else Path("experiments")
             )
             run_dir = storage_root / run_id.folder_name(timestamp)
             cells.append((cfg, run_dir, yaml_path))
@@ -225,10 +236,16 @@ def _sweep_run_ovh(
         raise typer.Exit(code=2) from exc
     ovh_cfg = OvhJobConfig.from_yaml(ovh_config_path)
 
-    cost = ovh_cfg.estimate_cost_eur(seconds_per_run / 3600.0) if seconds_per_run > 0 else None
+    cost = (
+        ovh_cfg.estimate_cost_eur(seconds_per_run / 3600.0)
+        if seconds_per_run > 0
+        else None
+    )
     if cost is not None:
         total = cost * len(cells)
-        typer.echo(f"  estimated cost: {len(cells)} cells × {cost:.3f} EUR ≈ {total:.2f} EUR")
+        typer.echo(
+            f"  estimated cost: {len(cells)} cells × {cost:.3f} EUR ≈ {total:.2f} EUR"
+        )
         if total > ovh_cfg.cost_cap_eur and not confirm_yes:
             typer.echo(
                 f"✗ estimated cost {total:.2f} EUR exceeds cap {ovh_cfg.cost_cap_eur:.2f} EUR. "
@@ -327,4 +344,6 @@ def _format_estimate(n_cells: int, seconds_per_run: float) -> str:
     if total_sec < 60:
         return f"{n_cells} × {seconds_per_run:.0f}s = {total_sec:.0f}s"
     minutes, secs = divmod(int(total_sec), 60)
-    return f"{n_cells} × {seconds_per_run:.0f}s = {total_sec:.0f}s ({minutes}m{secs:02d}s)"
+    return (
+        f"{n_cells} × {seconds_per_run:.0f}s = {total_sec:.0f}s ({minutes}m{secs:02d}s)"
+    )

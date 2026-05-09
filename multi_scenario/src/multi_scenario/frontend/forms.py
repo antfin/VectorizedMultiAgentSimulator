@@ -1,129 +1,125 @@
-"""Form helpers for the Submit page.
+"""Data-driven form widgets for the Submit page (F7.7.B2).
 
-Each ``render_*_params`` function takes a ``defaults`` dict (used by the
-clone/template pre-fill flow) and a ``key_prefix`` (so multiple form
-instances on the same page don't collide), renders the relevant Streamlit
-widgets, and returns the resulting params dict ready for plugging into
-``ExperimentConfig``.
+The Submit page calls one of two entry points:
 
-The dispatch tables :data:`SCENARIO_FORMS` and :data:`ALGORITHM_FORMS`
-let the page render the right sub-form based on the user's type pick
-without an explosion of ``if/elif`` branches.
+* :func:`render_scenario_params` — picks the schema from
+  ``make_scenario(name).default_params()`` and renders one widget per key.
+* :func:`render_algorithm_params` — same, via ``make_algorithm(name)``.
+
+Both delegate to :func:`render_params_from_defaults`, which infers the
+widget shape from each default value's Python type:
+
+============= ====================
+Default type  Widget
+============= ====================
+``bool``      ``st.checkbox``
+``int``       ``st.number_input(step=1)``
+``float``     ``st.number_input(step=0.01)``
+``str``       ``st.text_input``
+``list/dict`` JSON in ``st.text_area`` (``json.loads`` on read)
+============= ====================
+
+The loaded YAML's params (``overrides``) win over the schema default; any
+extra key in the YAML that the schema doesn't know about is rendered too —
+so editing a config never loses fields. Adding a new scenario / algorithm
+adapter automatically gains a working form here without touching this file.
 """
 
-from typing import Any, Callable
+import json
+from typing import Any
 
 import streamlit as st
 
-
-def render_discovery_params(defaults: dict[str, Any], key_prefix: str) -> dict[str, Any]:
-    """Discovery scenario form fields."""
-    cols = st.columns(3)
-    n_agents = cols[0].number_input(
-        "n_agents", min_value=1, max_value=20,
-        value=int(defaults.get("n_agents", 2)),
-        key=f"{key_prefix}__n_agents",
-    )
-    n_targets = cols[1].number_input(
-        "n_targets", min_value=1, max_value=20,
-        value=int(defaults.get("n_targets", 2)),
-        key=f"{key_prefix}__n_targets",
-    )
-    agents_per_target = cols[2].number_input(
-        "agents_per_target", min_value=1, max_value=10,
-        value=int(defaults.get("agents_per_target", 2)),
-        key=f"{key_prefix}__apt",
-    )
-    cols2 = st.columns(3)
-    targets_respawn = cols2[0].checkbox(
-        "targets_respawn",
-        value=bool(defaults.get("targets_respawn", False)),
-        key=f"{key_prefix}__respawn",
-    )
-    shared_reward = cols2[1].checkbox(
-        "shared_reward",
-        value=bool(defaults.get("shared_reward", True)),
-        key=f"{key_prefix}__shared",
-    )
-    max_steps = cols2[2].number_input(
-        "max_steps", min_value=1, max_value=10000,
-        value=int(defaults.get("max_steps", 100)),
-        key=f"{key_prefix}__steps",
-    )
-    return {
-        "n_agents": n_agents,
-        "n_targets": n_targets,
-        "agents_per_target": agents_per_target,
-        "targets_respawn": targets_respawn,
-        "shared_reward": shared_reward,
-        "max_steps": max_steps,
-    }
+from multi_scenario.application.factories import make_algorithm, make_scenario
 
 
-def render_navigation_params(defaults: dict[str, Any], key_prefix: str) -> dict[str, Any]:
-    """Navigation scenario placeholder — same n_agents + max_steps; expand later."""
-    cols = st.columns(2)
-    n_agents = cols[0].number_input(
-        "n_agents", min_value=1, max_value=20,
-        value=int(defaults.get("n_agents", 2)),
-        key=f"{key_prefix}__n_agents",
-    )
-    max_steps = cols[1].number_input(
-        "max_steps", min_value=1, max_value=10000,
-        value=int(defaults.get("max_steps", 100)),
-        key=f"{key_prefix}__steps",
-    )
-    return {"n_agents": n_agents, "max_steps": max_steps}
+def render_scenario_params(
+    name: str, overrides: dict[str, Any], key_prefix: str
+) -> dict[str, Any]:
+    """Render scenario params: schema from ``Scenario.default_params()`` + YAML overrides."""
+    schema = make_scenario(name).default_params()
+    return render_params_from_defaults(schema, overrides, key_prefix)
 
 
-def render_transport_params(defaults: dict[str, Any], key_prefix: str) -> dict[str, Any]:
-    """Transport scenario placeholder."""
-    cols = st.columns(2)
-    n_agents = cols[0].number_input(
-        "n_agents", min_value=1, max_value=20,
-        value=int(defaults.get("n_agents", 4)),
-        key=f"{key_prefix}__n_agents",
-    )
-    max_steps = cols[1].number_input(
-        "max_steps", min_value=1, max_value=10000,
-        value=int(defaults.get("max_steps", 100)),
-        key=f"{key_prefix}__steps",
-    )
-    return {"n_agents": n_agents, "max_steps": max_steps}
+def render_algorithm_params(
+    name: str,
+    overrides: dict[str, Any],
+    key_prefix: str,
+) -> dict[str, Any]:
+    """Render algorithm params: schema from ``Algorithm.default_params()`` + YAML overrides."""
+    schema = make_algorithm(name).default_params()
+    return render_params_from_defaults(schema, overrides, key_prefix)
 
 
-def render_flocking_params(defaults: dict[str, Any], key_prefix: str) -> dict[str, Any]:
-    """Flocking scenario placeholder."""
-    cols = st.columns(2)
-    n_agents = cols[0].number_input(
-        "n_agents", min_value=2, max_value=50,
-        value=int(defaults.get("n_agents", 5)),
-        key=f"{key_prefix}__n_agents",
-    )
-    max_steps = cols[1].number_input(
-        "max_steps", min_value=1, max_value=10000,
-        value=int(defaults.get("max_steps", 100)),
-        key=f"{key_prefix}__steps",
-    )
-    return {"n_agents": n_agents, "max_steps": max_steps}
+def render_params_from_defaults(
+    schema: dict[str, Any],
+    overrides: dict[str, Any],
+    key_prefix: str,
+) -> dict[str, Any]:
+    """Render one widget per key in ``schema ∪ overrides``; return the user's values.
 
+    ``schema`` carries the canonical type per key (from the adapter's
+    ``default_params()``). ``overrides`` is what the loaded YAML had — its
+    values seed the widgets, and any keys it carries that the schema
+    doesn't know about are still rendered (typed by the override value's
+    Python type). Result preserves the union so saving the YAML never
+    drops fields.
 
-def render_default_algo_params(defaults: dict[str, Any], key_prefix: str) -> dict[str, Any]:
-    """Algorithm placeholder — F2.4.2 (model arch / critic config) is deferred,
-    so for now we just pass an empty params dict regardless of algorithm.
+    Layout: 3 widgets per row.
     """
-    del defaults, key_prefix  # unused until F2.4.2 lands
-    return {}
+    # Union the keys, schema-first so well-known params lead the layout.
+    all_keys: list[str] = list(schema)
+    for key in overrides:
+        if key not in all_keys:
+            all_keys.append(key)
+
+    out: dict[str, Any] = {}
+    for row_start in range(0, len(all_keys), 3):
+        row_keys = all_keys[row_start : row_start + 3]
+        cols = st.columns(3)
+        for col, key in zip(cols, row_keys):
+            seed = overrides.get(key, schema.get(key))
+            with col:
+                out[key] = _render_one(key, seed, f"{key_prefix}__{key}")
+    return out
 
 
-SCENARIO_FORMS: dict[str, Callable[[dict[str, Any], str], dict[str, Any]]] = {
-    "discovery": render_discovery_params,
-    "navigation": render_navigation_params,
-    "transport": render_transport_params,
-    "flocking": render_flocking_params,
-}
-
-ALGORITHM_FORMS: dict[str, Callable[[dict[str, Any], str], dict[str, Any]]] = {
-    algo: render_default_algo_params
-    for algo in ("mappo", "ippo", "masac", "isac", "iddpg", "maddpg")
-}
+def _render_one(label: str, seed: Any, widget_key: str) -> Any:
+    """Pick a Streamlit widget based on ``seed``'s Python type and render it."""
+    if isinstance(seed, bool):
+        return st.checkbox(label, value=seed, key=widget_key)
+    if isinstance(seed, int):
+        # ``n_*`` and ``*_steps`` conventionally must be ≥ 1; everything else ≥ 0.
+        # Conservative inference — keeps the widget useful without surprising
+        # the user with arbitrary upper bounds.
+        min_value = 1 if label.startswith("n_") or label.endswith("_steps") else 0
+        return st.number_input(
+            label,
+            min_value=min_value,
+            step=1,
+            value=int(seed),
+            key=widget_key,
+        )
+    if isinstance(seed, float):
+        return st.number_input(
+            label,
+            value=float(seed),
+            step=0.01,
+            format="%g",
+            key=widget_key,
+        )
+    if isinstance(seed, str):
+        return st.text_input(label, value=seed, key=widget_key)
+    # Lists / dicts → JSON text area; parse on read so the cfg dict gets
+    # the right Python type back. Parse failure → surface in red, keep
+    # the raw value so the user can fix it without losing input.
+    raw = st.text_area(
+        label,
+        value=json.dumps(seed, indent=2),
+        key=widget_key,
+    )
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        st.error(f"`{label}` — invalid JSON: {exc}")
+        return seed  # fall back to the seed so downstream validation has *something*

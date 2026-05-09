@@ -16,17 +16,17 @@ switch.
 import streamlit as st
 
 from multi_scenario.frontend.charts import line_plot_csvs
-from multi_scenario.frontend.run_detail_loader import RunDetail, load_run_detail
+from multi_scenario.frontend.run_detail_loader import load_run_detail, RunDetail
 from multi_scenario.frontend.sidebar import (
     load_runs_with_cache,
     render_active_root_caption,
 )
 from multi_scenario.frontend.theme import (
+    apply_theme,
     POLIMI_DARK_BLUE,
     POLIMI_GREEN,
     POLIMI_ORANGE,
     POLIMI_RED,
-    apply_theme,
 )
 
 apply_theme(title="Run Detail", subtitle="Per-run drill-down")
@@ -98,7 +98,10 @@ if detail.run_state and len(detail.run_state.transitions) >= 2:
     mins, secs = divmod(secs, 60)
     duration_str = f"{mins}m{secs:02d}s"
 
-st.markdown(f"### `{detail.result.run_id}` &nbsp;{_state_badge(state_str)}", unsafe_allow_html=True)
+st.markdown(
+    f"### `{detail.result.run_id}` &nbsp;{_state_badge(state_str)}",
+    unsafe_allow_html=True,
+)
 meta_cols = st.columns(5)
 meta_cols[0].caption(f"**Scenario** &nbsp;{detail.result.scenario}")
 meta_cols[1].caption(f"**Algorithm** &nbsp;{detail.result.algorithm}")

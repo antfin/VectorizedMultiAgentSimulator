@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from multi_scenario.adapters.logging.file_logger import FileLogger
 from multi_scenario.adapters.runners.local import LocalRunner
@@ -21,6 +20,7 @@ from multi_scenario.domain.models import (
     RunStateRecord,
     RunStateTransition,
 )
+from typer.testing import CliRunner
 
 
 def _smoke_cfg_dict(storage_path: Path, runner_type: str = "local") -> dict:
@@ -67,7 +67,9 @@ def _seed_run(
     """Lay down a minimal run folder at ``state``, optionally with a fake checkpoint."""
     run_dir.mkdir(parents=True)
     storage = LocalStorageAdapter()
-    cfg = ExperimentConfig.model_validate(_smoke_cfg_dict(run_dir.parent, runner_type=runner_type))
+    cfg = ExperimentConfig.model_validate(
+        _smoke_cfg_dict(run_dir.parent, runner_type=runner_type)
+    )
     storage.save_config(run_dir, cfg)
     transitions = [RunStateTransition(state=RunState.INITIALIZING, ts=_ts(0))]
     if state in (RunState.RUNNING, RunState.DONE, RunState.CRASHED):
@@ -76,9 +78,13 @@ def _seed_run(
         transitions.append(RunStateTransition(state=RunState.DONE, ts=_ts(5)))
     if state == RunState.CRASHED:
         transitions.append(RunStateTransition(state=RunState.CRASHED, ts=_ts(5)))
-    storage.save_run_state(run_dir, RunStateRecord(state=state, transitions=transitions))
+    storage.save_run_state(
+        run_dir, RunStateRecord(state=state, transitions=transitions)
+    )
     if seed_checkpoint:
-        ckpt_dir = run_dir / "output" / "benchmarl" / "fake_run" / "fake_run" / "checkpoints"
+        ckpt_dir = (
+            run_dir / "output" / "benchmarl" / "fake_run" / "fake_run" / "checkpoints"
+        )
         ckpt_dir.mkdir(parents=True)
         (ckpt_dir / "checkpoint_0.pt").write_text("fake-policy", encoding="utf-8")
 

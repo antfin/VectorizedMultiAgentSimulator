@@ -32,10 +32,7 @@ from ..v6_prompt_lab.analyzer import (
     count_gated_features,
 )
 from .memory import MemoryRow, MemoryStore
-from .meta_strategist import (
-    enumerate_bundle_v9,
-    reflect_decide_v9,
-)
+from .meta_strategist import enumerate_bundle_v9, reflect_decide_v9
 from .strategy import V9Bundle, V9Strategy
 
 _log = logging.getLogger("rendezvous.lero.v9.outer")

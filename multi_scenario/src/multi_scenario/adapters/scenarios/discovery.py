@@ -27,7 +27,12 @@ class VmasDiscoveryAdapter(VmasScenarioBase):
     name = "discovery"
 
     def default_params(self) -> dict[str, Any]:
-        """Baseline discovery params — ``targets_respawn=False`` is required for M1/M3."""
+        """Baseline discovery params — ``targets_respawn=False`` is required for M1/M3.
+
+        ``max_steps`` is the standard VMAS env episode cap; included here so
+        the F7.7.B2 data-driven Submit form surfaces it as a knob alongside
+        the scenario-specific tunables.
+        """
         return {
             "n_agents": 5,
             "n_targets": 7,
@@ -35,6 +40,7 @@ class VmasDiscoveryAdapter(VmasScenarioBase):
             "covering_range": 0.25,
             "targets_respawn": False,
             "shared_reward": True,
+            "max_steps": 100,
         }
 
     def success_predicate(self, rollout: Any) -> Any:

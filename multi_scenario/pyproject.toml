@@ -27,6 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-bdd>=7.0",  # F7.7.C2 — Gherkin features for top user journeys
     "ruff",
     "pre-commit",
     "pylint",

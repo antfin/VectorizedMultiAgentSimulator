@@ -14,8 +14,6 @@ Public surface:
   see :class:`OvhJobConfig.command_template`).
 """
 
-from ._app import app
-
 # Side-effect imports register each command on ``app``. Order doesn't matter;
 # Typer derives the subcommand name from the function name (or ``name=`` arg).
 # Keep this list alphabetic so subcommands appear in a predictable order in
@@ -31,6 +29,7 @@ from . import (  # noqa: F401
     validate,
     version,
 )
+from ._app import app
 
 
 def main() -> None:

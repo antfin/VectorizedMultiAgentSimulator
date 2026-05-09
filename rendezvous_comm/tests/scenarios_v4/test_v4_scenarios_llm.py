@@ -16,10 +16,8 @@ import pytest
 from src.lero.config import LLMConfig
 from src.lero.llm_client import LLMClient
 from src.lero.meta.v4_bootstrap import bootstrap_from_description
-from .fixtures import (
-    fake_bootstrap_card,
-    fake_round_result,
-)
+
+from .fixtures import fake_bootstrap_card, fake_round_result
 from .runner import run_strategist_scenario
 
 

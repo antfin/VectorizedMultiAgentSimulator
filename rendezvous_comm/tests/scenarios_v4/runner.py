@@ -12,11 +12,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 from src.lero.llm_client import LLMClient
-from src.lero.meta.v4_schemas import (
-    BootstrapCard,
-    RoundResult,
-    StrategyBundle,
-)
+from src.lero.meta.v4_schemas import BootstrapCard, RoundResult, StrategyBundle
 from src.lero.meta.v4_strategist import emit_strategies
 
 
