@@ -1,9 +1,10 @@
 # Multi-Scenario Cooperative MARL — Implementation Plan
 
-> **Status:** draft v2 — to review before any code is written.
-> **Companion docs:** [`plan.md`](plan.md) (scenario rationale & descriptions).
-> **Folder name `multi_scenario/` is a placeholder** — will be renamed when extracted to its own git repo.
-> **Changes from v1:** added run-level conventions (§3.5), expanded Phase 1 with cross-cutting infra (logging, run-id, run-state, provenance, determinism), expanded Phase 2/5/6/7, added Phase 10 (polish/CI/extraction), added explicit "out of scope" list (§6.5) and additional gotchas list (§7.5).
+> **Status:** draft v3 (2026-05-09) — Phases 0-7 implemented; Phases 8-11 reframed for reproducibility-then-LERO-then-extraction.
+> **Companion docs:** [`plan.md`](plan.md) (scenario rationale & descriptions); [`docs/_drafts/F8_F11_plan_draft.md`](docs/_drafts/F8_F11_plan_draft.md) (1012-line agent-generated draft with full architecture deep-dive + self-criticism).
+> **Folder name `multi_scenario/` is a placeholder** — will be renamed to **`coopvmas`** at F10.6.
+> **Locked decisions (2026-05-09):** see `~/.claude/.../memory/project_coopvmas_decisions.md`. Headlines: name=coopvmas, license=GPL-v3, broker=LiteLLM, docs=mkdocs-material, GitHub=personal account (afin), fresh-import extraction.
+> **Changes from v2:** Phase 8 narrowed from "ER1 across 4 scenarios" to "reproduce ER1+S3b-local on discovery"; Phase 9 lifted from "placeholder" to full LERO implementation; Phase 10 expanded to docs+naming+extraction; new Phase 11 holds the cross-scenario campaign (deferred scope).
 
 ---
 
@@ -943,121 +944,238 @@ that — the original polish work moves to Phase 6 below.
 
 ---
 
-### Phase 8 — First cross-scenario baseline ablation (the "ER1 across 4 scenarios")
+### Phase 8 — Reproducibility validation (discovery only)
 
-#### F8.1 — Heuristic baseline policies — S
+> **Scope reset (2026-05-09).** Phase 8 was originally "ER1 across 4 scenarios + heuristic baselines". After the F8/F9/F10/F11 planning round, that scope moved to **F11**; F8 narrows to *reproducing the rendezvous_comm headline numbers on `discovery`* (ER1 baseline + S3b-local LERO). The full draft is at `docs/_drafts/F8_F11_plan_draft.md` (1012 lines). User-locked decisions are in `~/.claude/.../memory/project_coopvmas_decisions.md`.
+>
+> **Reproducibility threshold (locked):** ±10% absolute on M1 AND within 1.5σ of rendezvous_comm seed-mean. LERO reproducibility is the success gate; ER1 is the reference baseline.
 
-- Per-scenario simple heuristics (e.g. discovery → greedy nearest-target; navigation → straight-line; transport → push-toward-goal). Used as a sanity floor.
-- Implements `Algorithm` port (training is a no-op; only `evaluate` is real).
-- **Not present in rendezvous_comm beyond a stub** — write fresh.
+#### F8.0 — Optional: rendezvous_comm self-replication — XS
 
-#### F8.2 — Ablation matrix definition — S
+Default: **skip**. If F8.4 shows an unexpected delta vs the rendezvous_comm doc, come back here and run `rendezvous_comm/configs/{er1/single_al_lp_sr_cr035, lero/s3b_local_replicate_s{0,1,2}}.yaml` in that repo to set fresh reference numbers. Tabled in `docs/reproducibility/reference_numbers.md` if executed.
 
-- 4 scenarios × 6 algorithms × N seeds + heuristic baseline. YAML matrix file + a script that fans it out into individual YAMLs.
-- **Prerequisite check:** if any matrix entry needs non-default MLP `num_cells`, `activation_class`, or a separate critic config, **F2.4.2 must be implemented first** (it's a deferred placeholder until that need is real).
+#### F8.1 — Port ER1 config to coopvmas YAML schema — S
 
-#### F8.3 — Run the matrix — M (compute-bound)
+- Translate `rendezvous_comm/configs/er1/single_al_lp_sr_cr035.yaml` → `experiments/discovery/baseline/configs/baseline.yaml` (final name TBD with user; suggested: `baseline.yaml` for the canonical reference).
+- Tests in `tests/reproducibility/test_er1_config_parity.py` — parametric per-field assertions against the rendezvous_comm source so silent drift is caught.
+- Done: `multi-scenario validate experiments/discovery/baseline/configs/baseline.yaml` exits 0; parity test green.
 
-- **Prerequisite:** verify **F2.4.2** is done if matrix configs use any non-default model architecture knobs. F2.4.2 is a deferred placeholder; without it, BenchMARL will use its built-in MLP defaults (which may or may not match your matrix definition).
-- Locally for tiny smoke; OVH for real. Collect to one master CSV.
+#### F8.2 — Run ER1 ×3 seeds, validate — M (OVH-bound)
 
-#### F8.4 — Comparison report — S
+- `scripts/run_er1_reproducibility.py` submits 3 OVH jobs (seeds [0,1,2]).
+- `scripts/compare_to_reference.py` reads our `runs.csv` + the hardcoded reference dict (ER1 M1≈0.405); prints PASS/FAIL per the threshold above.
+- Streamlit reproducibility page (F8.5.B) shows the same comparison.
 
-- Streamlit page or notebook → per-scenario leaderboard, best baseline per scenario.
-- **Output:** identifies the best baseline candidate per scenario → input to Phase 9 LERO.
-- **Prerequisite check:** if the report needs cross-run training-curve comparisons (e.g. "compare MAPPO vs IPPO M2 at iter 50 across seeds in one table/plot"), **F5.2.1 must be implemented first**. F5.2 ships only `record_type=final` rows; the eval-step rows live in F5.2.1 and are a deferred placeholder. Per-run training scalars are still readable directly from each run's `output/benchmarl/.../scalars/eval_*.csv` for single-run views — only cross-run aggregation needs F5.2.1.
+#### F8.3 — LERO architecture lands — block dep on F9.0–F9.6
+
+Block dependency only — no work in F8.3 itself. F9.0–F9.6 must complete before F8.4 starts.
+
+#### F8.4 — Port S3b-local config + run ×3 seeds + validate — M (OVH-bound)
+
+- Translate `rendezvous_comm/configs/lero/s3b_local.yaml` → `experiments/discovery/lero/configs/lero_obs_only_local.yaml` (final name TBD; suggested for clarity).
+- Add `lero: LeroSection | None = None` to `domain/models/config.py` (backwards-compat: existing baseline configs unchanged).
+- Run ×3 seeds; compare to S3b-local reference (M1≈0.88 single-seed; threshold = mean ≥ 0.70 AND best ≥ 0.80).
+
+#### F8.5 — Deep data-saving gap audit — M
+
+Make every run-dir auditable end-to-end. Sub-phases:
+
+- **F8.5.A — Per-step rollouts opt-in writer** (S): `runtime.storage.save_rollouts: bool = False` default; when on writes parquet under `output/rollouts/`.
+- **F8.5.B — Reproducibility Streamlit page** (S): `pages/5_Reproducibility.py` reads runs.csv vs hardcoded reference dict; renders side-by-side table with PASS/FAIL.
+- **F8.5.C — `runs.csv` LERO row schema** (S): add `record_type=lero_candidate` rows (cols: `iter, candidate_idx, fitness_rank, fallback_outcome`).
+- **F8.5.D — Best-checkpoint policy callback** (S): BenchMARL writes `output/benchmarl/*/checkpoints/checkpoint_peak_M1.pt` whenever eval-M1 sets a new high. Fixes the eval-vs-final degradation gap rendezvous_comm flagged.
+- **F8.5.E — `multi-scenario inspect-lero <run_dir>` CLI** (S): pretty-prints `best_reward.py` + `best_obs.py` with diff vs prior winner. Doc'd in `docs/results_analysis/lero_traces.md`.
+- **F8.5.F — DuckDB index over LERO traces** (S): `multi-scenario index-traces` builds `<exp_root>/lero_traces.duckdb` for cross-run queries. Tables: `runs / candidates / llm_calls`.
 
 ---
 
-### Phase 9 — LERO (placeholder, design later)
+### Phase 9 — LERO core implementation
 
-Out of scope right now. **Note for future planning** (from deep analysis): rendezvous_comm has 7 LERO versions (v5–v9) plus a meta-prompt outer loop (v4) plus a 23-template prompt registry plus a disk-based LLM cache. Treat this as its own multi-phase mini-plan when we reach it. Best baseline candidates from Phase 8 inform which scenarios get LERO first.
+> Hex-clean rebuild of LERO from the rendezvous_comm reference. **Locked decisions:** broker=LiteLLM, settings in YAML (`cfg.llm`), keys in project-root `.env`, cost cap $5/run + $50/sweep configurable + **must log when reached**, cache implemented but `enabled=false` default, `evolve_reward + evolve_observation` flag-controlled, **meta-prompting designed from day one but disabled by default**, reward_clip=±50, best-checkpoint enabled, whitelist_strict on for local mode.
+
+#### F9.0 — Domain models + LeroSection / LlmSection — S
+
+- `domain/models/config.py`: `LeroSection`, `LlmSection`. Both Optional on `ExperimentConfig`. STRICT mode; `lero` requires `llm` (no XOR).
+- `domain/lero/`: `Candidate`, `CandidateMetrics`, `CandidateResult`, `PromptTrace`, `ResponseTrace`, `ReasoningTrace`, `LlmCompletion` (model output only — separate from our trace metadata), `LeroRunSummary`. All Pydantic; no torch/litellm imports.
+
+#### F9.1 — LLM port + LiteLLM adapter + cost cap — M
+
+- `domain/ports/llm.py`: `LlmClient` Protocol. `generate(messages, n, seed) -> list[LlmCompletion]`.
+- `adapters/llm/litellm_adapter.py`: real adapter wrapping LiteLLM (OpenAI / Anthropic / OVH endpoints). **Cost cap:** runs cost integral updated per call; on overflow raises `LlmCostCapExceeded` AND emits `logger.warning("cost cap reached: $X.XX > $Y.YY")` with the cap dict in extra fields.
+- `adapters/llm/disk_cache.py`: optional disk cache, `enabled=false` by default. Cache key = SHA(model, messages, seed, response_format).
+- `adapters/llm/fake_adapter.py`: in-memory canned-response adapter for tests (registered via `MULTI_SCENARIO_LLM_OVERRIDE=fake`).
+
+#### F9.2 — Prompt registry (Jinja-based) + byte-parity vs rendezvous_comm — M
+
+- `adapters/prompts/<version>/{initial.j2, feedback.j2}` for `v1`, `v1_global`, `v2`, `v2_min`, `v2_fewshot`, `v2_twofn`, `v2_fewshot_k2_local`. Copied byte-for-byte from rendezvous_comm.
+- `adapters/prompts/jinja_renderer.py`: `JinjaPromptRenderer` implements `PromptRenderer` Protocol.
+- **Load-bearing test:** `test_v2_fewshot_k2_local_byte_parity.py` renders ours vs rendezvous_comm's with the same context; asserts byte-equal output.
+
+#### F9.3 — TraceWriter port + filesystem adapter — S
+
+- `domain/ports/trace_writer.py`: `TraceWriter` Protocol. Methods write_prompt / write_response / write_reasoning / write_candidate / write_evolution_history / write_fallback_chain / write_summary.
+- `adapters/lero/filesystem_trace_writer.py`: writes the canonical layout under `<run_dir>/output/lero/iter_<n>/cand_<m>/attempt_<a>/{prompt.json, response.json, reasoning.json}`, plus aggregate files `evolution_history.json`, `fallback_chain.json`, `best_reward.py`, `best_obs.py`, `final_metrics.json`, `llm_provenance.json`.
+- Atomic write-rename to survive interrupts.
+
+#### F9.4 — Code generation + safety — S
+
+- `domain/lero/codegen.py`: `extract_candidates(response_text, evolve_reward, evolve_observation) -> CandidateCode | None`; `validate_function(source, ...) -> ValidationResult`.
+- `ALLOWED_IMPORTS = {"torch", "math", "numpy"}`.
+- **Byte-parity test** vs rendezvous_comm's `codegen.py::extract_candidates` on the same response text.
+
+#### F9.5 — Scenario patching (Discovery first) — M
+
+- Extend `Scenario` Protocol with optional `patch_with_llm_code(reward_source, obs_source, lero_section)`.
+- `adapters/scenarios/_lero_patch_helpers.py`: ports rendezvous_comm helpers — `_build_reward_state`, `_build_obs_state`, `_compile_function`, `_sanitize_reward` (nan_to_num + clamp ±50), `AllowedKeysDict` (whitelist-strict mode), `FairnessViolation` exception.
+- Patched class overrides `info()` to return per-agent `covering_reward` (M8 unblocker, rendezvous_comm bug §3.3).
+- Per-scenario regression tests: patch closure bug, reward clip, NaN-to-zero, whitelist strict, per-agent info.
+
+#### F9.6 — Evolutionary loop orchestrator — L
+
+- `application/lero_orchestrator.py`: 8-port-injected use-case. Splits as `_run_iteration / _evaluate_candidate / _full_training_with_fallback` (each privately tested).
+- `application/prompt_composer.py`: `PromptComposer` Protocol + `InitialAndFeedbackComposer` (default impl). `compose(iteration, history)` returns the messages list.
+- **Resume support:** `LeroOrchestrator.resume(run_dir)` reloads existing iter_<n>/ subdirs into history.
+- **`experiment_service.py` branch:** if `cfg.lero is not None`, delegate to `LeroOrchestrator.run()`.
+- **Discharged-candidates note (user TBD at implementation time):** plan documents both interpretations. (A) within-run re-rank by post-full-training M1; (B) across-run no seeding from prior discharged candidates. User picked (B) with "review when we implement". Implementation review at F9.6 kickoff.
+
+#### F9.7 — Meta-prompting design + stub — XS
+
+- Keep `PromptComposer` Protocol broad enough that meta-prompting plugs in as a different composer.
+- Ship a stub `MetaPromptComposer` (returns trivial mutated prompts) + `test_orchestrator_with_meta_composer.py` proving the contract holds end-to-end.
+- Default behaviour: `cfg.lero.meta_prompting=false` → `InitialAndFeedbackComposer` is used. `=true` → `MetaPromptComposer`.
+
+#### F9.8 — CLI + Submit page integration — S
+
+- `multi-scenario run <lero_yaml>` Just Works (the YAML drives the experiment_service branch).
+- `multi-scenario inspect-lero <run_dir>` (per F8.5.E).
+- Submit page: `frontend/forms.py` renders `LeroSection` + `LlmSection` widgets when YAML includes them. Preflight adds an OPENAI_API_KEY-presence check when `cfg.lero is not None`.
 
 ---
 
-### Phase 10 — Polish, CI, extraction
+### Phase 10 — Docs, naming, extraction
 
-#### F10.1 — Reproducibility test — S
+> **Locked:** new name = `coopvmas`, GitHub personal account, license = GPL-v3 (matches parent VMAS), fresh-import extraction (no history preservation), Streamlit FE stays in same repo, .env at project root.
 
-- Run the same config with the same seed twice; assert all metrics agree within tolerance. Lives in `tests/reproducibility/`.
+#### F10.1 — mkdocs-material wiki — M
 
-#### F10.2 — CI pipeline — S
+- `mkdocs.yml` + `docs/` reorganised into topic-per-file structure under `docs/{getting_started, concepts, scenarios, cli, frontend, operations, results_analysis, ports, reproducibility}/`. Full file list in `docs/_drafts/F8_F11_plan_draft.md` Section D.
+- `mkdocs build --strict` runs in CI to catch broken links.
+- `docs/concepts/lero.md` ported and adapted from `rendezvous_comm/docs/lero.md` for the coopvmas codebase + Section C of the draft (architecture deep-dive).
 
-- GitHub Actions: lint + unit tests on push; smoke integration tests nightly. Coverage gate (start at 70%).
+#### F10.2 — Rewrite README as wiki landing page — S
 
-#### F10.3 — Documentation pass — S
+Replaces the F0.6 stub. README links to every top-level `docs/` section; no orphans.
 
-Final user-facing project docs. Replaces the placeholder stubs from F0.5 / F0.6 with the real thing once everything else is stable.
+#### F10.3 — Pre-extraction YAML cleanup — XS
 
-- **`README.md`** — quick-start (install, run a smoke config, browse results in Streamlit), 1-paragraph project description, links into `docs/`. Replaces the F0.6 stub.
-- **`docs/architecture.md`** — the hexagonal layout (ports / adapters / application / domain), what each layer can and can't depend on (the F1.12 isolation rule), the lifecycle of one experiment run (F1.11 → F2.x slice).
-- **`docs/scenarios.md`** — one section per scenario (discovery / navigation / flocking / transport): goal, agents, default params, M1 semantics, M6 semantics where applicable, special cases (e.g. flocking has no natural M1 — see F4.2).
-- **`docs/run_layout.md`** — §3.5.x conventions formalised: run_id format, folder layout per run (the §3.5.2 tree), cross-run files (`runs.csv` / `runs.json`), provenance fields, run-state machine.
-- **`docs/cli.md`** (or expand README) — every `multi-scenario` subcommand with one example each: `version`, `run`, `validate`, `consolidate`, `sweep`, `resume`, `eval`, `upload-code`. Cross-reference what each emits.
-- **OVH section** — fold the existing pre-feature docs into the canonical narrative:
-  - **`docs/ovh_setup.md`** (written at F6.5) — one-time machine setup: install `ovhai` CLI (Go binary, NOT pyproject), `ovhai login`, create buckets, generate S3 keys for boto3, configure `configs/ovh.yaml` + `configs/s3.yaml`. **Reuse content as-is** — already evergreen.
-  - **`docs/ovh_smoke_checklist.md`** (written at F6.5) — the manual smoke procedure. **Reuse as-is** for "first OVH run" walkthrough.
-  - F10.3 audit: cross-link both into `README.md` (Quick start → "Running on OVH") and `docs/architecture.md` (Runners section → OvhRunner). Both files survive F10.6's scaffolding cleanup pass — they are operational docs, not dev-time decision artefacts.
-- **Cross-link audit:** every `docs/*.md` should link to `README.md` and to its sibling docs; `README.md` should link to all of `docs/`. No orphans.
+User asked: before extracting to coopvmas, **delete every per-experiment YAML except the canonical ER1 + S3b-local references** (created at F8.1 / F8.4 with cleaner names). Goal: the new repo ships with ONLY the two reference configs that prove the reproducibility story; everything else (smoke variants, debugging runs, OVH-pre-flight tests, etc.) gets deleted.
 
-#### F10.4 — Repo extraction — M
+- Files to delete: `experiments/<scenario>/*/configs/*.yaml` EXCEPT `experiments/discovery/baseline/configs/baseline.yaml` and `experiments/discovery/lero/configs/lero_obs_only_local.yaml` (final names TBD with user at F8.1/F8.4).
+- Smoke YAMLs used as CI fixtures stay (they're test fixtures, not dev scratch). If we have CI smoke YAMLs in `tests/fixtures/`, those are fine.
+- Run dirs under `experiments/*/` (results from prior runs) — wipe.
 
-- Rename package (`multi_scenario` → final name), pin VMAS to a released version (or commit hash), set up the new git repo, copy-with-history (`git filter-repo`).
-- **Cleanup checklist on extraction:**
-  - Remove the top-level `files: '^multi_scenario/'` line from `.pre-commit-config.yaml` — added in F0.2 to scope hooks while nested inside the VMAS repo; once `multi_scenario/` becomes the repo root, files no longer carry that prefix and the filter would silently make every hook no-op.
-  - In the markdownlint hook, change `args: ["--config", "multi_scenario/.markdownlint.json"]` back to `args: ["--config", ".markdownlint.json"]` — the prefix is needed only while pre-commit runs from the VMAS toplevel.
-  - Add a `LICENSE` file. Deliberately deferred from F0.6 because the choice (GPLv3 like parent VMAS, MIT, Apache-2.0, …) should be made on extraction, not pre-emptively.
-- **Manual demo** — gated on user readiness to extract.
+#### F10.4 — CI pipeline — S
 
-#### F10.5 — Comment cleanup pass — XS
+- GitHub Actions on the new repo: lint (pre-commit) + unit tests on push; smoke integration tests nightly. Coverage gate (start at 70%).
+- `mkdocs build --strict` runs in CI for the docs site.
+
+#### F10.5 — Reproducibility test (general, not LERO-specific) — S
+
+- Run the same config with the same seed twice; assert all metrics agree within tolerance. Lives in `tests/reproducibility/`. Distinct from F8 (which is reproducing rendezvous_comm); F10.5 is general "same-config-same-seed → same numbers".
+
+#### F10.6 — Repo extraction to coopvmas — M (manual)
+
+**Procedure (locked: fresh import, no history preservation):**
+
+1. **Tag** the multi_scenario folder state at the extraction commit so we can refer back: `git tag coopvmas-extracted-from`.
+2. **I produce a zip** (`coopvmas-v0.1.0.zip`) plus a step-by-step `EXTRACT.md` that includes:
+   - Pre-extraction checklist (F10.3 YAML cleanup confirmed; F10.4 CI green; F10.5 repro test green; mkdocs build --strict green).
+   - Files included / excluded from the zip (e.g. drop `.venv/`, `__pycache__`, `experiments/*/results/`, `output/` artifacts).
+   - Post-extraction setup steps: `cd coopvmas && git init && git add . && git commit -m "Initial import from VMAS monorepo"`, create GitHub repo `afin/coopvmas`, `git remote add origin … && git push`.
+   - License file: `LICENSE` = GPL-v3 (matches parent VMAS).
+   - Cleanup of monorepo-only constructs:
+     - Remove `files: '^multi_scenario/'` from `.pre-commit-config.yaml`.
+     - Change markdownlint `args: ["--config", "multi_scenario/.markdownlint.json"]` → `args: ["--config", ".markdownlint.json"]`.
+     - Update setup.cfg per-file-ignores: drop the `multi_scenario/src/multi_scenario/cli/*.py` prefix → `src/multi_scenario/cli/*.py` (or rename `multi_scenario` package to `coopvmas`).
+     - Search-replace `multi_scenario` → `coopvmas` package-wide (Python imports, paths, docs, README).
+   - First-run validation in the new repo: `pre-commit run --all-files` green, `pytest` green, `mkdocs serve` works locally.
+3. **User copies the zip + executes EXTRACT.md.** I'm not in the loop after step 2; user tells me when the new repo is live and we resume from there.
+
+#### F10.7 — Comment cleanup pass — XS
 
 - Sweep all source files (everything *outside* the planning markdowns) for comments that reference phase or feature IDs (`F0.1`, `F2.4`, `Phase 9`, etc.) or section anchors from this plan (`§3.5.2`, etc.). These references are scaffolding from the build process — useful during development to trace which feature added what, useless and confusing once the project is extracted to its own repo (where this plan no longer lives).
 - For each comment found: if there is a substantive WHY behind the reference, keep that prose and drop the phase pointer. If the comment was *only* a phase pointer, delete the comment entirely. Per project style (CLAUDE.md) — comments justify *why*, not *which-feature-added-this*.
 - Files in scope: `src/**`, `tests/**`, `docs/**` (non-markdown), `pyproject.toml`, `.pre-commit-config.yaml`, `.markdownlint.json`, `.gitignore`, YAML configs under `experiments/**`. Out of scope: `plan.md`, `implementation_plan.md`, and any other markdown documents in `docs/` whose purpose is planning/architectural narrative — those are allowed to keep phase references.
 - **Demo:** `grep -rnE 'F[0-9]+\.[0-9]+|Phase [0-9]+|§[0-9]' src tests pyproject.toml .pre-commit-config.yaml .markdownlint.json .gitignore docs experiments --include='*.py' --include='*.toml' --include='*.yaml' --include='*.yml' --include='*.json' --include='.gitignore' --include='.pre-commit-config.yaml'` returns no matches.
 
-#### F10.6 — Scaffolding cleanup pass — XS
+#### F10.8 — Scaffolding cleanup pass — XS
 
-Some artefacts produced *during* development serve a one-time purpose — informing a decision, generating empirical numbers for a sign-off, validating a deferred choice — and become dead weight once the final code + F10.3 docs land. Sweep them out before extraction (F10.4).
+Some artefacts produced *during* development serve a one-time purpose — informing a decision, generating empirical numbers for a sign-off, validating a deferred choice — and become dead weight once the final code + F10.1/F10.2 docs land. Sweep them out before extraction (F10.6).
 
-**Removal candidates (review each before deleting; delete only when the final state preserves the information they carried):**
+**Removal candidates:**
 
-- **`docs/csv_format_decision.md`** + **`scripts/f5_5_format_decision.py`** — the F5.5 long-vs-summary decision. Once `long_format` defaults are locked in code and `docs/run_layout.md` documents the artefact set, the empirical doc is redundant. Re-runnable scripts for one-off decisions don't justify a permanent home.
-- **Sub-feature placeholder sections in `implementation_plan.md`** (F2.4.2, F2.10.1, F5.2.1, F6.6) — once each is implemented (or definitively skipped), fold the resulting state into the relevant final doc and remove the placeholder.
-- **Any `_<exp_id>` scratch folders under `experiments/<scenario>/<exp_type>/`** (e.g. `_f5_5_decision`) — these are temp dirs from reproducer scripts; should already be auto-cleaned, but spot-check.
-- **Stale TODO comments** referencing deferred features whose triggers have since fired or been cancelled.
+- **`docs/csv_format_decision.md`** + **`scripts/f5_5_format_decision.py`** — F5.5 decision artifacts.
+- **Sub-feature placeholder sections in `implementation_plan.md`** (F2.4.2, F2.10.1, F5.2.1) — fold the resulting state into the relevant final doc and remove the placeholder.
+- **Any `_<exp_id>` scratch folders under `experiments/`** — temp dirs from reproducer scripts; should already be auto-cleaned.
+- **Stale TODO comments** referencing deferred features whose triggers have since fired.
+- **`docs/_drafts/`** — once F8/F9/F10/F11 implementation is complete, drop the agent-generated draft (`F8_F11_plan_draft.md`).
 
-**What to keep** (do *not* remove just because they're "phase-tagged"):
+**What to keep:**
 
-- Smoke YAMLs under `experiments/<scenario>/<exp_type>/configs/<algo>_smoke.yaml` — these are CI fixtures, not dev scaffolding.
-- The `.pre-commit-config.yaml` / `.markdownlint.json` / `.gitignore` / pyproject.toml — production tooling.
+- Smoke YAMLs under `tests/fixtures/` — CI fixtures, not dev scaffolding.
+- `.pre-commit-config.yaml` / `.markdownlint.json` / `.gitignore` / `pyproject.toml` — production tooling.
 - All test fixtures, even the ones that were written to drive a single feature (regression value).
-- **`docs/ovh_setup.md` + `docs/ovh_smoke_checklist.md`** — operational user docs (evergreen). F10.3 cross-links them; F10.6 leaves them in place.
-- **`configs/ovh.yaml.example` + `configs/s3.yaml.example`** — config templates users copy on machine setup.
+- **`docs/operations/ovh_setup.md` + `docs/operations/ovh_smoke_checklist.md`** — operational user docs (evergreen).
+- **`configs/ovh.yaml`** — user-editable production config.
 
-**Demo:**
+**Order:** F10.7 (comment cleanup) → F10.8 (scaffolding cleanup) → F10.3 (YAML cleanup) → F10.6 (extraction).
 
-- `find docs scripts -maxdepth 2 -type f \( -name '*decision*' -o -name 'f5_*' \)` — should return no surviving dev-time decision artefacts.
-- `find experiments -type d -name '_*'` — should return no scratch run folders.
-- `grep -rn 'TODO\|FIXME' src tests` — every remaining occurrence is justified or also deleted.
+---
 
-**Order:** run after F10.5 (comment cleanup) and after F10.3 (documentation pass) — those passes formalise what's worth preserving, so anything they didn't promote to canonical state is fair game here.
+### Phase 11 — Per-scenario experiment campaign
+
+> **Scope deferred (locked):** the per-scenario matrix (which algorithms, which seeds, which ablations) gets discussed in depth at F11 kickoff, not now. F11 is sketched here as placeholder structure; sub-phases land after F8 reproducibility validates and F10.6 extraction completes.
+
+#### F11.1 — Discovery campaign — TBD
+
+After F8 + F9 + F10 land in coopvmas, run the full discovery experiment campaign: ER1 ablation matrix + LERO sweep with multiple prompts/configs. Decide scope at F11.1 kickoff (which ablations to port from rendezvous_comm, how many seeds, etc.).
+
+#### F11.2 — Navigation campaign — TBD
+
+Adapt ER1 + LERO to navigation. Identify scenario-specific tweaks (different success_predicate semantics, different default params).
+
+#### F11.3 — Transport campaign — TBD
+#### F11.4 — Flocking campaign — TBD
+
+Note: flocking has no natural M1 success rate; campaign uses M2/M9 instead.
+
+#### F11.5 — Cross-scenario synthesis report — TBD
+
+Streamlit page showing per-scenario leaderboards + LERO-vs-baseline deltas. Output informs publication / future research direction.
 
 ---
 
 ## 6. Open questions / decisions deferred
 
-| Topic | Latest moment |
-| --- | --- |
-| Default CSV format (long vs summary) | F5.5 |
-| Per-scenario success metric (nav, flocking, transport) | F4.1–F4.3 |
-| Final package name | before F10.4 |
-| Algorithm hyperparameters per scenario | Phase 8 |
-| Streamlit FE: keep in same repo or split? | post-Phase 7 |
-| LERO architecture (v5–v9 + meta + registry) | start of Phase 9 |
-| OVH cost vs local smoke threshold | F6.5 |
-| Resume tolerance threshold (acceptable metric drift) | F5.7 |
-| Heuristic baseline complexity per scenario | F8.1 |
+Locked decisions from the 2026-05-09 planning round are recorded in
+`~/.claude/.../memory/project_coopvmas_decisions.md`. The table below tracks
+items still open.
+
+| Topic | Latest moment | Status |
+| --- | --- | --- |
+| Default CSV format (long vs summary) | F5.5 | locked (long) |
+| Per-scenario success metric (nav, flocking, transport) | F4.1–F4.3 | locked |
+| Final package name | before F10.6 | **locked: `coopvmas`** |
+| Algorithm hyperparameters per scenario | F11.1 kickoff | open |
+| Streamlit FE: keep in same repo or split? | F10.6 | **locked: same repo** |
+| LERO architecture | F9 kickoff | **locked** (see memory) |
+| OVH cost vs local smoke threshold | F6.5 | locked |
+| Resume tolerance threshold (acceptable metric drift) | F5.7 | locked |
+| Heuristic baseline complexity per scenario | F8.1 (was) | **dropped** (F11.1 may revisit) |
+| Reproducibility threshold (ER1, S3b-local) | F8.0 | **locked: ±10% abs + 1.5σ** |
+| LERO discharged-candidates handling (within-run vs across-run) | F9.6 kickoff | open ("review at impl time") |
+| LERO experiment campaign matrix (Phase 11) | F11.1 kickoff | open ("discuss in depth then") |
+| `coopvmas` license | F10.6 | **locked: GPL-v3 (matches parent VMAS)** |
 
 ---
 

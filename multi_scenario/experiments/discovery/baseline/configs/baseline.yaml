@@ -1,0 +1,101 @@
+# ER1 reference baseline — k=2 rendezvous on VMAS Discovery (covering_range=0.35).
+#
+# Reproducibility target: rendezvous_comm/configs/er1/single_al_lp_sr_cr035.yaml
+# Headline (rendezvous_comm doc): M1 ≈ 0.405 at 10M frames, single seed.
+# coopvmas reproducibility threshold: ±10% absolute on M1 AND within 1.5σ of
+# rendezvous_comm seed-mean. See implementation_plan.md F8.
+#
+# Per-field parity is checked by tests/reproducibility/test_er1_config_parity.py
+# against the rendezvous_comm source — silent drift fails the test.
+#
+# ── Two things to know before reading this YAML ─────────────────────
+#
+# 1. ``shared_reward: true`` is intentional. The rendezvous_comm filename
+#    encodes the feature flags (``al`` = Agent Lidar, ``lp`` = Low Penalty,
+#    ``sr`` = Shared Reward); the ER1 M1≈0.405 headline number is the
+#    ``_sr_`` variant. Side effect on this baseline: M8 (Agent Utilization
+#    CV) reports 0 because the unmodified VMAS Discovery scenario returns
+#    a single scalar covering_reward shared across all agents. M8 only
+#    becomes meaningful once the LERO scenario patcher (F9.5) overrides
+#    ``info()`` to return per-agent rewards. M8=0 for ER1 matches
+#    rendezvous_comm's own ER1 numbers.
+#
+# 2. ``runtime.runner.type: local`` is the canonical value even when this
+#    baseline runs on OVH. LocalRunner is what reads this YAML and drives
+#    the BenchMARL training loop, whether on a laptop or inside an OVH
+#    container. The OVH-vs-local choice is at the *submit* layer:
+#      multi-scenario sweep --runner ovh --ovh-config configs/ovh.yaml \\
+#                           --seeds 0 1 2 <this-yaml>
+#    or via the Submit page's "Submit target: ovh" radio. The YAML stays
+#    portable across both paths (F7.7.A2 architecture).
+
+experiment:
+  id: er1_cr035
+  seed: 0
+  name: "ER1 + AL + LP+SR (covering_range=0.35)"
+  description: >
+    Reference baseline reproducing rendezvous_comm `er1_al_lp_sr_cr035`:
+    4 agents, 4 targets, k=2, covering_range=0.35, max_steps=200, agent
+    lidar on, low collision penalty, shared reward.
+    Headline reproducibility target: M1 ≈ 0.405 at 10M frames (seed 0).
+
+scenario:
+  type: discovery
+  params:
+    # Task topology (ER1 k=2 rendezvous: 4 agents share 4 targets, two-per-target).
+    n_agents: 4
+    n_targets: 4
+    agents_per_target: 2
+    # Sensor geometry.
+    lidar_range: 0.35
+    covering_range: 0.35
+    use_agent_lidar: true
+    n_lidar_rays_entities: 15
+    n_lidar_rays_agents: 12
+    # Episode dynamics.
+    targets_respawn: false      # required for M1 cumsum semantics
+    shared_reward: true
+    max_steps: 200
+    # Reward shaping.
+    agent_collision_penalty: -0.01
+    covering_rew_coeff: 1.0
+    time_penalty: -0.01
+
+algorithm:
+  type: mappo
+  params:
+    # GAE lambda — PPO-specific, lives in algorithm.params (not training.*).
+    lmbda: 0.95
+
+training:
+  # rendezvous_comm uses BenchMARL's max_n_frames=10_000_000 cap.
+  # 167 iters × 60_000 frames/batch = 10_020_000 frames ≈ 10M (smallest
+  # integer ≥ rendezvous_comm's frame target).
+  max_iters: 167
+  num_envs: 600
+  device: cpu
+  lr: 0.00005
+  gamma: 0.99
+  frames_per_batch: 60000
+  minibatch_size: 4096
+  n_minibatch_iters: 45
+  share_policy_params: true
+  # ~17 BenchMARL checkpoints over the 167-iter run; rendezvous_comm
+  # didn't checkpoint mid-run but having them makes resume + post-hoc
+  # eval (F8.5.D best-checkpoint policy) cheap.
+  checkpoint_interval_iters: 10
+
+evaluation:
+  # rendezvous_comm: evaluation_interval=120_000 frames = 2 iters @ 60k frames/batch.
+  interval_iters: 2
+  episodes: 200
+
+runtime:
+  runner:
+    type: local
+    params:
+      record_video: false  # 200 episodes × 200 steps × 4 agents — too slow.
+  storage:
+    type: fs
+    path: experiments/discovery/baseline
+    params: {}
