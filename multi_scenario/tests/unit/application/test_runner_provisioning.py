@@ -19,8 +19,8 @@ from types import SimpleNamespace
 import pytest
 
 from multi_scenario.application.runner_provisioning import (
-    PROVISION_CHECKS,
     check_runner_provisioning,
+    PROVISION_CHECKS,
 )
 
 
@@ -37,6 +37,7 @@ def test_local_cpu_passes_without_torch_check():
 def test_local_cuda_pass_when_cuda_available(monkeypatch):
     """When ``torch.cuda.is_available()=True``, local+cuda PASSES."""
     import torch  # pylint: disable=import-outside-toplevel
+
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     status, detail = check_runner_provisioning("local", "cuda")
@@ -47,6 +48,7 @@ def test_local_cuda_pass_when_cuda_available(monkeypatch):
 def test_local_cuda_fail_when_cuda_missing(monkeypatch):
     """``local + cuda`` on a CUDA-less host → FAIL with actionable message."""
     import torch  # pylint: disable=import-outside-toplevel
+
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     status, detail = check_runner_provisioning("local", "cuda")
     assert status is False
@@ -69,18 +71,23 @@ def test_ovh_no_config_fails():
 
 
 @pytest.mark.parametrize(
-    "flavor", ["ai1-1-gpu", "a100-1-gpu", "h100-1-gpu", "l40s-1-gpu", "l4-1-gpu", "a10-1-gpu"]
+    "flavor",
+    ["ai1-1-gpu", "a100-1-gpu", "h100-1-gpu", "l40s-1-gpu", "l4-1-gpu", "a10-1-gpu"],
 )
 def test_ovh_cuda_pass_with_gpu_flavors(flavor):
     """All known GPU-flavor prefixes are accepted with device=cuda."""
-    status, detail = check_runner_provisioning("ovh", "cuda", ovh_cfg=_ovh_cfg(flavor=flavor))
+    status, detail = check_runner_provisioning(
+        "ovh", "cuda", ovh_cfg=_ovh_cfg(flavor=flavor)
+    )
     assert status is True
     assert flavor in detail
 
 
 def test_ovh_cuda_fail_on_cpu_only_flavor():
     status, detail = check_runner_provisioning(
-        "ovh", "cuda", ovh_cfg=_ovh_cfg(flavor="ai1-1-cpu"),
+        "ovh",
+        "cuda",
+        ovh_cfg=_ovh_cfg(flavor="ai1-1-cpu"),
     )
     assert status is False
     assert "ai1-1-cpu" in detail
@@ -89,7 +96,9 @@ def test_ovh_cuda_fail_on_cpu_only_flavor():
 
 def test_ovh_cuda_fail_when_n_gpu_zero():
     status, detail = check_runner_provisioning(
-        "ovh", "cuda", ovh_cfg=_ovh_cfg(flavor="ai1-1-gpu", n_gpu=0),
+        "ovh",
+        "cuda",
+        ovh_cfg=_ovh_cfg(flavor="ai1-1-gpu", n_gpu=0),
     )
     assert status is False
     assert "n_gpu=0" in detail
@@ -98,7 +107,9 @@ def test_ovh_cuda_fail_when_n_gpu_zero():
 def test_ovh_cpu_on_gpu_flavor_passes_with_warning():
     """``ovh + cpu + gpu_flavor`` is allowed but the detail carries a ⚠ warning."""
     status, detail = check_runner_provisioning(
-        "ovh", "cpu", ovh_cfg=_ovh_cfg(flavor="ai1-1-gpu"),
+        "ovh",
+        "cpu",
+        ovh_cfg=_ovh_cfg(flavor="ai1-1-gpu"),
     )
     assert status is True
     assert "⚠" in detail
@@ -108,7 +119,9 @@ def test_ovh_cpu_on_gpu_flavor_passes_with_warning():
 def test_ovh_cpu_on_cpu_flavor_passes_cleanly():
     """No warning when both runner and device agree on CPU."""
     status, detail = check_runner_provisioning(
-        "ovh", "cpu", ovh_cfg=_ovh_cfg(flavor="ai1-1-cpu"),
+        "ovh",
+        "cpu",
+        ovh_cfg=_ovh_cfg(flavor="ai1-1-cpu"),
     )
     assert status is True
     assert "⚠" not in detail
@@ -133,10 +146,10 @@ def test_provision_checks_registry_matches_runners():
     from multi_scenario.application.factories import available_runners
 
     for runner_name in available_runners():
-        assert runner_name in PROVISION_CHECKS, (
-            f"runner {runner_name!r} is registered but has no provisioning probe"
-        )
+        assert (
+            runner_name in PROVISION_CHECKS
+        ), f"runner {runner_name!r} is registered but has no provisioning probe"
     for probe_name in PROVISION_CHECKS:
-        assert probe_name in available_runners(), (
-            f"provisioning probe {probe_name!r} is registered but no RunnerSpec exists"
-        )
+        assert (
+            probe_name in available_runners()
+        ), f"provisioning probe {probe_name!r} is registered but no RunnerSpec exists"

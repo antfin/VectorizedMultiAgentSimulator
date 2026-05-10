@@ -358,9 +358,15 @@ def _refresh_ovh_status() -> None:
     # Use ``sys.executable -m multi_scenario.cli`` instead of the
     # ``multi-scenario`` console script — when streamlit launches outside an
     # active virtualenv, the script isn't on PATH (Smoke 4 lesson, 2026-05-10).
+    # F8.2.H: skip silently when there's no BenchMARL checkpoint to load
+    # from (smoke runs intentionally disable checkpoints; trying to regen
+    # would just emit a confusing error). Same gate that
+    # ``application/regenerate_videos.py::latest_checkpoint`` uses.
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.application.regenerate_videos import latest_checkpoint
+
     regen_warning: str | None = None
-    if not _videos_present(run_dir):
-        # pylint: disable=import-outside-toplevel
+    if not _videos_present(run_dir) and latest_checkpoint(run_dir) is not None:
         import subprocess
         import sys
 

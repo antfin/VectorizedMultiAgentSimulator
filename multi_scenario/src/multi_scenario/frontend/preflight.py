@@ -419,9 +419,7 @@ def _provision_for_runner(
     application module hex-clean (no frontend imports).
     """
     # pylint: disable=import-outside-toplevel
-    from multi_scenario.application.runner_provisioning import (
-        check_runner_provisioning,
-    )
+    from multi_scenario.application.runner_provisioning import check_runner_provisioning
 
     device = form_dict.get("training", {}).get("device", "cpu")
     ok, detail = check_runner_provisioning(runner_type, device, **ctx)

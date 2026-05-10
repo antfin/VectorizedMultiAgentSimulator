@@ -118,9 +118,7 @@ def _dispatch_ovh(cfg: ExperimentConfig, yaml_path: Path) -> None:
     typer.echo(f"SUBMITTED: {submission.run_id} -> job_id={submission.job_id}")
     typer.echo(f"  results: {submission.s3_prefix}")
     typer.echo(f"  dashboard: {submission.dashboard_url}")
-    typer.echo(
-        f"  pull back: multi-scenario sweep --follow --runner ovh {yaml_path}"
-    )
+    typer.echo(f"  pull back: multi-scenario sweep --follow --runner ovh {yaml_path}")
 
 
 class _StdoutLogger:

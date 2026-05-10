@@ -308,6 +308,10 @@ def _follow_ovh_jobs(
     """
     # pylint: disable=import-outside-toplevel
     from multi_scenario.application.ovh_pullback import pullback_run_dir
+    from multi_scenario.application.regenerate_videos import (
+        latest_checkpoint,
+        regenerate_videos,
+    )
 
     pending = list(job_ids)
     while pending:
@@ -319,6 +323,7 @@ def _follow_ovh_jobs(
                 marker = "DONE" if info.state.upper() == "DONE" else f"{info.state}"
                 typer.echo(f"  {marker} {run_id} → {run_dir}")
                 if info.state.upper() == "DONE" and ovh_cfg is not None:
+                    pulled_ok = False
                     try:
                         result = pullback_run_dir(
                             ovh_cfg=ovh_cfg,
@@ -330,6 +335,7 @@ def _follow_ovh_jobs(
                             f"    pulled {result.n_downloaded} files "
                             f"({result.n_skipped} skipped) → {run_dir}"
                         )
+                        pulled_ok = True
                     # pylint: disable=broad-except
                     except Exception as exc:
                         # Don't stall the whole sweep on a single pullback hiccup;
@@ -338,11 +344,42 @@ def _follow_ovh_jobs(
                             f"    ✗ pullback failed for {run_id}: {exc}",
                             err=True,
                         )
+                    # F8.2.D: if results landed and the run-folder has no
+                    # videos yet, regenerate them locally — same behaviour as
+                    # Streamlit Refresh. Best-effort: a regen failure here
+                    # doesn't stall the sweep (results are already on disk;
+                    # user can retry via the Run Detail button).
+                    # F8.2.H: skip silently when there's no checkpoint to
+                    # load from (smoke runs disable checkpoints by design).
+                    if (
+                        pulled_ok
+                        and not _videos_present(run_dir)
+                        and latest_checkpoint(run_dir) is not None
+                    ):
+                        try:
+                            regenerate_videos(run_dir)
+                            typer.echo(
+                                f"    regenerated videos → {run_dir}/output/videos"
+                            )
+                        # pylint: disable=broad-except
+                        except Exception as exc:
+                            typer.echo(
+                                f"    ✗ video regen failed for {run_id}: {exc}",
+                                err=True,
+                            )
             else:
                 still_running.append((job_id, cfg, run_dir))
         pending = still_running
         if pending:
             time.sleep(15)
+
+
+def _videos_present(run_dir: Path) -> bool:
+    """True iff ``run_dir/output/videos/`` has ≥1 mp4 — used by F8.2.D regen gate."""
+    videos_dir = run_dir / "output" / "videos"
+    if not videos_dir.is_dir():
+        return False
+    return any(p.suffix.lower() == ".mp4" for p in videos_dir.iterdir())
 
 
 def _job_is_terminal(client: Any, job_id: str) -> bool:

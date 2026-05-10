@@ -141,6 +141,11 @@ class BenchmarlBaseAdapter:
                 cfg.training.checkpoint_interval_iters * cfg.training.frames_per_batch
             )
             bm.checkpoint_at_end = True
+            # F8.2.G: BenchMARL defaults to keep_checkpoints_num=3, which
+            # silently overwrites earlier snapshots — ER1 dry-run lost the
+            # iter-125 peak (only kept iters 150/160/167). Override so the
+            # full training history survives for F8.5.D best-checkpoint eval.
+            bm.keep_checkpoints_num = cfg.training.keep_checkpoints_num
         if save_folder is not None:
             bm.save_folder = save_folder
         return bm

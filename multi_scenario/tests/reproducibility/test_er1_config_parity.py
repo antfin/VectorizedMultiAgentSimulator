@@ -28,13 +28,20 @@ from multi_scenario.domain.models import ExperimentConfig
 
 _BASELINE_PATH = (
     Path(__file__).resolve().parents[2]
-    / "experiments" / "discovery" / "baseline" / "configs" / "baseline.yaml"
+    / "experiments"
+    / "discovery"
+    / "baseline"
+    / "configs"
+    / "baseline.yaml"
 )
 
 # Located via path-relative climb: tests → multi_scenario → VMAS root → rendezvous_comm.
 _REFERENCE_PATH = (
     Path(__file__).resolve().parents[3]
-    / "rendezvous_comm" / "configs" / "er1" / "single_al_lp_sr_cr035.yaml"
+    / "rendezvous_comm"
+    / "configs"
+    / "er1"
+    / "single_al_lp_sr_cr035.yaml"
 )
 
 
@@ -128,7 +135,9 @@ def test_lmbda_carried_in_algorithm_params(baseline, reference):
         ("evaluation.episodes", "evaluation_episodes"),
     ],
 )
-def test_training_field_matches_reference(baseline, reference, coopvmas_path, reference_train_field):
+def test_training_field_matches_reference(
+    baseline, reference, coopvmas_path, reference_train_field
+):
     """Per-field 1:1 mappings between coopvmas TrainingSection and rendezvous_comm `train.*`."""
     cur = baseline
     for part in coopvmas_path.split("."):
@@ -161,7 +170,9 @@ def test_evaluation_interval_iters_matches_reference_frames(baseline, reference)
     """coopvmas's ``evaluation.interval_iters`` × ``frames_per_batch``
     must equal rendezvous_comm's ``train.evaluation_interval`` (frames).
     """
-    coopvmas_frames = baseline.evaluation.interval_iters * baseline.training.frames_per_batch
+    coopvmas_frames = (
+        baseline.evaluation.interval_iters * baseline.training.frames_per_batch
+    )
     reference_frames = reference["train"]["evaluation_interval"]
     assert coopvmas_frames == reference_frames, (
         f"eval cadence drifted: coopvmas={coopvmas_frames} frames vs "

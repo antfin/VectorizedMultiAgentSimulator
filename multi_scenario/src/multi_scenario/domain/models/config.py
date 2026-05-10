@@ -85,6 +85,13 @@ class TrainingSection(BaseModel):
     # disable interval checkpoints (final-only via checkpoint_at_end). Smoke
     # runs auto-disable in the adapter; this is the cadence for non-smoke runs.
     checkpoint_interval_iters: int = Field(default=10, ge=0)
+    # F8.2.G: how many checkpoint snapshots BenchMARL retains on disk.
+    # BenchMARL's default is 3, which silently overwrites earlier snapshots —
+    # the ER1 dry-run lost the iter-125 peak (only kept iters 150 / 160 / 167).
+    # Set high enough that an entire ~167-iter run keeps everything; F8.5.D's
+    # best-checkpoint-policy callback needs the full history to find the peak.
+    # Smoke runs ignore this (no checkpoints written).
+    keep_checkpoints_num: int = Field(default=1000, gt=0)
 
     @model_validator(mode="after")
     def _minibatch_fits_in_batch(self) -> "TrainingSection":

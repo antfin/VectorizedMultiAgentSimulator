@@ -1,0 +1,17 @@
+{
+  "state": "DONE",
+  "transitions": [
+    {
+      "state": "INITIALIZING",
+      "ts": "2026-05-10T17:45:18.748896Z"
+    },
+    {
+      "state": "RUNNING",
+      "ts": "2026-05-10T17:45:18.789473Z"
+    },
+    {
+      "state": "DONE",
+      "ts": "2026-05-10T17:45:20.779709Z"
+    }
+  ]
+}

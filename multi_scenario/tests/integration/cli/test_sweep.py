@@ -295,3 +295,170 @@ def test_follow_ovh_jobs_pullback_failure_does_not_abort_sweep(tmp_path, monkeyp
     )
     # Must not raise — sweep should keep going.
     _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+
+
+# ── F8.2.D — auto-regen on sweep --follow ─────────────────────────────
+
+
+def test_follow_ovh_jobs_regenerates_videos_after_pullback(tmp_path, monkeypatch):
+    """DONE → pullback → regenerate-videos when videos/ is empty AND a checkpoint exists.
+
+    Mirrors Streamlit Refresh behaviour so CLI users get videos automatically
+    too. F8.2.H gating: a fake .pt under output/benchmarl/.../checkpoints/
+    must be present, otherwise we treat the run as a smoke and skip silently.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+    # Plant a fake checkpoint so latest_checkpoint(run_dir) returns truthy.
+    ckpt_dir = run_dir / "output" / "benchmarl" / "demo" / "checkpoints"
+    ckpt_dir.mkdir(parents=True)
+    (ckpt_dir / "checkpoint_1.pt").write_bytes(b"")
+
+    info = MagicMock()
+    info.is_terminal = True
+    info.state = "DONE"
+    client = MagicMock()
+    client.get.return_value = info
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        lambda **kw: MagicMock(n_downloaded=10, n_skipped=0),
+    )
+
+    regen_calls = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: regen_calls.append(rd),
+    )
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+    assert regen_calls == [run_dir], (
+        "regenerate_videos must be invoked once after a successful pullback "
+        "when no videos/ are present (F8.2.D regression)"
+    )
+
+
+def test_follow_ovh_jobs_skips_regen_when_no_checkpoint(tmp_path, monkeypatch):
+    """F8.2.H: smoke runs disable checkpoints → skip regen silently (no error).
+
+    Pre-fix the auto-regen tried to fire on smoke runs and surfaced
+    "no BenchMARL checkpoint under …" as a warning panel — confusing because
+    smoke runs are not supposed to produce videos in the first place.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo_smoke"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_smoke_s0__t"
+    run_dir.mkdir()  # no videos/ AND no benchmarl/ checkpoint dir
+
+    info = MagicMock(is_terminal=True, state="DONE")
+    client = MagicMock()
+    client.get.return_value = info
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        lambda **kw: MagicMock(n_downloaded=5, n_skipped=0),
+    )
+
+    regen_calls = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: regen_calls.append(rd),
+    )
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+    assert regen_calls == [], "smoke runs must not trigger regen"
+
+
+def test_follow_ovh_jobs_skips_regen_when_videos_already_present(tmp_path, monkeypatch):
+    """If videos exist on disk (e.g. a prior regen succeeded), don't redo it."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+    (run_dir / "output" / "videos").mkdir(parents=True)
+    (run_dir / "output" / "videos" / "after.mp4").write_bytes(b"x")
+
+    info = MagicMock(is_terminal=True, state="DONE")
+    client = MagicMock()
+    client.get.return_value = info
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        lambda **kw: MagicMock(n_downloaded=0, n_skipped=10),
+    )
+
+    regen_calls = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: regen_calls.append(rd),
+    )
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+    assert regen_calls == []  # videos already there → no regen
+
+
+def test_follow_ovh_jobs_regen_failure_does_not_abort_sweep(tmp_path, monkeypatch):
+    """A regen exception is logged but doesn't propagate (results already on disk)."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+    run_dir.mkdir()
+
+    info = MagicMock(is_terminal=True, state="DONE")
+    client = MagicMock()
+    client.get.return_value = info
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        lambda **kw: MagicMock(n_downloaded=5, n_skipped=0),
+    )
+
+    def _boom(_rd):
+        raise RuntimeError("simulated regen failure")
+
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos", _boom
+    )
+    # Must not raise — sweep keeps going (results on disk; user can retry).
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+
+
+def test_follow_ovh_jobs_skips_regen_when_pullback_failed(tmp_path, monkeypatch):
+    """Pullback failure → don't try regen (no checkpoint on disk to load)."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+
+    info = MagicMock(is_terminal=True, state="DONE")
+    client = MagicMock()
+    client.get.return_value = info
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        lambda **kw: (_ for _ in ()).throw(RuntimeError("pullback bombed")),
+    )
+
+    regen_calls = []
+    monkeypatch.setattr(
+        "multi_scenario.application.regenerate_videos.regenerate_videos",
+        lambda rd: regen_calls.append(rd),
+    )
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+    assert regen_calls == []  # pullback failed → regen skipped

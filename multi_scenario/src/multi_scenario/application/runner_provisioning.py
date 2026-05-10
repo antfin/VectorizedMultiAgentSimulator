@@ -35,7 +35,12 @@ ProvisionCheck = Callable[..., tuple[bool, str]]
 
 #: ``ovhai capabilities flavor list`` GPU-flavor prefixes (verified live 2026-05-09).
 _OVH_GPU_FLAVOR_PREFIXES: tuple[str, ...] = (
-    "ai1-1-gpu", "a100-", "a10-", "h100-", "l40s-", "l4-",
+    "ai1-1-gpu",
+    "a100-",
+    "a10-",
+    "h100-",
+    "l40s-",
+    "l4-",
 )
 
 
@@ -50,6 +55,7 @@ def _check_local_provision(device: str, **_ctx: Any) -> tuple[bool, str]:
         return True, f"local + {device} (no provisioning needed)"
     # pylint: disable=import-outside-toplevel
     import torch
+
     if not torch.cuda.is_available():
         return (
             False,

@@ -50,12 +50,16 @@ compare = st.Page(
 )
 submit = st.Page("pages/submit.py", title="Submit", icon=":material/play_arrow:")
 settings = st.Page("pages/settings.py", title="Settings", icon=":material/settings:")
+# F8.2.F: in-app docs hub. Embeds the mkdocs site so students/collaborators
+# can read the metric / scenario / framework references without leaving
+# Streamlit. Sits in the same trailing section as Settings.
+docs = st.Page("pages/docs.py", title="Docs", icon=":material/menu_book:")
 
 nav = st.navigation(
     {
         "": [home],
         "Experiments": [browse, detail, compare, submit],
-        " ": [settings],  # space differentiates from the other empty-string section
+        " ": [docs, settings],  # docs + settings in trailing utilities section
     },
     expanded=True,  # keep all sections always-expanded; combined with the
     # ``pointer-events: none`` rule on the section header, the user can't

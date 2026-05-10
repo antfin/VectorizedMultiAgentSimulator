@@ -18,7 +18,9 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "compare_to_reference.py"
+_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "compare_to_reference.py"
+)
 
 
 @pytest.fixture(scope="module")
@@ -31,7 +33,9 @@ def script_module():
     return mod
 
 
-def _make_runs_csv(tmp_path: Path, m1_values: list[float], exp_id: str = "er1_cr035") -> Path:
+def _make_runs_csv(
+    tmp_path: Path, m1_values: list[float], exp_id: str = "er1_cr035"
+) -> Path:
     """Synthesise a minimal runs.csv with the columns ``compare_to_reference`` reads."""
     runs_csv = tmp_path / "runs.csv"
     fieldnames = ["record_type", "exp_id", "seed", "M1_success_rate"]
@@ -39,10 +43,14 @@ def _make_runs_csv(tmp_path: Path, m1_values: list[float], exp_id: str = "er1_cr
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for seed, m1 in enumerate(m1_values):
-            writer.writerow({
-                "record_type": "final", "exp_id": exp_id,
-                "seed": str(seed), "M1_success_rate": str(m1),
-            })
+            writer.writerow(
+                {
+                    "record_type": "final",
+                    "exp_id": exp_id,
+                    "seed": str(seed),
+                    "M1_success_rate": str(m1),
+                }
+            )
     return runs_csv
 
 
@@ -78,7 +86,8 @@ def test_pass_when_single_seed_within_abs(script_module, tmp_path):
 
 
 def test_fail_on_sigma_when_high_variance_pulls_mean_close_to_reference(
-    script_module, tmp_path,
+    script_module,
+    tmp_path,
 ):
     """Mean within abs but spread is wide AND |Δ| > 1.5σ → sigma FAIL.
 
@@ -114,16 +123,35 @@ def test_skips_non_final_rows(script_module, tmp_path):
     runs_csv = tmp_path / "runs.csv"
     with runs_csv.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["record_type", "exp_id", "seed", "M1_success_rate"],
+            f,
+            fieldnames=["record_type", "exp_id", "seed", "M1_success_rate"],
         )
         writer.writeheader()
         # 1 final row + 2 noise rows that should be ignored
-        writer.writerow({"record_type": "final", "exp_id": "er1_cr035",
-                         "seed": "0", "M1_success_rate": "0.40"})
-        writer.writerow({"record_type": "eval", "exp_id": "er1_cr035",
-                         "seed": "0", "M1_success_rate": "999.0"})  # poisoned noise
-        writer.writerow({"record_type": "lero_candidate", "exp_id": "er1_cr035",
-                         "seed": "0", "M1_success_rate": "999.0"})
+        writer.writerow(
+            {
+                "record_type": "final",
+                "exp_id": "er1_cr035",
+                "seed": "0",
+                "M1_success_rate": "0.40",
+            }
+        )
+        writer.writerow(
+            {
+                "record_type": "eval",
+                "exp_id": "er1_cr035",
+                "seed": "0",
+                "M1_success_rate": "999.0",
+            }
+        )  # poisoned noise
+        writer.writerow(
+            {
+                "record_type": "lero_candidate",
+                "exp_id": "er1_cr035",
+                "seed": "0",
+                "M1_success_rate": "999.0",
+            }
+        )
     rows = list(csv.DictReader(runs_csv.open(encoding="utf-8")))
     res = script_module._compare(rows, "er1_cr035", "M1_success_rate", 0.405)
     assert res.coopvmas_n == 1, f"only the final row should count, got {res.coopvmas_n}"
@@ -135,15 +163,34 @@ def test_skips_null_metric_values(script_module, tmp_path):
     runs_csv = tmp_path / "runs.csv"
     with runs_csv.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["record_type", "exp_id", "seed", "M1_success_rate"],
+            f,
+            fieldnames=["record_type", "exp_id", "seed", "M1_success_rate"],
         )
         writer.writeheader()
-        writer.writerow({"record_type": "final", "exp_id": "er1_cr035",
-                         "seed": "0", "M1_success_rate": "0.40"})
-        writer.writerow({"record_type": "final", "exp_id": "er1_cr035",
-                         "seed": "1", "M1_success_rate": ""})
-        writer.writerow({"record_type": "final", "exp_id": "er1_cr035",
-                         "seed": "2", "M1_success_rate": "None"})
+        writer.writerow(
+            {
+                "record_type": "final",
+                "exp_id": "er1_cr035",
+                "seed": "0",
+                "M1_success_rate": "0.40",
+            }
+        )
+        writer.writerow(
+            {
+                "record_type": "final",
+                "exp_id": "er1_cr035",
+                "seed": "1",
+                "M1_success_rate": "",
+            }
+        )
+        writer.writerow(
+            {
+                "record_type": "final",
+                "exp_id": "er1_cr035",
+                "seed": "2",
+                "M1_success_rate": "None",
+            }
+        )
     rows = list(csv.DictReader(runs_csv.open(encoding="utf-8")))
     res = script_module._compare(rows, "er1_cr035", "M1_success_rate", 0.405)
     assert res.coopvmas_n == 1

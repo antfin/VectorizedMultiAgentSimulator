@@ -5,8 +5,25 @@ same logic can be invoked programmatically — notably by ``OvhRunner.run()``,
 which calls this on the local machine after pulling OVH results back (the
 in-container Pyglet renderer fails fail-soft, so videos are produced
 post-hoc on the dev host that submitted the job).
+
+F8.2.B — cross-device load: when a run was trained on CUDA (typical OVH
+workflow) but the local host has no CUDA (typical dev Mac), we silently
+remap the saved tensors onto CPU instead of crashing inside
+``torch.cuda.current_device()``. The fix is two-pronged because the BEFORE
+and AFTER paths take different routes:
+
+- BEFORE rebuilds a fresh ``Experiment`` from ``cfg`` we read off disk, so
+  flipping ``cfg.training.device`` to "cpu" is enough.
+- AFTER calls ``Experiment.reload_from_file(checkpoint)`` which doesn't
+  expose a ``map_location`` parameter; we wrap it in a context manager that
+  monkey-patches ``torch.load``'s defaults for the duration of the reload
+  and restores them after.
+
+Both paths are guarded by ``torch.cuda.is_available()`` so a CUDA-equipped
+host still uses GPU when present.
 """
 
+import contextlib
 import tempfile
 from pathlib import Path
 
@@ -16,6 +33,36 @@ from multi_scenario.application.factories import make_algorithm
 
 class VideoRegenerationError(RuntimeError):
     """Raised when ``regenerate_videos`` cannot proceed (missing checkpoint, bad cfg, …)."""
+
+
+@contextlib.contextmanager
+def _force_cpu_load_when_no_cuda():
+    """Temporarily force ``torch.load`` to ``map_location='cpu'``.
+
+    Used to make ``Experiment.reload_from_file(...)`` work on a CUDA-less
+    host when the checkpoint contains CUDA tensors. BenchMARL's reload
+    doesn't accept a ``map_location`` argument, so the cleanest hook is at
+    the ``torch.load`` boundary. No-op when CUDA is available locally —
+    GPU loading is the fast/native path.
+    """
+    # pylint: disable=import-outside-toplevel
+    import torch
+
+    if torch.cuda.is_available():
+        yield
+        return
+
+    original_load = torch.load
+
+    def _cpu_load(*args, **kwargs):
+        kwargs.setdefault("map_location", "cpu")
+        return original_load(*args, **kwargs)
+
+    torch.load = _cpu_load
+    try:
+        yield
+    finally:
+        torch.load = original_load
 
 
 def latest_checkpoint(run_dir: Path) -> Path | None:
@@ -58,6 +105,7 @@ def regenerate_videos(run_dir: Path) -> Path:
     # Local imports to keep BenchMARL/torch off the module top-level so callers
     # paying for "is regen needed?" decisions don't take the import hit.
     # pylint: disable=import-outside-toplevel
+    import torch
     from benchmarl.experiment import Experiment
 
     from multi_scenario.adapters.algorithms.benchmarl_base import BenchmarlBaseAdapter
@@ -71,6 +119,15 @@ def regenerate_videos(run_dir: Path) -> Path:
             f"cfg has algorithm.type={cfg.algorithm.type!r}"
         )
 
+    # F8.2.B: when the run was trained on CUDA but the local host has no
+    # CUDA, override the cfg's device for the BEFORE path. The AFTER path
+    # uses the _force_cpu_load_when_no_cuda() context manager below — both
+    # branches are guarded so CUDA hosts still use GPU.
+    if cfg.training.device == "cuda" and not torch.cuda.is_available():
+        cfg = cfg.model_copy(
+            update={"training": cfg.training.model_copy(update={"device": "cpu"})}
+        )
+
     # BEFORE: random-init policy via a fresh experiment built into a temp dir
     # so BenchMARL's native scratch space doesn't pollute the real run.
     with tempfile.TemporaryDirectory() as td:
@@ -82,14 +139,41 @@ def regenerate_videos(run_dir: Path) -> Path:
             output_path=videos_dir / "before_training.mp4",
         )
 
-    # AFTER: reload the trained checkpoint → trained policy.
-    trained = Experiment.reload_from_file(str(checkpoint))
-    VideoRecorder().record(
-        test_env=trained.test_env,
-        policy=trained.policy,
-        max_steps=trained.max_steps,
-        output_path=videos_dir / "after_training.mp4",
-    )
+    # AFTER: reload the trained checkpoint → trained policy. Three patches
+    # collaborate to make this work on a CUDA-less host with an OVH-trained
+    # checkpoint:
+    #   1. ``_force_cpu_load_when_no_cuda()`` makes ``torch.load`` use
+    #      ``map_location='cpu'``.
+    #   2. ``experiment_patch.{train,sampling,buffer}_device='cpu'`` keeps
+    #      BenchMARL's downstream code from calling ``torch.cuda.*`` APIs.
+    #   3. ``experiment_patch.save_folder=<tempdir>`` redirects
+    #      BenchMARL's mkdir away from the OVH container path
+    #      (``/workspace/results``) embedded in the saved cfg.
+    # We don't need BenchMARL's save_folder for regen anyway —
+    # VideoRecorder writes directly to ``videos_dir``.
+    bm_patch: dict[str, str] = {}
+    if not torch.cuda.is_available():
+        bm_patch.update(
+            train_device="cpu",
+            sampling_device="cpu",
+            buffer_device="cpu",
+            # BenchMARL exposes its own ``restore_map_location`` knob — set
+            # it explicitly so the inner ``torch.load(restore_file, ...)``
+            # call in ``Experiment.__init__`` doesn't try a CUDA deserialize.
+            restore_map_location="cpu",
+        )
+    with tempfile.TemporaryDirectory() as bm_scratch:
+        bm_patch["save_folder"] = bm_scratch
+        with _force_cpu_load_when_no_cuda():
+            trained = Experiment.reload_from_file(
+                str(checkpoint), experiment_patch=bm_patch
+            )
+        VideoRecorder().record(
+            test_env=trained.test_env,
+            policy=trained.policy,
+            max_steps=trained.max_steps,
+            output_path=videos_dir / "after_training.mp4",
+        )
 
     # Refresh report.json so the video links populate.
     result = storage.load_result(run_dir)

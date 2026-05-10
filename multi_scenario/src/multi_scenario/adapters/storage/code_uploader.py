@@ -86,7 +86,9 @@ class CodeUploader:
     @classmethod
     def from_ovh_client(cls, client, region: str, bucket: str) -> "CodeUploader":
         """OVH-CLI path (F7.7.A5). Reuses ``ovhai login`` — no AWS keys needed."""
-        return cls(lambda key, body: client.bucket_put_object(region, bucket, key, body))
+        return cls(
+            lambda key, body: client.bucket_put_object(region, bucket, key, body)
+        )
 
     def upload(
         self,

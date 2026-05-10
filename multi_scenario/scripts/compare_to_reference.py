@@ -39,8 +39,8 @@ REFERENCE: dict[str, dict[str, float]] = {
 }
 
 #: Reproducibility threshold knobs (F8 plan, locked 2026-05-09).
-ABS_TOLERANCE = 0.10        # ±10% absolute on M1
-SIGMA_MULTIPLIER = 1.5      # within 1.5σ of the seed-mean (only when n_seeds ≥ 2)
+ABS_TOLERANCE = 0.10  # ±10% absolute on M1
+SIGMA_MULTIPLIER = 1.5  # within 1.5σ of the seed-mean (only when n_seeds ≥ 2)
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,10 @@ def _load_runs_csv(runs_csv: Path) -> list[dict[str, str]]:
 
 
 def _compare(
-    rows: list[dict[str, str]], exp_id: str, metric: str, reference: float,
+    rows: list[dict[str, str]],
+    exp_id: str,
+    metric: str,
+    reference: float,
 ) -> _CompareResult:
     matching = [
         float(r[metric])

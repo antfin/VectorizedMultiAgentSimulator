@@ -65,7 +65,9 @@ def test_submit_returns_job_id_from_plain_text_uuid() -> None:
     """Plain-text fallback: scan all lines for a UUID-shaped token."""
 
     def runner(args, timeout=60):  # noqa: ARG001
-        return _make_proc(stdout="49c01e83-faf0-4e1d-a2e7-5534554f8f00  some other text\n")
+        return _make_proc(
+            stdout="49c01e83-faf0-4e1d-a2e7-5534554f8f00  some other text\n"
+        )
 
     out = OvhClient(runner=runner).submit(["--gpu", "V100S", "image"])
     assert out == "49c01e83-faf0-4e1d-a2e7-5534554f8f00"

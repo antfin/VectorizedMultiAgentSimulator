@@ -81,9 +81,11 @@ def test_run_detail_renders_with_seeded_run(tmp_path: Path) -> None:
     at.session_state[EXPERIMENTS_ROOT_KEY] = str(tmp_path)
     at.run()
     assert not at.exception
-    # Header + at least one metric tile renders.
+    # Header + at least one metric tile renders. F8.2.E gave the M1 tile
+    # its glossary label ("M1 — Success Rate") instead of the previous
+    # auto-titlecased "M1 Success Rate".
     metric_labels = {m.label for m in at.metric}
-    assert "M1 Success Rate" in metric_labels
+    assert "M1 — Success Rate" in metric_labels
 
 
 @pytest.mark.slow

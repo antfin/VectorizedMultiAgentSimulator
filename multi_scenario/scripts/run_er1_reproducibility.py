@@ -28,7 +28,11 @@ import typer
 
 _BASELINE_YAML = (
     Path(__file__).resolve().parents[1]
-    / "experiments" / "discovery" / "baseline" / "configs" / "baseline.yaml"
+    / "experiments"
+    / "discovery"
+    / "baseline"
+    / "configs"
+    / "baseline.yaml"
 )
 _OVH_CFG = Path(__file__).resolve().parents[1] / "configs" / "ovh.yaml"
 _SEEDS = "0,1,2"
@@ -65,10 +69,14 @@ def main(
         raise typer.Exit(1)
 
     cmd = [
-        "multi-scenario", "sweep",
-        "--seeds", _SEEDS,
-        "--runner", "ovh",
-        "--ovh-config", str(_OVH_CFG),
+        "multi-scenario",
+        "sweep",
+        "--seeds",
+        _SEEDS,
+        "--runner",
+        "ovh",
+        "--ovh-config",
+        str(_OVH_CFG),
         "--yes",  # F6.7 cost-cap bypass — script runs unattended
     ]
     if follow:

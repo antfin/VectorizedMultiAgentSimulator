@@ -49,8 +49,12 @@ def test_upload_code_dry_run_prints_files_without_uploading(
     result = CliRunner().invoke(
         app,
         [
-            "upload-code", "--s3-config", str(cfg_path),
-            "--repo-root", str(tmp_path), "--dry-run",
+            "upload-code",
+            "--s3-config",
+            str(cfg_path),
+            "--repo-root",
+            str(tmp_path),
+            "--dry-run",
         ],
     )
     assert result.exit_code == 0, result.output

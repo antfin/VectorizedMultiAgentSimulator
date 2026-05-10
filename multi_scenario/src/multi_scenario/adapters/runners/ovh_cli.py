@@ -342,7 +342,9 @@ class OvhClient:
 
 
 #: UUID-ish pattern: 8-4-4-4-12 hex with dashes (matches ``ovhai`` job IDs).
-_JOB_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_JOB_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 
 def _parse_job_id(stdout: str) -> str:

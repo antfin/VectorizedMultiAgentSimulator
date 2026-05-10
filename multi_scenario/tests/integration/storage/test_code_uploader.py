@@ -198,7 +198,9 @@ class _CapturingOvhClient:
     def __init__(self):
         self.objects: dict[tuple[str, str, str], bytes] = {}
 
-    def bucket_put_object(self, region: str, bucket: str, key: str, body: bytes) -> None:
+    def bucket_put_object(
+        self, region: str, bucket: str, key: str, body: bytes
+    ) -> None:
         self.objects[(region, bucket, key)] = body
 
 

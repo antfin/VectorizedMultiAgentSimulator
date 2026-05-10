@@ -102,8 +102,12 @@ evaluation:
 runtime:
   runner:
     type: ovh   # F7.7.A4: drives `multi-scenario run` dispatch (LocalRunner inside container).
-    params:
-      record_video: false  # 200 episodes × 200 steps × 4 agents — too slow.
+    params: {}
+    # F8.2.A: record_video defaults to True for non-smoke runs (exp_id doesn't
+    # end in "_smoke"). Produces 2 short MP4s — random-init "before" + trained
+    # "after" — adds ~30s on V100S, well worth it for post-hoc visual analysis.
+    # OVH-headless containers fail the inline render fail-soft (F6.6); videos
+    # materialise locally via post-pullback regen (F8.2.D + F8.2.B).
   storage:
     type: fs
     path: /workspace/results  # OVH container mount (OvhJobConfig.mount_results).

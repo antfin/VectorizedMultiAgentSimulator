@@ -17,8 +17,8 @@
     "eval_episodes": "output/eval_episodes.json",
     "policy": null,
     "videos": {
-      "before_training": null,
-      "after_training": null
+      "before_training": "output/videos/before_training.mp4",
+      "after_training": "output/videos/after_training.mp4"
     },
     "benchmarl": {
       "dir": "output/benchmarl/mappo_discovery_mlp__1f8e63f6_26_05_10-14_43_29/mappo_discovery_mlp__1f8e63f6_26_05_10-14_43_29",

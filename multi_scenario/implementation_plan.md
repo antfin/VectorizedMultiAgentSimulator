@@ -751,7 +751,7 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
 - **OVH FINALIZING auto-sync confirmed working:** the volume mount `:rwd` permission ports the entire local `/workspace/results` tree back to S3 at job end. We did NOT need F6.3's `S3StorageAdapter.sync_to_local` for this smoke (downloaded via `ovhai bucket object download` directly). F6.3's boto3 path remains the option for users who set up AWS credentials.
 - **Smoke artefact:** `experiments/discovery/baseline/configs/mappo_ovh_smoke.yaml` (added in this feature) — same shape as `mappo_smoke.yaml` but `runtime.storage.path: /workspace/results` so the run-folder writes hit the rwd-mounted volume.
 
-#### F6.6 — Headless video handling + `regenerate-videos` CLI — S ✅
+#### F6.6 — Headless video handling + `regenerate-videos` CLI — S ✅ (cross-device bug → F6.6.1)
 
 **Background:** F2.11 records before/after MP4s inline during training using VMAS Pyglet rendering. OVH AI Training containers are headless (no OpenGL/X11) → any non-smoke run on OVH would crash inside `VideoRecorder.record()` (confirmed `pyglet.gl` import error in `rendezvous_comm/results/.../run.log`). This feature makes OVH runs complete cleanly and reproduces the videos locally after pulling results back.
 
@@ -769,6 +769,10 @@ Three coupled deliverables landed together (framework wiring + submit/poll plumb
 **Optional polish (lower priority):** auto-detect OVH via `OVH_AI_TRAINING_*` env vars and short-circuit the recorder up front, so we skip the pyglet crash overhead on each OVH run.
 
 **Reproducibility caveat to document:** post-hoc regeneration is faithful for MLP (deterministic given seed) but may diverge subtly for algorithms with eval-time stochasticity that BenchMARL handles internally. The "after" video reflects the *saved* checkpoint; if `checkpoint_at_end=True` saves slightly before the final eval (e.g., during cleanup), the policy may be one update behind the run's final eval metrics. Acceptable trade-off; document it.
+
+#### F6.6.1 — Cross-device checkpoint loading for regenerate-videos — moved to F8.2.B
+
+Bug discovered during the ER1 dry-run; re-scoped under F8.2.x as a hard prerequisite for the official multi-seed run. See **F8.2.B** below for the full spec.
 
 **TDD:**
 
@@ -832,6 +836,14 @@ User-flagged usability gap: previously, missing `ovhai` binary surfaced as a bar
 
 - Click a run → config, metrics, learning curves from per-iter/per-eval CSVs, training videos if present.
 - **Port:** `pages/3_*.py` (run detail page).
+
+#### F7.3.1 — Educational scalar/metric explanations — moved to F8.2.E
+
+FE plumbing for in-app metric/scalar tooltips. Re-scoped under F8.2.x because students/collaborators need it before the official multi-seed run lands so they can self-serve. See **F8.2.E** below.
+
+#### F7.3.2 — In-app documentation hub — moved to F8.2.F
+
+"📖 Docs" sidebar entry + inline doc deep-links. Same rationale as F7.3.1. See **F8.2.F** below.
 
 #### F7.4 — Page 3: cross-experiment comparison — M
 
@@ -971,6 +983,157 @@ The baseline YAML is **runner-agnostic** by design (per F7.7.A2): `runtime.runne
 - Streamlit reproducibility page (F8.5.B) shows the same comparison side-by-side.
 
 **Compute budget reminder.** OVH cost (3 seeds × ~3h V100S × €2.10/h) ≈ **€19**. Local-CPU cost is wall-clock (a day-ish) but no money out. Either is fine; pick at run-time, not at YAML-edit time.
+
+**Pre-F8.2 dry-run (2026-05-10) — single-seed reference data.** Before the official ×3-seed run we fired one seed-0 ER1 to validate the post-Stage-1/2/3 OVH pipeline end-to-end on a real workload. Result is recorded here so the multi-seed run has a known baseline to compare against; if the seed-0 metric doesn't reproduce in the official run we'll know something between submit and result-extraction has drifted.
+
+| Field | Value |
+|---|---|
+| Job ID | `b9f33c8d-b289-4a2b-a352-df51554e706b` |
+| S3 prefix | `ms-results@GRA/er1_cr035_s0__20260510_144225` |
+| Wall time | ~67 min on V100S (incl. ~10 min pip install) |
+| Cost | ≈ €2.5 |
+| `M1_success_rate` | **0.3250** (target single-seed: 0.405; miss 19.75% > ±10% threshold) |
+| `M2_avg_return` | 5.96 |
+| `M3_steps` | 200.0 (= max_steps; episodes ran to limit) |
+| `M4_collisions` | 6.17 / episode |
+| `M6_coverage_progress` | 0.866 (86.6% targets covered on average) |
+
+**Eval reward trajectory (excerpt):**
+
+```text
+iter   0:  −1.528  (random init)
+iter  39:   0.780  (learning kicks in)
+iter  79:   1.565  (first plateau)
+iter 125:   1.688  ← peak
+iter 139:   0.998  (regression)
+iter 165:   1.172  (final, used for M1 = 0.325)
+```
+
+**Diagnosis:** the agent **did** learn (eval reward climbed −1.5 → peak 1.69 — pipeline + hyperparameters fundamentally healthy). The M1 miss is a **checkpoint-selection artefact**: training peaked at iter 125 then oscillated/regressed in the last ~40 iters; the `final` checkpoint that drove the M1 number was at a local trough relative to peak. This is exactly the eval-vs-final-degradation gap that **F8.5.D (Best-checkpoint policy callback)** is designed to fix.
+
+**Open observation — checkpoint retention.** YAML configured `checkpoint_interval_iters: 10` (so we expect ~16 snapshots), but only 3 made it back to the bucket: 9.0M / 9.6M / 10.02M frames (≈ iters 150 / 160 / 167). Earlier checkpoints (incl. the iter-125 peak) appear to have been overwritten by BenchMARL's rolling retention before sync. Implications for the multi-seed run:
+
+- F8.5.D's "best-checkpoint callback" must be in place before the official run, otherwise we re-discover this on every seed.
+- Until F8.5.D lands, increasing BenchMARL's `keep_n_checkpoints` (or whatever the retention knob is) is a cheap interim mitigation worth doing in F8.2 directly.
+
+**Late-training oscillation hypotheses (to revisit if multi-seed shows the same shape):**
+
+- LR=5e-5 may be too aggressive once the value function has converged; LR scheduling (cosine or step decay) would dampen this.
+- PPO clip-ratio drift / entropy bonus decay schedule.
+- CUDA-vs-CPU float-order on tight-margin tasks (we use V100S; rendezvous_comm headline used CPU). Typically ±2-3% impact, not 30% reward swing — so probably not the driver.
+
+**What this means for the official ×3-seed F8.2 run.** Don't tune yet — collect data first. The official run should: (a) keep all checkpoints (interim or via F8.5.D), (b) record per-iter eval-reward + M1 trajectories, (c) use the seed-0 dry-run above as the "did anything regress?" anchor (if seed 0 in the official run doesn't land near M1=0.325, we know something between dry-run and official-run has changed). After the run, F8.5.D's best-checkpoint policy gives us the headline M1 number and the per-iter curves answer the "is late-training oscillation systemic?" question across seeds.
+
+##### F8.2.A — Default-on before/after videos — XS
+
+**Goal:** flip `record_video` default to `True` for non-smoke configs so every official run produces the existing 2-video pair (random-init "before" + trained "after") without needing per-YAML opt-in. Smoke YAMLs keep `False` explicitly so test runs stay fast.
+
+**Why now:** the seed-0 ER1 dry-run produced no videos because `baseline.yaml` had `record_video: false`, making post-hoc visual analysis impossible. For the multi-seed run we want every seed's pair so we can eyeball whether different seeds learned visibly different policies (e.g., different rendezvous strategies, different collision patterns).
+
+**Out of scope for this sub-phase:** per-eval video recording, multi-episode video, cross-seed montages. The **F8.2.C** safety cap protects against future feature creep down those roads, but today's deliverable is purely flipping the default.
+
+**Scope:**
+
+- `domain/models/runner.py`: change the `record_video` field's default from `False` to `True`. Smoke YAMLs that need `False` set it explicitly.
+- `experiments/discovery/baseline/configs/baseline.yaml`: drop the `record_video: false` line. Update the in-YAML comment from "200 episodes × 200 steps × 4 agents — too slow" to "default ON; produces ~30s of MP4 (before + after only) on V100S".
+- Smoke YAML (`*_smoke.yaml`) audit: every smoke YAML must set `record_video: false` explicitly. Add a CI check (parametrized test over all `*_smoke.yaml`) so a future smoke addition can't accidentally inherit the True default and slow CI.
+- `regenerate-videos` is the recovery path for OVH (containers are headless; videos materialise post-pullback). The fail-soft pattern from F6.6 is already in place.
+
+**TDD:**
+
+- Unit: `OvhJobConfig(...)` (or whatever holds the field) — assert default is `True`.
+- Unit: parametrized over every `*_smoke.yaml` in `experiments/`, assert `record_video: false` is set explicitly.
+- Integration: a non-smoke local run produces both `before_training.mp4` and `after_training.mp4`.
+
+##### F8.2.B — Cross-device checkpoint loading (CUDA→CPU) — XS
+
+**Bug:** `regenerate-videos` against an OVH-trained run failed on a Mac (Smoke + ER1 dry-run, 2026-05-10) with `AssertionError: Torch not compiled with CUDA enabled`. Root cause: BenchMARL's `Experiment.reload_from_file(...)` honours the saved cfg's `device: cuda`; on a CUDA-less host this crashes during `torch.cuda.current_device()`. Hits the typical workflow: train on OVH GPU, regen videos locally on a Mac.
+
+**Fix (two coupled changes):**
+
+1. **BEFORE-video path** — already builds a fresh experiment using a `cfg` we read from `input/config.json`. Mutate `cfg.training.device = "cpu"` when `not torch.cuda.is_available()` before calling `adapter.build_experiment(cfg, ...)`. One-line cfg patch.
+2. **AFTER-video path** — `Experiment.reload_from_file(checkpoint)` doesn't expose a `map_location`. Two viable approaches:
+   - Monkey-patch `torch.load` with `map_location="cpu"` for the duration of the reload (cleanest).
+   - Mutate the on-disk YAML inside the BenchMARL run-folder before reload, then restore — fragile.
+
+   Going with the monkey-patch (a context manager `_force_cpu_load()` that sets `torch.load.__defaults__` then restores). Guarded by `torch.cuda.is_available()` so a CUDA host still uses GPU.
+
+**TDD:**
+
+- Integration: write a fake checkpoint with CUDA tensors via `torch.save({"x": torch.zeros(1).cuda()}, ...)` (skip when `torch.cuda.is_available()` is False — unfortunately we can't manufacture a "cuda checkpoint" on a CPU-only test runner; instead, build a checkpoint with `torch.save(..., _use_new_zipfile_serialization=True)` containing CUDA-flavoured metadata and assert the loader path picks the CPU branch).
+- Pragmatic alternative: a unit test stubbing `torch.cuda.is_available()` to False, then verifying `cfg.training.device == "cpu"` after the wrapper runs and that the monkey-patch is applied/restored cleanly.
+
+##### F8.2.C — Video count safety cap (≤10) — XS
+
+**Goal:** prevent runaway disk usage if a future feature (per-eval video, multi-seed comparison montages, etc.) enables many recordings. Today's 2-video flow never hits this; the cap is a forward-looking guard so we don't have to retrofit it later.
+
+**Scope:**
+
+- Hard cap constant: `_MAX_VIDEOS_PER_RUN = 10` in `adapters/video/recorder.py`.
+- `VideoRecorder` keeps a per-instance `_n_recorded` counter; the 11th `record(...)` call logs `logger.warning("video cap reached (10) — skipping further recordings")` and is a no-op.
+- Cap is per-`VideoRecorder` instance (not per-process), so a regen run starts fresh after pullback. Deliberate: the only way to exceed 10 is to wire a multi-video mode that constructs many recorders, which is out of today's scope.
+
+**TDD:**
+
+- Unit: instantiate `VideoRecorder()`, call `record()` 11 times against a tiny env, assert the 11th call is a no-op (no MP4 file written) and that exactly one warning was logged.
+
+##### F8.2.D — Post-pullback auto-regen on `sweep --follow` — XS
+
+**Today's gap:** Stage 3 (Streamlit Refresh) auto-regens videos after pullback. CLI `sweep --follow` (Stage 2) does not — it only pulls files and prints success. So a researcher running `multi-scenario sweep --follow --runner ovh ...` ends up with no videos until they manually click Regenerate per run.
+
+**Scope:** in `cli/sweep.py::_follow_ovh_jobs`, after each successful `pullback_run_dir(...)`, invoke `regenerate_videos(run_dir)` from `application/regenerate_videos.py`. Same fail-soft pattern as the Streamlit path: subprocess failure prints a warning but doesn't abort the sweep (multi-cell sweeps must keep going).
+
+**TDD:**
+
+- Add to `tests/integration/cli/test_sweep.py`: parametrized variant of `test_follow_ovh_jobs_calls_pullback_for_done_jobs` that asserts `regenerate_videos` is invoked after a successful pullback when the destination has no `videos/` dir.
+- A second variant that asserts a regen failure does NOT abort the sweep loop (the pullback succeeded, results ARE on disk, regen is best-effort).
+
+##### F8.2.E — Educational scalar/metric tooltips — S
+
+[Originally drafted as F7.3.1; re-scoped here as a hard prerequisite for the multi-seed run so collaborators can self-interpret the results.]
+
+**Why this matters:** the Run Detail page is the first surface a student or external collaborator hits to understand what the framework actually measures. Today the M1–M9 metric tiles and the BenchMARL scalar selector show raw names with no explanation — readable to the original author, opaque to anyone else. Goal: every quantity on the page is one click from "what is this and why does it matter?"
+
+**Scope (two coupled deliverables):**
+
+1. **Metric-tile tooltips (M1–M9) — `❓` info icon next to each tile.** Hovering or clicking shows a 1-2 sentence plain-English explanation + a "Learn more →" link to the corresponding mkdocs section (F10.1) when the docs site is reachable. Source of truth: a single registry in `frontend/metrics_glossary.py` (dict keyed by metric ID); both Streamlit and mkdocs read from it so the wiki and the UI never drift. Coverage: all M1–M9 with units (M1 is a fraction in [0,1], M3 is steps, M4 is collisions/episode, etc.).
+2. **BenchMARL scalar-selector hints — `❓` per option in the multi-select.** When the user opens "Pick scalars to plot", each option (`collection_reward_episode_reward_mean`, `eval_reward_episode_len_mean`, `counters_iter`, …) shows a 1-line hint of what it actually is. Same single-source-of-truth pattern: `frontend/benchmarl_scalars_glossary.py`.
+
+**TDD:**
+
+- Unit: every metric ID in `domain.metrics.METRIC_IDS` has an entry in `metrics_glossary.py` (compile-time check via parametrized test).
+- Integration (Streamlit AppTest): tooltips render without error; "Learn more →" link points at the expected mkdocs URL.
+
+##### F8.2.F — In-app documentation hub — S
+
+[Originally drafted as F7.3.2; re-scoped here.]
+
+**Goal:** make the framework's docs (mkdocs from F10.1) discoverable from inside Streamlit. A student running the dashboard should never have to leave it to read an explanation.
+
+**Two layers:**
+
+1. **"📖 Docs" sidebar entry** — top-level Streamlit page that embeds (or links to) the mkdocs site. Local dev (`mkdocs serve` on :8000) → iframe-embed; deployed (GitHub Pages from F10.1) → link out. Detection via `MULTI_SCENARIO_DOCS_URL` env var; default to the deployed URL.
+2. **Inline doc deep-links across pages.** Metric tiles / scalar selectors / preflight checks / scenario fields show a `📖` icon that deep-links to the relevant mkdocs anchor. Helper: `doc_link(slug: str) -> str` that builds `<docs_base_url>/<slug>` consistently; each glossary entry from F8.2.E carries a `doc_slug` field.
+
+**Code-docs-from-Streamlit follow-on (deferred to F10.1.1):** mkdocs-material's `mkdocstrings` plugin auto-generates Python-API docs from docstrings. Once added in F10.1's mkdocs config (one plugin entry), the same in-app Docs hub also exposes class/function reference — clicking "OvhRunner" in a config display jumps to its docstring.
+
+**TDD:**
+
+- Unit: `doc_link("scenarios/discovery#m1-success-rate")` returns the expected URL given a fake env var.
+- Integration: AppTest runs the Docs page with a mocked `MULTI_SCENARIO_DOCS_URL`; confirms iframe element renders.
+
+##### F8.2.G — BenchMARL checkpoint retention — XS
+
+**Bug from F8.2 dry-run (2026-05-10):** `checkpoint_interval_iters: 10` configured ~16 snapshots, but only 3 made it back to the bucket: 9.0M / 9.6M / 10.02M frames (≈ iters 150 / 160 / 167). The iter-125 peak — which is what F8.5.D's "best-checkpoint policy" must identify — was overwritten by BenchMARL's default rolling retention before the bucket sync.
+
+**Fix:** propagate BenchMARL's checkpoint-retention knob (`bm.keep_n_checkpoints` or equivalent — verify against current BenchMARL API) through F2.4.1's training-knob propagation. Default for non-smoke runs: `null` (keep ALL). Smoke runs keep the rolling default (no point retaining 16 checkpoints from a 1-iter run).
+
+**Compute / disk impact:** ~16 checkpoints × ~400KB each = ~6MB per run. Sweep ×3 seeds = ~18MB total. Negligible vs the run's other artefacts (BenchMARL logs are larger).
+
+**TDD:**
+
+- Unit: assert the BenchMARL config dict produced by `propagate_training_knobs` has the retention knob set to the expected value for non-smoke runs and the rolling default for smoke runs.
+- Integration: a 5-iter smoke run with retention disabled-but-overridden-to-keep-all confirms all 5 checkpoint files survive at `output/benchmarl/.../checkpoints/`.
 
 #### F8.3 — LERO architecture lands — block dep on F9.0–F9.6
 

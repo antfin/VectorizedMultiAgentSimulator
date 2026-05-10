@@ -15,7 +15,9 @@ switch.
 
 import streamlit as st
 
+from multi_scenario.frontend.benchmarl_scalars_glossary import scalar_hint
 from multi_scenario.frontend.charts import line_plot_csvs
+from multi_scenario.frontend.metrics_glossary import metric_info, tooltip_text
 from multi_scenario.frontend.run_detail_loader import load_run_detail, RunDetail
 from multi_scenario.frontend.sidebar import (
     load_runs_with_cache,
@@ -117,15 +119,21 @@ if not present:
     st.info("No metric values recorded for this run.")
 else:
     # Three-column grid; wraps if more than 3.
+    # F8.2.E: each tile uses ``label`` from the glossary (so M1 reads as
+    # "M1 — Success Rate" instead of "M1 Success Rate") and surfaces the
+    # description as Streamlit's native ``help`` tooltip (rendered as a
+    # ❓ icon on hover next to the metric label).
     for row_start in range(0, len(present), 3):
         row = present[row_start : row_start + 3]
         cols = st.columns(3)
         for col, metric in zip(cols, row):
-            label = metric.name.replace("_", " ").title()
+            info = metric_info(metric.name)
+            label = info.label if info else metric.name.replace("_", " ").title()
+            help_text = tooltip_text(metric.name) if info else None
             if "rate" in metric.name or "progress" in metric.name:
-                col.metric(label, f"{metric.value:.0%}")
+                col.metric(label, f"{metric.value:.0%}", help=help_text)
             else:
-                col.metric(label, f"{metric.value:.2f}")
+                col.metric(label, f"{metric.value:.2f}", help=help_text)
 
 # ── 3. Config viewer ─────────────────────────────────────────────────
 with st.expander("Config", expanded=False):
@@ -147,6 +155,14 @@ else:
         default=csv_names[: min(3, len(csv_names))],
     )
     picked_paths = [p for p in detail.scalar_csvs if p.name in set(picked_names)]
+    # F8.2.E: per-scalar hint surfaced under the selector. Streamlit's
+    # multiselect doesn't render per-option tooltips natively, so we list
+    # each selected scalar with its hint underneath — gives students the
+    # "what does this curve mean?" answer without leaving the page.
+    if picked_names:
+        with st.expander("What do these scalars mean?", expanded=False):
+            for name in picked_names:
+                st.markdown(f"- **`{name}`** — {scalar_hint(name)}")
     # Constrain to ~half of the page width on big screens — pyplot's
     # ``use_container_width`` flag isn't enough; the column wrapper enforces
     # an absolute cap.
