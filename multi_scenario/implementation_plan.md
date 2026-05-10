@@ -1160,25 +1160,39 @@ Make every run-dir auditable end-to-end. Sub-phases:
 
 ### Phase 9 — LERO core implementation
 
-> Hex-clean rebuild of LERO from the rendezvous_comm reference. **Locked decisions:** broker=LiteLLM, settings in YAML (`cfg.llm`), keys in project-root `.env`, cost cap $5/run + $50/sweep configurable + **must log when reached**, cache implemented but `enabled=false` default, `evolve_reward + evolve_observation` flag-controlled, **meta-prompting designed from day one but disabled by default**, reward_clip=±50, best-checkpoint enabled, whitelist_strict on for local mode.
+> Hex-clean rebuild of LERO from the rendezvous_comm reference. **Locked decisions:** broker=LiteLLM, settings in YAML (`cfg.llm`), keys in project-root `.env`, cost cap **€10/day + €100/month rolling** (host-wide, persistent ledger) configurable + **must log when reached**, cache implemented but `enabled=false` default, `evolve_reward + evolve_observation` flag-controlled, **meta-prompting designed from day one but disabled by default**, reward_clip=±50, best-checkpoint enabled, whitelist_strict on for local mode.
 
 #### F9.0 — Domain models + LeroSection / LlmSection — S
 
 - `domain/models/config.py`: `LeroSection`, `LlmSection`. Both Optional on `ExperimentConfig`. STRICT mode; `lero` requires `llm` (no XOR).
 - `domain/lero/`: `Candidate`, `CandidateMetrics`, `CandidateResult`, `PromptTrace`, `ResponseTrace`, `ReasoningTrace`, `LlmCompletion` (model output only — separate from our trace metadata), `LeroRunSummary`. All Pydantic; no torch/litellm imports.
 
-#### F9.1 — LLM port + LiteLLM adapter + cost cap — M
+#### F9.1 — LLM port + LiteLLM adapter + cost cap (host-wide rolling) — M
 
 - `domain/ports/llm.py`: `LlmClient` Protocol. `generate(messages, n, seed) -> list[LlmCompletion]`.
-- `adapters/llm/litellm_adapter.py`: real adapter wrapping LiteLLM (OpenAI / Anthropic / OVH endpoints). **Cost cap:** runs cost integral updated per call; on overflow raises `LlmCostCapExceeded` AND emits `logger.warning("cost cap reached: $X.XX > $Y.YY")` with the cap dict in extra fields.
-- `adapters/llm/disk_cache.py`: optional disk cache, `enabled=false` by default. Cache key = SHA(model, messages, seed, response_format).
-- `adapters/llm/fake_adapter.py`: in-memory canned-response adapter for tests (registered via `MULTI_SCENARIO_LLM_OVERRIDE=fake`).
+- `adapters/llm/litellm_adapter.py`: real adapter wrapping LiteLLM (OpenAI / Anthropic / OVH endpoints). LiteLLM-native costs are USD; the adapter records `LlmUsage.estimated_cost_usd` from LiteLLM's price tables.
+- `adapters/llm/cost_cap.py`: `CostCapDecorator` wraps any `LlmClient`. **Rolling-window semantics (€10/day + €100/month):** every call queries the persistent cost ledger for spend within the last 24h / 30 days, converts to EUR via `cfg.llm.usd_to_eur_rate`, raises `LlmCostCapExceeded` if either rolling sum + the new call's cost would exceed the cap, AND emits `logger.warning("cost cap reached: €X.XX > €Y.YY (window=…)" )` with the cap dict in extra fields. The decorator is composable — wrap a cached client to enforce budget on cache misses only, etc.
+- `domain/ports/cost_ledger.py`: `CostLedger` Protocol with `record(timestamp, cost_eur, model, …)` and `sum_window(window=timedelta) -> float`.
+- `adapters/llm/filesystem_cost_ledger.py`: JSONL-appender at `~/.multi_scenario/cost_ledger.jsonl` (overridable via `MULTI_SCENARIO_COST_LEDGER` env var for tests / sandbox). Atomic appends, prune-on-read for entries older than 31 days. `InMemoryCostLedger` for tests.
+- `adapters/llm/disk_cache.py`: optional response cache, `enabled=false` by default. Cache key = SHA(model, messages, seed, response_format). Wraps `LlmClient` like the cost cap (decorator composes).
+- `adapters/llm/fake_adapter.py`: in-memory canned-response adapter for tests (registered via `MULTI_SCENARIO_LLM_OVERRIDE=fake`). Returns predetermined `LlmCompletion` objects keyed by message-prefix matchers.
+
+**Rationale for host-wide vs per-run caps:** the user's billing surface is the OpenAI/Anthropic API key, which is host-wide and invoiced monthly. A €5/run cap doesn't prevent a runaway sweep from spending €100 in 12 hours; €10/day + €100/month does. Persistent ledger means a crashed run that already spent €4 doesn't reset the budget on retry — accidental overspend is structurally impossible without flipping the cap fields explicitly.
+
+**Decorator composition order (outermost first):** `CostCapDecorator → DiskCacheDecorator → LiteLlmClient`. The cap sees the cost of every uncached call (cache hits are free); the cache sees every request the cap allowed through.
 
 #### F9.2 — Prompt registry (Jinja-based) + byte-parity vs rendezvous_comm — M
 
-- `adapters/prompts/<version>/{initial.j2, feedback.j2}` for `v1`, `v1_global`, `v2`, `v2_min`, `v2_fewshot`, `v2_twofn`, `v2_fewshot_k2_local`. Copied byte-for-byte from rendezvous_comm.
-- `adapters/prompts/jinja_renderer.py`: `JinjaPromptRenderer` implements `PromptRenderer` Protocol.
-- **Load-bearing test:** `test_v2_fewshot_k2_local_byte_parity.py` renders ours vs rendezvous_comm's with the same context; asserts byte-equal output.
+**Important note on the rendezvous_comm port (2026-05-10 audit):** the
+reference uses Python ``string.Template`` syntax (``$variable``) in
+``.txt`` files, NOT Jinja. We standardise on Jinja anyway so future
+meta-prompt composition can use loops / conditionals / filters; the
+syntax migration is mechanical.
+
+- `adapters/prompts/<version>/{system.j2, initial_user.j2, feedback.j2, meta.yaml}` for the prompts F8.4 needs to reproduce: `v1`, `v1_global`, `v2`, `v2_min`, `v2_fewshot`, `v2_twofn`, `v2_fewshot_k2_local`. Content ported from rendezvous_comm; syntax translated `$X` → `{{ X }}`. The `meta.yaml` carries version / author / description (used by the registry's discovery + the FE's prompt picker).
+- `adapters/prompts/jinja_renderer.py`: `JinjaPromptRenderer` implements `PromptRenderer` Protocol. Configured with `keep_trailing_newline=True` and default whitespace settings (no `trim_blocks`, no `lstrip_blocks`) so Jinja-rendered output matches `string.Template`-rendered output character-for-character. `StrictUndefined` so a missing context key fails loudly instead of silently rendering empty.
+- **Load-bearing byte-parity test:** `test_v2_fewshot_k2_local_byte_parity.py` renders our Jinja template AND the rendezvous_comm `string.Template` against the same context dict; asserts the two byte sequences are equal. If this test ever drifts, F8.4's S3b-local replication will silently change too — that's the failure mode this test catches early.
+- Future-prompt extension point: any *new* prompt versions (created post-port) can use full Jinja features (`{% if %}`, filters, includes); only the rendezvous_comm-ported set needs to stay byte-equivalent.
 
 #### F9.3 — TraceWriter port + filesystem adapter — S
 
@@ -1207,11 +1221,81 @@ Make every run-dir auditable end-to-end. Sub-phases:
 - **`experiment_service.py` branch:** if `cfg.lero is not None`, delegate to `LeroOrchestrator.run()`.
 - **Discharged-candidates note (user TBD at implementation time):** plan documents both interpretations. (A) within-run re-rank by post-full-training M1; (B) across-run no seeding from prior discharged candidates. User picked (B) with "review when we implement". Implementation review at F9.6 kickoff.
 
-#### F9.7 — Meta-prompting design + stub — XS
+#### F9.7 — Meta-prompting seam (stub now) + full design notes (deferred) — XS now / L deferred
 
-- Keep `PromptComposer` Protocol broad enough that meta-prompting plugs in as a different composer.
-- Ship a stub `MetaPromptComposer` (returns trivial mutated prompts) + `test_orchestrator_with_meta_composer.py` proving the contract holds end-to-end.
-- Default behaviour: `cfg.lero.meta_prompting=false` → `InitialAndFeedbackComposer` is used. `=true` → `MetaPromptComposer`.
+> **Scope split (locked 2026-05-10):**
+>
+> - **F9.7.A — Now (XS):** ship the seam — `PromptComposer` Protocol contract + a no-op `MetaPromptComposer` stub + the contract test that proves the orchestrator works with either composer. This is the only part needed before F8.4 fires.
+> - **F9.7.B — Deferred (L):** the full meta-prompting implementation (Strategist + Editor + Critic round-table) is **deferred until after the GitHub-extraction migration (F10.4) AND after all reproducibility experiments (F8.2, F8.4) have been run**. Reason: meta-prompting is a research extension that builds on the validated baseline; locking the baseline first lets us measure meta-prompt deltas cleanly. We document the design now so the seam in F9.7.A is shaped to fit it.
+
+##### F9.7.A — Composer-Protocol seam (executable now)
+
+- Keep `PromptComposer` Protocol broad enough that the meta-prompt round-table plugs in as a different composer (no orchestrator changes).
+- Ship a stub `MetaPromptComposer` that returns a trivially-mutated initial prompt (e.g., appends `"\n\n[meta-prompt placeholder]"`) so the orchestrator path can be exercised end-to-end without a real Strategist / Editor / Critic.
+- `test_orchestrator_with_meta_composer.py`: full LERO loop with `cfg.lero.meta_prompting=true`, `FakeLlmClient`, asserts the placeholder lands in the recorded `prompt.json` traces.
+- Default behaviour: `cfg.lero.meta_prompting=false` → `InitialAndFeedbackComposer` is used. `=true` → `MetaPromptComposer`. Field defaults to `false` in `LeroSection`.
+
+##### F9.7.B — Full meta-prompting design (post-extraction + post-experiments)
+
+Findings ported from rendezvous_comm's `src/lero/meta/v4_*` prototype (≈1500 lines, Phase 4 ablations 2026-04). These notes are the *spec* the deferred implementation will follow — recorded here so we don't lose context during the F10.x extraction.
+
+**Three-role round-table architecture.** Today's inner loop is one LLM role (the *code generator*). Meta-prompting adds three more outer roles that **mutate the inner-loop prompts between iterations**:
+
+1. **Strategist** — reads recent inner-loop history (candidate metrics + verdicts), decides *which sub-slot* of the next prompt to edit and *with what focus*. Emits a `StrategyCard`:
+
+   ```text
+   target_domain: "reward" | "observation" | "shared" | "both"
+   target_slot:   "guidance_shared" | "guidance_reward" | "guidance_observation"
+   focus:         List[str]  # 1–2 specific patterns to encourage
+   avoid:         List[str]  # patterns that scored regression/collapse
+   confidence:    "small" | "medium" | "large"
+   include_signals: List["scalar" | "fingerprint" | "curve_shape"]
+   rationale:     str  # 2–4 sentences citing specific evidence
+   ```
+
+2. **Editor** — given a `StrategyCard`, produces the new text for the chosen slot (`EditorOutput.new_slot_content`).
+3. **Critic** — TextGrad-style second-pass review over the Editor's draft. Three verdicts: ``keep`` (accept), ``revise`` (re-invoke Editor with notes), ``reject`` (graceful-stop the round, keep prior prompt). Drives a 1–2 round critique-revise loop in `meta/critique.py`.
+
+**Sub-slot model on the inner prompt.** The inner-prompt template has three editable sub-slots — `{{ guidance_shared }}`, `{{ guidance_reward }}`, `{{ guidance_observation }}` — initially empty. Each meta-iteration the Strategist picks one slot, the Editor rewrites it, the Critic vets it, and the new content is injected into the next inner-loop iteration's initial prompt. Slots are non-overlapping by design: the Strategist's `target_slot` is a single value per round.
+
+**Behavioral signal tiering** — meta-prompting needs richer feedback than M1/M2/M3, but flooding the Strategist with raw rollouts is noisy. Three tiers:
+
+- **scalar** (default): just M1/M2/M3 + verdict per candidate.
+- **fingerprint**: per-candidate `BehavioralSummary` — collision rate, coverage curve shape, agent-utilization CV, dispersion stats (rendezvous_comm's `meta/behavioral_summary.py`).
+- **curve_shape**: per-candidate eval-M1 trajectory (sparse samples, normalized).
+
+The Strategist controls which tier feeds back via `include_signals`. Default is `["scalar"]` — only escalate when scalar evidence isn't enough to choose a slot.
+
+**Trigger / fairness / failmode signals** (rendezvous_comm `meta/trigger.py`, `meta/fairness.py`, `meta/failmode.py`):
+
+- **Trigger** — when to fire a meta-iter at all. Today's stub always fires; the real version skips meta-iters when the inner loop is converging cleanly (don't disturb a working trajectory).
+- **Fairness restatement check** — every Editor draft must restate the fairness clause (no oracle / global-state access) verbatim. The Critic enforces this; missing → `revise`. Prevents subtle prompt drift that re-introduces global-state reward hacks.
+- **Fail-mode catalogue** — pattern-match common reward-hacking failure modes (NaN actions, M2 explosion with M1 collapse, etc.) and surface them as `avoid:` candidates for the Strategist.
+
+**Mutation log** (`meta/mutation_log.py`): every applied edit is recorded as `(meta_iter, slot, old_content_hash, new_content_hash, strategy_card, critic_verdict, downstream_M1_delta)`. Lets us answer "did this slot edit help?" post-run, and lets the Strategist `avoid:` patterns that failed before.
+
+**Peak-checkpoint pinning** (`meta/peak_checkpoint.py`): the meta-loop tracks the best-prompt-config seen so far across all meta-iters. If a later meta-iter regresses, we can bail back to the peak prompt without losing it. This is the meta-loop's analogue of F8.5.D's best-checkpoint policy.
+
+**Strict-mode JSON schemas.** OpenAI's structured-outputs API requires `extra="forbid"` + every field `required`. The rendezvous_comm `schemas.py` ships `StrategyCard` / `EditorOutput` / `EditorCritique` Pydantic models that round-trip through OpenAI structured outputs cleanly. Keep these; port verbatim to `domain/lero/meta_schemas.py` when F9.7.B lands.
+
+**Code layout (deferred)** — when F9.7.B is implemented, layer it like this:
+
+```text
+domain/lero/
+├── meta_schemas.py            ← StrategyCard, EditorOutput, EditorCritique
+└── meta_signals.py            ← BehavioralSummary, FailmodeMatch (Pydantic, no torch)
+
+application/
+└── meta_prompt_orchestrator.py ← outer-loop driver: Strategist → Editor → Critic → mutate prompt → run inner LeroOrchestrator
+
+adapters/prompt_composers/
+├── meta_prompt.py              ← real MetaPromptComposer (replaces F9.7.A stub)
+└── meta_helpers/               ← ports of rendezvous_comm/meta/{trigger,fairness,failmode,…}.py
+```
+
+**Why deferred to post-F10.4 + post-experiments:** meta-prompting is a *research mutation* on top of a working baseline. Locking the baseline (F8.2 ER1 ×3, F8.4 S3b-local ×3) before adding meta-prompting means the deltas we measure are clean. Doing it before would conflate "did meta-prompting help?" with "did porting LERO break something?" Also: F10.4's GitHub extraction is a natural inflection point — the meta layer lands in the new repo where the baseline is already validated, with a single PR that says "here's meta-prompting, here are the inner-loop numbers it improves on".
+
+**Lift-trigger:** earliest of (a) F8.4 S3b-local ×3 seeds passing the reproducibility threshold, (b) F10.4 extraction complete, (c) a research need to compare meta-prompt vs fixed-prompt deltas on a new task. Until then, F9.7.A's stub is enough for the seam to stay honest.
 
 #### F9.8 — CLI + Submit page integration — S
 

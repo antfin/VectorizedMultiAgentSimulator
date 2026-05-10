@@ -9,10 +9,21 @@ Public surface re-exports each Protocol so callers say
 """
 
 from .algorithm import Algorithm
+from .cost_ledger import CostLedger
+from .llm import LlmClient
 from .logger import Logger
 from .metrics import MetricsBundle
 from .runner import Runner
 from .scenario import Scenario
 from .storage import Storage
 
-__all__ = ["Algorithm", "Logger", "MetricsBundle", "Runner", "Scenario", "Storage"]
+__all__ = [
+    "Algorithm",
+    "CostLedger",
+    "LlmClient",
+    "Logger",
+    "MetricsBundle",
+    "Runner",
+    "Scenario",
+    "Storage",
+]
