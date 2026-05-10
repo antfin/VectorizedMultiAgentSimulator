@@ -67,6 +67,13 @@ def _switch_to_ovh(context: dict) -> None:
     at = context["at"]
     at.radio(key="step2_submit_target").set_value("ovh")
     at.run()
+    # F7.7.A4: switching the submit target now legitimately writes
+    # ``runner.type=ovh`` into the YAML output → marks dirty → Step 3
+    # gates Step 4 until saved. Save the variant so preflight can run.
+    at.text_input(key="step3_new_name").set_value("seed0_ovh.yaml")
+    at.run()
+    at.button(key="step3_save").click()
+    at.run()
 
 
 @when("I run preflight")

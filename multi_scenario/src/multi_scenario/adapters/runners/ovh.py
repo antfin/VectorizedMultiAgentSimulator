@@ -176,18 +176,25 @@ class OvhRunner:
                 "to the uploaded code root* (e.g. "
                 "'experiments/discovery/baseline/configs/mappo_smoke.yaml')."
             )
-        # ``del run_dir`` documents that we don't need the local run_dir at
-        # this point — submission is purely from the in-repo YAML path.
-        del run_dir
 
         cfg_oc = self._ovh_config
-        run_id = f"{cfg.experiment.id}_s{cfg.experiment.seed}"
+        # Per-run S3 prefix = ``<run_id>__<timestamp>`` (matches the local
+        # run_dir name). Pre-Stage1 the prefix was just ``<run_id>``, which
+        # meant re-runs of same exp_id+seed clobbered each other in S3 (the
+        # rendezvous_comm 2026-04-16 lesson). Now every submission lands at a
+        # unique prefix that mirrors the local pullback path one-to-one —
+        # auto-sync (Stage 3) downloads ``<bucket>/<run_dir.name>/`` →
+        # ``<storage_root>/<run_dir.name>/`` with no path translation.
+        run_dir_name = run_dir.name
         yaml_in_container = f"{cfg_oc.mount_code}/{self._yaml_path_in_repo}"
 
         # Volume URIs: lowercase ``ro`` / ``rwd`` per ovhai. No trailing slash
         # on the results prefix (project-memory bug from rendezvous_comm).
         code_uri = f"{cfg_oc.bucket_code}@{cfg_oc.region}:{cfg_oc.mount_code}:ro"
-        results_uri = f"{cfg_oc.bucket_results}@{cfg_oc.region}/{run_id}:{cfg_oc.mount_results}:rwd"
+        results_uri = (
+            f"{cfg_oc.bucket_results}@{cfg_oc.region}/{run_dir_name}"
+            f":{cfg_oc.mount_results}:rwd"
+        )
 
         # Render the runner template; the OVH container needs ``HOME=/tmp``
         # for pip + ``pip install -e mount_code`` to install our package.
@@ -199,7 +206,7 @@ class OvhRunner:
 
         args = [
             "--name",
-            f"multi-scenario-{run_id}",
+            f"multi-scenario-{run_dir_name}",
             "--flavor",
             cfg_oc.flavor,
             "--gpu",
@@ -208,6 +215,13 @@ class OvhRunner:
             code_uri,
             "--volume",
             results_uri,
+            # Tells the container's build_run_dir to use the storage_root
+            # directly (= the per-run S3 prefix mount) instead of nesting
+            # another <run_id>__<ts>/ underneath. Without this the host's
+            # pullback ends up with <local_dir>/<container_run_dir>/input/...
+            # which Run Detail can't see. (Smoke 3 lesson, 2026-05-10.)
+            "--env",
+            "MULTI_SCENARIO_USE_STORAGE_ROOT_AS_RUN_DIR=1",
             cfg_oc.image,
             "--",
             "bash",

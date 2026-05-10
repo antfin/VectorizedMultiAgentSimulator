@@ -45,11 +45,16 @@ class OvhJobConfig(BaseModel):
     mount_results: str = "/workspace/results"
     # Default runner: pip-install the editable code mount, cd in, then run our CLI.
     # ``HOME=/tmp`` is mandatory — pip can't write to the OVH /workspace mount.
+    # ``--runner local`` is mandatory inside the container: F7.7.A4 dispatches by
+    # YAML's ``runner.type``, but the YAML says ``ovh`` (we got here via OVH
+    # submit). Without the override, the in-container CLI would try to
+    # re-submit another OVH job and crash with "configs/ovh.yaml missing"
+    # (the smoke run on 2026-05-09 caught this).
     # ``{yaml_path_in_container}`` is substituted at submit time.
     default_runner: str = (
         "export HOME=/tmp && pip install -e {mount_code} "
         "&& cd {mount_code} "
-        "&& python -m multi_scenario.cli run {yaml_path_in_container}"
+        "&& python -m multi_scenario.cli run --runner local {yaml_path_in_container}"
     )
     poll_interval_sec: float = 30.0
     timeout_sec: float = 7200.0  # 2h default; long enough for most matrix cells

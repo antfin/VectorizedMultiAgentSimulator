@@ -3,7 +3,7 @@
 Inherits the eight Protocol methods (save/load × {config, provenance, result,
 run_state}) from :class:`StorageAdapterBase`; only the I/O primitives
 (``_write_text`` / ``_read_text``) plus S3-only off-Protocol helpers
-(``sync_to_local``, ``sync_from_local``, ``put_file``) live here.
+(``sync_to_local``, ``put_file``) live here.
 
 Mirrors the §3.5.2 layout under ``s3://<bucket>/<prefix>/<run_dir.name>/...``.
 The boto3 client is built from the supplied ``S3StorageConfig`` (region +
@@ -54,14 +54,6 @@ class S3StorageAdapter(StorageAdapterBase):
             target.parent.mkdir(parents=True, exist_ok=True)
             obj = self._client.get_object(Bucket=self._config.bucket, Key=key)
             target.write_bytes(obj["Body"].read())
-
-    def sync_from_local(self, local_dir: Path, run_dir: Path) -> None:
-        """Upload every file under ``local_dir`` to the run's S3 key prefix."""
-        for path in sorted(local_dir.rglob("*")):
-            if not path.is_file():
-                continue
-            rel = path.relative_to(local_dir).as_posix()
-            self._put(run_dir, rel, path.read_bytes())
 
     def put_file(self, key: str, body: bytes) -> None:
         """Flat upload at an explicit ``<prefix>/<key>`` (F6.4).

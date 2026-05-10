@@ -68,7 +68,7 @@ def eval_only(
     rollout = algorithm.evaluate(experiment, env=None, cfg=cfg, run_dir=run_dir)
     metric_dict = CommonMetricsBundle().compute(rollout, scenario)
 
-    eval_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    eval_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     eval_id = name or f"eval_{eval_timestamp}"
     run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
     record = EvalRunRecord(

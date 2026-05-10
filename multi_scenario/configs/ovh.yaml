@@ -46,7 +46,7 @@ mount_results: /workspace/results
 #                                    inside the container, derived from
 #                                    OvhRunner.yaml_path_in_repo + mount_code
 default_runner: |
-  export HOME=/tmp && pip install -e {mount_code} && cd {mount_code} && python -m multi_scenario.cli run {yaml_path_in_container}
+  export HOME=/tmp && pip install -e {mount_code} && cd {mount_code} && python -m multi_scenario.cli run --runner local {yaml_path_in_container}
 
 # ── Polling + cost gate ──────────────────────────────────────
 poll_interval_sec: 30.0

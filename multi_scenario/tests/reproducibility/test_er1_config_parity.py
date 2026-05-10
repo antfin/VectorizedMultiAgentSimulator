@@ -121,7 +121,10 @@ def test_lmbda_carried_in_algorithm_params(baseline, reference):
         ("training.n_minibatch_iters", "on_policy_n_minibatch_iters"),
         ("training.num_envs", "on_policy_n_envs_per_worker"),
         ("training.share_policy_params", "share_policy_params"),
-        ("training.device", "train_device"),
+        # ``training.device`` deliberately differs: rendezvous_comm used CPU
+        # on OVH; coopvmas's canonical OVH+GPU combo is `cuda`. Float-order
+        # differs across cpu/cuda but mean M1 lands within ±2-3% (well
+        # inside the ±10% F8 reproducibility threshold).
         ("evaluation.episodes", "evaluation_episodes"),
     ],
 )
@@ -174,9 +177,14 @@ def test_seed_matches_reference_first_seed(baseline, reference):
     assert baseline.experiment.seed == reference["sweep"]["seeds"][0]
 
 
-def test_baseline_runtime_storage_path_under_baseline_folder(baseline):
-    """``runtime.storage.path`` lands run dirs under ``experiments/discovery/baseline/``
-    so F8.5.B's reproducibility Streamlit page can find them by convention.
+def test_baseline_runtime_targets_ovh_with_cuda(baseline):
+    """Canonical baseline runs on OVH with CUDA (F7.7.A4 + F8.4 decision).
+
+    Local debug: override at submit time via ``--runner local`` and edit
+    ``storage.path`` to a host directory.
     """
     assert baseline.runtime is not None
-    assert baseline.runtime.storage.path == "experiments/discovery/baseline"
+    assert baseline.runtime.runner.type == "ovh"
+    assert baseline.training.device == "cuda"
+    # Container-mount path; matches OvhJobConfig.mount_results default.
+    assert baseline.runtime.storage.path == "/workspace/results"

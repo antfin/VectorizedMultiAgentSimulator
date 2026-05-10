@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "id": "ovh_smoke",
+    "seed": 0,
+    "name": "OVH end-to-end smoke (F7.7.A4)",
+    "description": "Tiny 1-iter × 4-env smoke that validates the upload-code → run --runner ovh → result pullback flow without burning real ER1 compute.\n"
+  },
+  "scenario": {
+    "type": "discovery",
+    "params": {
+      "n_agents": 2,
+      "n_targets": 2,
+      "agents_per_target": 1,
+      "covering_range": 0.25,
+      "targets_respawn": false,
+      "shared_reward": true,
+      "max_steps": 20
+    }
+  },
+  "algorithm": {
+    "type": "mappo",
+    "params": {}
+  },
+  "training": {
+    "max_iters": 1,
+    "num_envs": 4,
+    "device": "cuda",
+    "lr": 0.0003,
+    "gamma": 0.99,
+    "frames_per_batch": 100,
+    "minibatch_size": 50,
+    "n_minibatch_iters": 1,
+    "share_policy_params": true,
+    "checkpoint_interval_iters": 0
+  },
+  "evaluation": {
+    "interval_iters": 1,
+    "episodes": 2
+  },
+  "runtime": {
+    "runner": {
+      "type": "ovh",
+      "params": {
+        "record_video": false
+      }
+    },
+    "storage": {
+      "type": "fs",
+      "path": "/workspace/results",
+      "params": {}
+    }
+  }
+}

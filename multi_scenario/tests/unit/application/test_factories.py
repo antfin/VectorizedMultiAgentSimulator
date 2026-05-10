@@ -97,6 +97,43 @@ def test_runner_spec_unknown_raises():
         runner_spec("bogus")
 
 
+# ── F7.7.A4: per-runner device-capability declarations ───────────────
+
+
+def test_runner_spec_carries_device_capabilities():
+    """RunnerSpec exposes ``supported_devices`` + ``default_device``."""
+    spec = runner_spec("local")
+    assert "cpu" in spec.supported_devices
+    assert "cuda" in spec.supported_devices
+    assert spec.default_device == "cpu"
+
+
+def test_ovh_runner_default_device_is_cuda():
+    """OVH GPU nodes are the canonical setup → default=cuda."""
+    assert runner_spec("ovh").default_device == "cuda"
+
+
+def test_runner_spec_supported_devices_is_frozenset_for_immutability():
+    """``supported_devices`` is frozenset so a downstream caller can't mutate
+    the registry's view of capabilities by accident.
+    """
+    assert isinstance(runner_spec("local").supported_devices, frozenset)
+    assert isinstance(runner_spec("ovh").supported_devices, frozenset)
+
+
+@pytest.mark.parametrize("runner_name", available_runners())
+def test_every_runner_has_consistent_capability_metadata(runner_name):
+    """Every registered runner declares a non-empty supported_devices set
+    AND its default_device is in that set.
+    """
+    spec = runner_spec(runner_name)
+    assert spec.supported_devices, f"{runner_name} declares no supported devices"
+    assert spec.default_device in spec.supported_devices, (
+        f"{runner_name}.default_device={spec.default_device!r} not in "
+        f"supported_devices={sorted(spec.supported_devices)}"
+    )
+
+
 @pytest.mark.parametrize("scen_name", available_scenarios())
 def test_every_scenario_default_params_returns_jsonable_primitives(scen_name):
     """Schema-driven form requires every default to be a primitive (no tensors)."""

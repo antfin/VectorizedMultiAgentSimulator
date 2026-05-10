@@ -158,10 +158,52 @@ else:
 st.markdown("---")
 st.subheader("Videos")
 if not detail.videos:
-    st.info(
-        "No videos found. Run "
-        f"`multi-scenario regenerate-videos {detail.run_dir}` to generate them."
-    )
+    # Local runs normally produce videos during training (begin + end). When
+    # they're missing it's usually an OVH job whose container was headless
+    # and Pyglet failed quietly, OR a local run whose recorder hit an error.
+    # Either way the fix is the same: regenerate from the trained policy.
+    msg_col, btn_col = st.columns([3, 1])
+    with msg_col:
+        st.info("No videos found for this run.")
+    with btn_col:
+        if st.button(
+            "🎬 Regenerate videos",
+            key="regen_videos_btn",
+            use_container_width=True,
+            help="Replays the trained policy to render before/after videos.",
+        ):
+            # pylint: disable=import-outside-toplevel
+            import subprocess
+            import sys
+
+            # ``sys.executable -m`` works whether or not the
+            # ``multi-scenario`` console script is on PATH (the Streamlit
+            # server isn't always launched inside the project venv).
+            with st.spinner("Regenerating videos…"):
+                try:
+                    proc = subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "multi_scenario.cli",
+                            "regenerate-videos",
+                            str(detail.run_dir),
+                        ],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                except OSError as exc:
+                    st.error(f"Could not invoke regenerate-videos: {exc}")
+                    proc = None
+            if proc is not None:
+                if proc.returncode == 0:
+                    st.success("Videos regenerated.")
+                    st.rerun()
+                else:
+                    st.error("Regenerate-videos failed.")
+                    with st.expander("Show error output"):
+                        st.code((proc.stderr or proc.stdout) or "(no output)")
 else:
     video_cols = st.columns(2)
     if "before" in detail.videos:

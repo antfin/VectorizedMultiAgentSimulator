@@ -83,11 +83,6 @@ class PreflightCheck:
 
 # Canonical list of checks. Additional rows appear automatically based on
 # the user's runner choice — local-only checks are dropped on OVH and v.v.
-def _device_is_cuda(form: dict[str, Any]) -> bool:
-    """Precondition for GPU probe: only check when cfg requests cuda."""
-    return form.get("training", {}).get("device") == "cuda"
-
-
 def default_checks() -> list[PreflightCheck]:
     """Fresh list of all checks in IDLE state.
 
@@ -125,17 +120,25 @@ def default_checks() -> list[PreflightCheck]:
             ),
             category="system",
         ),
-        PreflightCheck(
-            name="GPU available",
-            runners=("local",),
-            description="torch.cuda.is_available() is True (only checked when device=cuda).",
-            category="system",
-            condition=_device_is_cuda,
-        ),
+        # NOTE: the standalone "GPU available" check (was: torch.cuda.is_available()
+        # for local + cuda only) has been folded into the unified "Runner
+        # provisioning consistent with device" probe below.
         PreflightCheck(
             name="OVH CLI installed",
             runners=("ovh",),
             description="`ovhai --version` returns successfully.",
+            category="system",
+        ),
+        PreflightCheck(
+            name="Runner provisioning consistent with device",
+            runners=("local", "ovh"),
+            description=(
+                "Per-runner provisioning probe (F7.7.A4 architecture): "
+                "local+cuda needs torch.cuda available on host; ovh+cuda "
+                "needs a GPU flavor in configs/ovh.yaml; ovh+cpu warns "
+                "(billed for GPU but unused). Adding new runners = one "
+                "entry in application.runner_provisioning.PROVISION_CHECKS."
+            ),
             category="system",
         ),
         PreflightCheck(
@@ -327,21 +330,6 @@ def _probe_required_deps(_form: dict[str, Any]) -> tuple[CheckStatus, str]:
     return CheckStatus.PASS, " · ".join(versions)
 
 
-def _probe_gpu_available(_form: dict[str, Any]) -> tuple[CheckStatus, str]:
-    """Verify ``torch.cuda.is_available()`` matches the cfg's device choice."""
-    # pylint: disable=import-outside-toplevel
-    try:
-        import torch
-    except ImportError:
-        return CheckStatus.FAIL, "torch not importable (see Required deps)"
-    if not torch.cuda.is_available():
-        return (
-            CheckStatus.FAIL,
-            "torch.cuda.is_available() = False — set device=cpu or fix CUDA install",
-        )
-    return CheckStatus.PASS, f"{torch.cuda.device_count()} GPU(s) visible"
-
-
 def _probe_run_dir_collision(form: dict[str, Any]) -> tuple[CheckStatus, str]:
     """Verify the computed ``<storage>/<exp_id>_s<seed>__<HHMM>`` is fresh.
 
@@ -368,7 +356,7 @@ def _probe_run_dir_collision(form: dict[str, Any]) -> tuple[CheckStatus, str]:
         # double-flag the same root cause.
         return CheckStatus.PASS, "seed is not an int — see Config schema row"
     run_id = RunId(exp_id=exp.get("id", "demo"), seed=seed)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     candidate = Path(raw_path).expanduser() / run_id.folder_name(timestamp)
     if candidate.exists():
         return CheckStatus.FAIL, f"{candidate.name} already exists under {raw_path}"
@@ -389,8 +377,10 @@ def run_real_local_checks(
         "Config schema valid": _probe_config_schema,
         "Storage path writable": _probe_storage_writable,
         "Required deps importable": _probe_required_deps,
-        "GPU available": _probe_gpu_available,
         "Run dir does not collide": _probe_run_dir_collision,
+        "Runner provisioning consistent with device": (
+            lambda _f: _provision_for_runner("local", form_dict)
+        ),
     }
     for check in checks:
         probe = real_probes.get(check.name)
@@ -415,6 +405,27 @@ def _probe_ovh_cli() -> tuple[CheckStatus, str]:
     except OvhCliError as exc:
         return CheckStatus.FAIL, str(exc)
     return CheckStatus.PASS, "ovhai CLI on PATH"
+
+
+#: OVH flavors that include a GPU. Sourced from ``ovhai capabilities flavor list``
+#: (verified live 2026-05-09); update if OVH adds new flavors.
+def _provision_for_runner(
+    runner_type: str, form_dict: dict[str, Any], **ctx: Any
+) -> tuple[CheckStatus, str]:
+    """Adapt ``check_runner_provisioning`` to the probe-dispatch signature.
+
+    Maps the ``(bool, str)`` return shape from the application layer to
+    ``(CheckStatus, str)`` the preflight rendering expects. Keeps the
+    application module hex-clean (no frontend imports).
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.application.runner_provisioning import (
+        check_runner_provisioning,
+    )
+
+    device = form_dict.get("training", {}).get("device", "cpu")
+    ok, detail = check_runner_provisioning(runner_type, device, **ctx)
+    return (CheckStatus.PASS if ok else CheckStatus.FAIL), detail
 
 
 def _probe_results_bucket(ovh_cfg: Any, *, client: Any) -> tuple[CheckStatus, str]:
@@ -582,12 +593,22 @@ def _probe_no_active_collision(
 def _probe_prefix_collision(
     ovh_cfg: Any, exp_id: str, seed: int, *, client: Any
 ) -> tuple[CheckStatus, str]:
-    """List ``<bucket>/<run_id>/`` keys; must be empty (rendezvous lesson).
+    """No prior runs of ``<exp_id>_s<seed>`` exist in the results bucket.
 
-    Reusing the same prefix would let parallel jobs FINALIZING-clobber each
-    other (the rendezvous_comm 2026-04-16 incident). Uses
-    :meth:`OvhClient.bucket_list_objects` with ``max_keys=1`` — we only need
-    to know whether *any* object exists under the prefix.
+    Stage 1 made S3 prefixes per-run (``<run_id>__<timestamp>``), so true
+    collisions are impossible. But the user explicitly chose to **hard-block**
+    re-runs that would create a duplicate exp_id+seed in the bucket — the
+    rationale is "if there's already an experiment with this name, the user
+    should explicitly clean up first so they don't end up with multiple
+    timestamped copies cluttering analysis".
+
+    Lists ``<bucket>/<run_id>__`` (note double-underscore) so ``demo_s0``
+    doesn't match ``demo_s00``. To unblock a re-run, either:
+
+      ovhai bucket object delete <bucket>@<region> --prefix <run_id>__ --yes
+
+    or edit the YAML's ``experiment.id`` / ``experiment.seed`` to a fresh
+    value.
     """
     # pylint: disable=import-outside-toplevel
     from multi_scenario.adapters.runners.ovh_cli import OvhCliError
@@ -596,7 +617,7 @@ def _probe_prefix_collision(
         return CheckStatus.FAIL, "no OVH config loaded"
     run_id = f"{exp_id}_s{seed}"
     bucket = ovh_cfg.bucket_results
-    prefix = f"{run_id}/"
+    prefix = f"{run_id}__"
     try:
         objs = client.bucket_list_objects(
             ovh_cfg.region, bucket, prefix=prefix, max_keys=1
@@ -606,9 +627,11 @@ def _probe_prefix_collision(
     if objs:
         return (
             CheckStatus.FAIL,
-            f"{bucket}/{prefix} already has data — pick a different exp_id/seed",
+            f"{bucket}/{prefix}* already has prior run(s) — delete them via "
+            f"'ovhai bucket object delete {bucket}@{ovh_cfg.region} "
+            f"--prefix {prefix} --yes' or change exp_id/seed",
         )
-    return CheckStatus.PASS, f"{bucket}/{prefix} clear"
+    return CheckStatus.PASS, f"{bucket}/{prefix}* clear (no prior runs)"
 
 
 def _probe_cost_cap(
@@ -686,6 +709,7 @@ def run_real_ovh_checks(
     config_blocked = ovh_cfg is None
     skip_ovh_keys = {
         "OVH CLI installed",
+        "Runner provisioning consistent with device",
         "Results bucket reachable",
         "Code matches OVH bucket",
         "Per-run prefix not occupied",
@@ -702,6 +726,9 @@ def run_real_ovh_checks(
             else (CheckStatus.PASS, "configs/ovh.yaml parsed")
         ),
         "OVH CLI installed": lambda _f: _probe_ovh_cli(),
+        "Runner provisioning consistent with device": (
+            lambda _f: _provision_for_runner("ovh", form_dict, ovh_cfg=ovh_cfg)
+        ),
         "Results bucket reachable": lambda _f: _probe_results_bucket(
             ovh_cfg, client=client
         ),

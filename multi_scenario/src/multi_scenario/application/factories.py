@@ -54,20 +54,44 @@ _STORAGES: dict[str, Callable[[], Storage]] = {
 
 @dataclass(frozen=True)
 class RunnerSpec:
-    """Descriptive metadata about a runner the user can submit to.
+    """Declarative metadata about a runner the user can submit to.
 
-    The Submit page reads :attr:`requires_ovh_cfg` to decide whether to load
-    ``configs/ovh.yaml`` on this submit target — keeps the page free of
-    hardcoded ``if target == "ovh"`` branches.
+    Used by:
+    - The Submit page (``requires_ovh_cfg`` → load configs/ovh.yaml on demand).
+    - :func:`validate_known_types` (device ∈ ``supported_devices`` → schema-time
+      rejection of incompatible runner+device combos).
+    - Preflight (default device + provisioning-check dispatch).
+
+    Adding a new runner means **one line** in :data:`_RUNNERS` plus a
+    :class:`Runner` adapter — no preflight code edits, no Submit-page edits.
     """
 
     name: str
-    requires_ovh_cfg: bool = False  # only True for runners that talk to OVH
+    #: True when this runner needs ``configs/ovh.yaml`` loaded for submission.
+    requires_ovh_cfg: bool = False
+    #: Devices this runner *kind* can dispatch. Schema-time check rejects
+    #: ``cfg.training.device`` values outside this set. Per-host provisioning
+    #: (e.g. ``torch.cuda.is_available()`` for local-cuda) is a separate
+    #: runtime probe — see :mod:`multi_scenario.application.runner_provisioning`.
+    supported_devices: frozenset[str] = frozenset({"cpu", "cuda"})
+    #: Device used when YAML omits ``training.device`` AND this runner is the
+    #: dispatcher. ``"cpu"`` for local (any Mac); ``"cuda"`` for OVH (GPU node).
+    default_device: str = "cpu"
 
 
 _RUNNERS: dict[str, RunnerSpec] = {
-    "local": RunnerSpec(name="local", requires_ovh_cfg=False),
-    "ovh": RunnerSpec(name="ovh", requires_ovh_cfg=True),
+    "local": RunnerSpec(
+        name="local",
+        requires_ovh_cfg=False,
+        supported_devices=frozenset({"cpu", "cuda"}),
+        default_device="cpu",
+    ),
+    "ovh": RunnerSpec(
+        name="ovh",
+        requires_ovh_cfg=True,
+        supported_devices=frozenset({"cpu", "cuda"}),
+        default_device="cuda",
+    ),
 }
 
 

@@ -1,10 +1,16 @@
 """CodeUploader — ship the local source tree to the OVH code bucket (F6.4).
 
 Walks a curated set of include dirs / files under the repo root, applies an
-fnmatch-based exclude list, and uploads each surviving file to S3 via
-:class:`S3StorageAdapter.put_file`. Decoupled from job submission — the user
-runs ``multi-scenario upload-code`` once per code change, then submits N jobs
-that all reuse the already-uploaded code.
+fnmatch-based exclude list, and pushes each surviving file via a per-file
+``put_file(key, body)`` callback. The callback is the only thing that
+differs across backends:
+
+- :class:`S3StorageAdapter.put_file` — boto3 path (legacy; needs AWS S3 keys).
+- :func:`make_ovhcli_putter` — wraps :meth:`OvhClient.bucket_put_object` so
+  ``upload-code`` works with only an ``ovhai login`` (F7.7.A5; matches the
+  F7.7.A2 "no AWS keys for OVH" architecture).
+
+Both callbacks satisfy the same shape, so :class:`CodeUploader` doesn't care.
 
 A companion ``.code_hash`` blob is written alongside the uploaded files —
 the Submit-page preflight probe reads it to detect "your local source has
@@ -15,6 +21,7 @@ from :mod:`multi_scenario.domain.hashing` so the value is reproducible.
 
 import fnmatch
 from pathlib import Path
+from typing import Callable
 
 from multi_scenario.adapters.storage.s3 import S3StorageAdapter
 from multi_scenario.domain.hashing import compute_code_hash
@@ -51,14 +58,35 @@ DEFAULT_EXCLUDE_PATTERNS: tuple[str, ...] = (
 )
 
 
+#: Callback shape: ``(key, body) -> None``. Backends differ; this signature is
+#: the contract :class:`CodeUploader` cares about.
+PutFile = Callable[[str, bytes], None]
+
+
 class CodeUploader:
-    """Uploads a curated subset of the repo to the S3 code bucket."""
+    """Uploads a curated subset of the repo via a per-file ``put_file`` callback.
+
+    Backend-agnostic: pass any callable matching the :data:`PutFile` shape.
+    Two convenience factories exist:
+    - :meth:`from_s3_adapter` — wraps :class:`S3StorageAdapter.put_file` (legacy).
+    - :meth:`from_ovh_client` — wraps :meth:`OvhClient.bucket_put_object` (F7.7.A5).
+    """
 
     # Single public method by design; pylint default doesn't fit.
     # pylint: disable=too-few-public-methods,too-many-arguments,too-many-positional-arguments
 
-    def __init__(self, s3: S3StorageAdapter) -> None:
-        self._s3 = s3
+    def __init__(self, put_file: PutFile) -> None:
+        self._put_file = put_file
+
+    @classmethod
+    def from_s3_adapter(cls, s3: S3StorageAdapter) -> "CodeUploader":
+        """Legacy boto3 path. Requires AWS-style S3 credentials on the host."""
+        return cls(s3.put_file)
+
+    @classmethod
+    def from_ovh_client(cls, client, region: str, bucket: str) -> "CodeUploader":
+        """OVH-CLI path (F7.7.A5). Reuses ``ovhai login`` — no AWS keys needed."""
+        return cls(lambda key, body: client.bucket_put_object(region, bucket, key, body))
 
     def upload(
         self,
@@ -70,7 +98,7 @@ class CodeUploader:
     ) -> list[Path]:
         """Upload curated files; return the list of relative paths uploaded.
 
-        ``dry_run=True`` returns the list without putting any S3 objects.
+        ``dry_run=True`` returns the list without invoking ``put_file``.
         """
         repo_root = repo_root.resolve()
         targets: list[Path] = list(
@@ -83,11 +111,11 @@ class CodeUploader:
             return [p.relative_to(repo_root) for p in kept]
         for path in kept:
             rel = path.relative_to(repo_root).as_posix()
-            self._s3.put_file(rel, path.read_bytes())
+            self._put_file(rel, path.read_bytes())
         # Write the companion .code_hash blob — Submit-page preflight reads
         # this and compares against the local source hash to detect drift.
         digest = compute_code_hash(kept)
-        self._s3.put_file(CODE_HASH_KEY, digest.encode("utf-8"))
+        self._put_file(CODE_HASH_KEY, digest.encode("utf-8"))
         return [p.relative_to(repo_root) for p in kept]
 
 

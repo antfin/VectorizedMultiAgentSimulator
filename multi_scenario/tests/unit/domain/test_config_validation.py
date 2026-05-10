@@ -97,9 +97,14 @@ def test_invalid_field_rejected_with_clear_message(path, value, msg_substring):
 @pytest.mark.parametrize(
     "path,value,msg_substring",
     [
+        # ``runtime.runner.type`` is constrained by ``Literal["local", "ovh"]``
+        # at the schema layer (F7.7.A4), so unknown values fail with a
+        # Pydantic ValidationError earlier than registry-validation. That's
+        # tested in ``test_invalid_field_rejected_with_clear_message``.
+        # The remaining ``*.type`` fields stay ``str`` so registry validation
+        # is still the gate that catches typos.
         ("scenario.type", "unknown_scenario", "scenario.type"),
         ("algorithm.type", "unknown_algo", "algorithm.type"),
-        ("runtime.runner.type", "unknown_runner", "runner.type"),
         ("runtime.storage.type", "unknown_storage", "storage.type"),
     ],
 )
@@ -116,6 +121,52 @@ def test_validate_known_types_rejects_unknown_adapter(path, value, msg_substring
     with pytest.raises(ValueError) as exc:
         validate_known_types(cfg)
     assert msg_substring in str(exc.value)
+
+
+def test_runner_type_unknown_rejected_at_schema_layer():
+    """F7.7.A4 — ``runtime.runner.type: Literal["local", "ovh"]`` fails fast
+    at Pydantic validation rather than waiting for registry validation.
+    """
+    cfg_dict = _kitchen_sink_valid()
+    _set_dotted(cfg_dict, "runtime.runner.type", "unknown_runner")
+    with pytest.raises(ValidationError, match="Input should be 'local' or 'ovh'"):
+        ExperimentConfig.model_validate(cfg_dict)
+
+
+def test_validate_known_types_rejects_device_outside_runner_capabilities():
+    """F7.7.A4 — when ``training.device`` isn't in
+    ``runner_spec(runtime.runner.type).supported_devices``, the cross-field
+    check inside ``validate_known_types`` raises a clear ValueError.
+
+    This makes adding a new runner with restricted device support trivial:
+    declare it in factories.py and configs targeting an unsupported device
+    fail at parse time rather than minutes into a run.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.application import factories
+    from multi_scenario.application.config_validation import validate_known_types
+
+    # Inject a fake runner that only supports cpu — no code edits, just
+    # registry mutation in the test.
+    fake_spec = factories.RunnerSpec(
+        name="fake_cpu_only",
+        supported_devices=frozenset({"cpu"}),
+        default_device="cpu",
+    )
+    factories._RUNNERS["fake_cpu_only"] = fake_spec  # noqa: SLF001
+    try:
+        cfg_dict = _kitchen_sink_valid()
+        # Bypass the schema's Literal["local", "ovh"] by mutating the model
+        # post-validation: validate_known_types is the gate we're testing.
+        # (Real users will get this error after extending Literal[...] to
+        # include the new runner first.)
+        cfg = ExperimentConfig.model_validate(cfg_dict)
+        cfg.runtime.runner.type = "fake_cpu_only"  # type: ignore[assignment]
+        cfg.training.device = "cuda"  # type: ignore[assignment]
+        with pytest.raises(ValueError, match="not supported by"):
+            validate_known_types(cfg)
+    finally:
+        factories._RUNNERS.pop("fake_cpu_only", None)
 
 
 def test_validate_known_types_accepts_kitchen_sink():

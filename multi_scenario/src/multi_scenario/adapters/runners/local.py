@@ -58,6 +58,11 @@ class LocalRunner:
         resume_from: Path | None = None,
     ) -> ExperimentResult:
         """Resolve adapter names, build the service, delegate, and return the result."""
+        # F7.7.A4: fail-fast when YAML asks for CUDA but the host has none.
+        # Without this check, BenchMARL crashes ~30s in with a deep TorchRL
+        # traceback that doesn't mention CUDA. Cheaper to surface here.
+        if cfg.training.device == "cuda":
+            self._assert_cuda_available()
         scenario = make_scenario(cfg.scenario.type)
         algorithm = make_algorithm(cfg.algorithm.type)
         storage_name = cfg.runtime.storage.type if cfg.runtime is not None else "fs"
@@ -92,3 +97,23 @@ class LocalRunner:
             storage.save_report(run_dir, report)
 
         return result
+
+    @staticmethod
+    def _assert_cuda_available() -> None:
+        """Raise immediately if ``training.device=cuda`` but no CUDA on this host.
+
+        This is the local-runner equivalent of the OVH-side preflight ``GPU
+        flavor`` check. Inside the OVH container the same call also fires —
+        if the OVH flavor is wrongly picked as CPU-only, BenchMARL would
+        crash later; this surfaces the misconfig at minute 0.
+        """
+        # pylint: disable=import-outside-toplevel
+        import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "training.device=cuda but torch.cuda.is_available()=False on "
+                "this host. Either run on a CUDA-capable machine, set "
+                "training.device=cpu in the YAML, or pass --runner ovh to "
+                "submit to a GPU-bearing OVH node."
+            )

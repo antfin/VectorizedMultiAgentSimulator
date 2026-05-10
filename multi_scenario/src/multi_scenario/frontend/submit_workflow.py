@@ -204,16 +204,13 @@ def _normalise_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     snap = copy.deepcopy(snapshot)
     runtime = snap.setdefault("runtime", {"runner": {"type": "local"}, "storage": {}})
 
-    # ``runtime.runner.type`` is always "local" by design — LocalRunner is
-    # what actually executes the training loop (on the user's machine for
-    # local submits; inside the OVH container for OVH submits). The
-    # local-vs-OVH dispatch happens at the orchestration layer (which
-    # Python class instantiates), tracked in session_state separately as
-    # ``submit_target``. Legacy YAMLs that wrote ``runner.type: ovh``
-    # (from a pre-fix bug) get silently re-canonicalised here so dirty-
-    # detection doesn't trip on them.
+    # ``runtime.runner.type`` drives dispatch (F7.7.A4): ``local`` →
+    # LocalRunner runs training in this Python process; ``ovh`` → OvhRunner
+    # submits to the cloud and the container internally runs LocalRunner.
+    # The Submit-page radio overrides per-session via ``submit_target``;
+    # the YAML's value is the default.
     runner = runtime.setdefault("runner", {"type": "local"})
-    runner["type"] = "local"
+    runner.setdefault("type", "local")  # honour YAML; default only when absent
     params = runner.setdefault("params", {})
     if "record_video" not in params:
         exp_id = snap.get("experiment", {}).get("id", "")

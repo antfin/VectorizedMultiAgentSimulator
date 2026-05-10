@@ -1,6 +1,7 @@
 """F5.6 integration tests: ``multi-scenario sweep <input>``."""
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -201,3 +202,96 @@ def test_sweep_executes_each_cell_when_not_dry_run(tmp_path: Path) -> None:
         assert (run_dir / "input" / "config.json").is_file()
         assert (run_dir / "output" / "metrics.json").is_file()
         assert (run_dir / "run_state.json").is_file()
+
+
+# ── Stage 2: _follow_ovh_jobs auto-pullback wiring ─────────────────────
+
+
+def test_follow_ovh_jobs_calls_pullback_for_done_jobs(tmp_path, monkeypatch):
+    """Each DONE job triggers a pullback so OVH cells materialise locally."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    # Stub ExperimentConfig — _follow_ovh_jobs only reads cfg.experiment.{id,seed}
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+
+    # Stub OvhClient: jobs hit DONE on first poll.
+    info = MagicMock()
+    info.is_terminal = True
+    info.state = "DONE"
+    client = MagicMock()
+    client.get.return_value = info
+
+    pullback_calls: list[dict] = []
+
+    def _fake_pullback(**kwargs):
+        pullback_calls.append(kwargs)
+        result = MagicMock()
+        result.n_downloaded = 3
+        result.n_skipped = 0
+        return result
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        _fake_pullback,
+    )
+    ovh_cfg = MagicMock()
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=ovh_cfg)
+    assert len(pullback_calls) == 1
+    assert pullback_calls[0]["run_dir_name"] == "demo_s0__t"
+    assert pullback_calls[0]["dest_dir"] == run_dir
+    assert pullback_calls[0]["ovh_cfg"] is ovh_cfg
+
+
+def test_follow_ovh_jobs_skips_pullback_for_failed_jobs(tmp_path, monkeypatch):
+    """Non-DONE terminal states (FAILED, KILLED) must not pull back."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+
+    info = MagicMock()
+    info.is_terminal = True
+    info.state = "FAILED"
+    client = MagicMock()
+    client.get.return_value = info
+
+    called = []
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        lambda **kw: called.append(kw),
+    )
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())
+    assert called == []
+
+
+def test_follow_ovh_jobs_pullback_failure_does_not_abort_sweep(tmp_path, monkeypatch):
+    """A pullback exception is logged, not propagated — other cells continue."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.cli.sweep import _follow_ovh_jobs
+
+    cfg = MagicMock()
+    cfg.experiment.id = "demo"
+    cfg.experiment.seed = 0
+    run_dir = tmp_path / "demo_s0__t"
+
+    info = MagicMock()
+    info.is_terminal = True
+    info.state = "DONE"
+    client = MagicMock()
+    client.get.return_value = info
+
+    def _boom(**_kwargs):
+        raise RuntimeError("simulated CLI failure")
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir", _boom
+    )
+    # Must not raise — sweep should keep going.
+    _follow_ovh_jobs([("job-uuid", cfg, run_dir)], client, ovh_cfg=MagicMock())

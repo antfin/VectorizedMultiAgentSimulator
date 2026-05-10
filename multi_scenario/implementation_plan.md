@@ -949,6 +949,8 @@ that — the original polish work moves to Phase 6 below.
 > **Scope reset (2026-05-09).** Phase 8 was originally "ER1 across 4 scenarios + heuristic baselines". After the F8/F9/F10/F11 planning round, that scope moved to **F11**; F8 narrows to *reproducing the rendezvous_comm headline numbers on `discovery`* (ER1 baseline + S3b-local LERO). The full draft is at `docs/_drafts/F8_F11_plan_draft.md` (1012 lines). User-locked decisions are in `~/.claude/.../memory/project_coopvmas_decisions.md`.
 >
 > **Reproducibility threshold (locked):** ±10% absolute on M1 AND within 1.5σ of rendezvous_comm seed-mean. LERO reproducibility is the success gate; ER1 is the reference baseline.
+>
+> **A note on `runner.type` and OVH.** Every YAML in F8 has `runtime.runner.type: local` even when we plan to submit it to OVH. That's the F7.7.A2 hex-architecture rule: `runner.type` describes what runs *inside* the host (LocalRunner reads the YAML and drives BenchMARL); the OVH-vs-local *submit* choice is a separate, runtime-level decision (`multi-scenario sweep --runner ovh ...` or the Submit page's submit-target radio). Same YAML, different orchestrator. F8 sub-phases default to OVH submission for compute-cost reasons (10M-frame CPU runs are slow on a laptop), but every YAML stays runner-agnostic and can run either way.
 
 #### F8.0 — Optional: rendezvous_comm self-replication — XS
 
@@ -960,11 +962,15 @@ Default: **skip**. If F8.4 shows an unexpected delta vs the rendezvous_comm doc,
 - Tests in `tests/reproducibility/test_er1_config_parity.py` — parametric per-field assertions against the rendezvous_comm source so silent drift is caught.
 - Done: `multi-scenario validate experiments/discovery/baseline/configs/baseline.yaml` exits 0; parity test green.
 
-#### F8.2 — Run ER1 ×3 seeds, validate — M (OVH-bound)
+#### F8.2 — Run ER1 ×3 seeds, validate — M
 
-- `scripts/run_er1_reproducibility.py` submits 3 OVH jobs (seeds [0,1,2]).
-- `scripts/compare_to_reference.py` reads our `runs.csv` + the hardcoded reference dict (ER1 M1≈0.405); prints PASS/FAIL per the threshold above.
-- Streamlit reproducibility page (F8.5.B) shows the same comparison.
+The baseline YAML is **runner-agnostic** by design (per F7.7.A2): `runtime.runner.type: local` means *LocalRunner reads the YAML and drives BenchMARL inside whatever host it lands on*. The local-vs-OVH choice happens at the *submit* layer — same YAML, different orchestrator.
+
+- `scripts/run_er1_reproducibility.py` — thin wrapper over `multi-scenario sweep --seeds 0 1 2 --runner {local|ovh} baseline.yaml`. Default `--runner ovh` because ER1 at 10M frames × 600 envs is ~6-12h CPU per seed locally vs ~3-4h on V100S in parallel; users with beefier local machines can override.
+- `scripts/compare_to_reference.py` — reads our `runs.csv` + the hardcoded reference dict (ER1 M1≈0.405); prints PASS/FAIL per the F8 threshold (±10% absolute on M1 AND within 1.5σ of rendezvous_comm seed-mean).
+- Streamlit reproducibility page (F8.5.B) shows the same comparison side-by-side.
+
+**Compute budget reminder.** OVH cost (3 seeds × ~3h V100S × €2.10/h) ≈ **€19**. Local-CPU cost is wall-clock (a day-ish) but no money out. Either is fine; pick at run-time, not at YAML-edit time.
 
 #### F8.3 — LERO architecture lands — block dep on F9.0–F9.6
 

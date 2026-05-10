@@ -333,24 +333,31 @@ def test_probe_code_hash_fails_when_local_differs_from_remote(
     assert "upload-code" in by_name["Code matches OVH bucket"].detail
 
 
-def test_probe_prefix_collision_fails_when_run_id_already_used(
-    fake_ovh_client, tmp_path
-):
+def test_probe_prefix_collision_fails_when_prior_run_exists(fake_ovh_client, tmp_path):
+    """Stage 1: probe lists ``<run_id>__`` (double-underscore) to find PRIOR
+    timestamped runs of the same exp_id+seed. With per-run prefixes, no true
+    collision is possible — but the user explicitly chose to hard-block
+    re-runs that would create a duplicate (so the experiment dir doesn't
+    accumulate clutter from accidental re-submissions).
+    """
     cfg = _good_cfg(str(tmp_path))
     cfg["runtime"]["runner"]["type"] = "ovh"
     cfg["experiment"]["id"] = "demo"
     cfg["experiment"]["seed"] = 0
+    # Plant a prior timestamped run.
     fake_ovh_client.put_object(
         "GRA",
         "ms-test-results",
-        "demo_s0/leftover.json",
+        "demo_s0__20260507_123000/output/metrics.json",
         b"{}",
     )
     checks = applicable_checks("ovh")
     _run_with(checks, cfg, fake_ovh_client, repo_root=_seed_repo(tmp_path))
     by_name = {c.name: c for c in checks}
     assert by_name["Per-run prefix not occupied"].status == CheckStatus.FAIL
-    assert "demo_s0" in by_name["Per-run prefix not occupied"].detail
+    assert "demo_s0__" in by_name["Per-run prefix not occupied"].detail
+    # Detail tells the user how to clean up.
+    assert "delete" in by_name["Per-run prefix not occupied"].detail.lower()
 
 
 def test_probe_prefix_collision_passes_when_listing_empty(fake_ovh_client, tmp_path):
@@ -468,7 +475,7 @@ def test_run_dir_collision_probe_fails_when_target_exists(tmp_path):
     cfg = _good_cfg(str(tmp_path))
     cfg["experiment"]["id"] = "demo"
     cfg["experiment"]["seed"] = 0
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     folder = RunId(exp_id="demo", seed=0).folder_name(timestamp)
     (tmp_path / folder).mkdir(parents=True)
     status, detail = _probe_run_dir_collision(cfg)
@@ -476,16 +483,19 @@ def test_run_dir_collision_probe_fails_when_target_exists(tmp_path):
     assert "already exists" in detail
 
 
-def test_gpu_probe_only_appears_when_device_is_cuda(tmp_path):
-    """The GPU row is conditional — absent when device=cpu, present when cuda."""
+def test_runner_provisioning_check_present_for_both_targets(tmp_path):
+    """F7.7.A4: 'Runner provisioning consistent with device' is the unified
+    check that subsumed the old conditional 'GPU available' row. Present
+    for both runner targets; the actual status differs by device + host.
+    """
     cfg_cpu = _good_cfg(str(tmp_path))
-    names_cpu = {c.name for c in applicable_checks("local", cfg_cpu)}
-    assert "GPU available" not in names_cpu
-
-    cfg_cuda = _good_cfg(str(tmp_path))
-    cfg_cuda["training"]["device"] = "cuda"
-    names_cuda = {c.name for c in applicable_checks("local", cfg_cuda)}
-    assert "GPU available" in names_cuda
+    names_local = {c.name for c in applicable_checks("local", cfg_cpu)}
+    names_ovh = {c.name for c in applicable_checks("ovh", cfg_cpu)}
+    assert "Runner provisioning consistent with device" in names_local
+    assert "Runner provisioning consistent with device" in names_ovh
+    # Old conditional probe is gone.
+    assert "GPU available" not in names_local
+    assert "GPU available" not in names_ovh
 
 
 def test_ovh_config_invalid_cascades_idle_to_other_ovh_rows(fake_ovh_client, tmp_path):

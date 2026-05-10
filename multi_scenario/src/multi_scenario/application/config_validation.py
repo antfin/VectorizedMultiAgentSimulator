@@ -15,6 +15,7 @@ from multi_scenario.application.factories import (
     available_runners,
     available_scenarios,
     available_storages,
+    runner_spec,
 )
 from multi_scenario.domain.models import ExperimentConfig
 
@@ -23,9 +24,10 @@ def validate_known_types(cfg: ExperimentConfig) -> None:
     """Raise ``ValueError`` if any ``type`` field doesn't resolve to a registered adapter.
 
     Specifically checks ``scenario.type``, ``algorithm.type``, and (when
-    ``cfg.runtime`` is set) ``runtime.runner.type`` + ``runtime.storage.type``.
-    Each error message lists the registered names so the user can spot a
-    typo in one glance.
+    ``cfg.runtime`` is set) ``runtime.runner.type`` + ``runtime.storage.type``,
+    plus the cross-field invariant that ``cfg.training.device`` is one of
+    ``runner_spec(runtime.runner.type).supported_devices``. Each error message
+    lists the registered names so the user can spot a typo in one glance.
     """
     if cfg.scenario.type not in available_scenarios():
         raise ValueError(
@@ -47,4 +49,15 @@ def validate_known_types(cfg: ExperimentConfig) -> None:
             raise ValueError(
                 f"runtime.storage.type {cfg.runtime.storage.type!r} is not "
                 f"registered; known: {available_storages()}"
+            )
+        # Static device-runner compatibility check (F7.7.A4 architecture).
+        # Per-host provisioning (CUDA actually available on this Mac, GPU
+        # flavor on configs/ovh.yaml, …) is a separate runtime concern —
+        # see the preflight probes that consult runner_provisioning.
+        spec = runner_spec(cfg.runtime.runner.type)
+        if cfg.training.device not in spec.supported_devices:
+            raise ValueError(
+                f"training.device {cfg.training.device!r} is not supported by "
+                f"runtime.runner.type={cfg.runtime.runner.type!r}; "
+                f"supported: {sorted(spec.supported_devices)}"
             )

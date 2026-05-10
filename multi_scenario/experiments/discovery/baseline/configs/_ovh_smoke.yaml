@@ -1,0 +1,59 @@
+# OVH end-to-end smoke (~30s on V100S, ~€0.02).
+#
+# Single purpose: validate the full local-Mac → OVH submission → result
+# pullback flow using the F7.7.A4 architecture (runner.type=ovh +
+# device=cuda + LocalRunner inside the container reads this YAML).
+#
+# Run with:  multi-scenario run experiments/discovery/baseline/configs/_ovh_smoke.yaml
+# Pull back: multi-scenario sweep --follow --runner ovh experiments/discovery/baseline/configs/_ovh_smoke.yaml
+#
+# This is a fixture — see docs/ovh_smoke_checklist.md for the full procedure.
+# The leading underscore in the filename signals "infra fixture, not a research
+# config" — keeps the discovery picker tidy and makes scaffolding-cleanup
+# (F10.8) easy to spot.
+
+experiment:
+  id: ovh_smoke
+  seed: 0
+  name: "OVH end-to-end smoke (F7.7.A4)"
+  description: >
+    Tiny 1-iter × 4-env smoke that validates the upload-code → run --runner ovh
+    → result pullback flow without burning real ER1 compute.
+
+scenario:
+  type: discovery
+  params:
+    n_agents: 2
+    n_targets: 2
+    agents_per_target: 1   # k=1 (easy) so 1 iter still produces interesting metrics
+    covering_range: 0.25
+    targets_respawn: false
+    shared_reward: true
+    max_steps: 20
+
+algorithm:
+  type: mappo
+  params: {}
+
+training:
+  max_iters: 1
+  num_envs: 4
+  device: cuda            # F7.7.A4: matches OvhJobConfig.flavor=ai1-1-gpu
+  frames_per_batch: 100
+  minibatch_size: 50
+  n_minibatch_iters: 1
+  checkpoint_interval_iters: 0  # smoke: no mid-run checkpoints
+
+evaluation:
+  interval_iters: 1
+  episodes: 2
+
+runtime:
+  runner:
+    type: ovh             # F7.7.A4: drives multi-scenario run dispatch
+    params:
+      record_video: false
+  storage:
+    type: fs
+    path: /workspace/results  # OVH container mount (OvhJobConfig.mount_results)
+    params: {}

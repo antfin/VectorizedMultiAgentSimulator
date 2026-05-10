@@ -59,7 +59,7 @@ def mocked_s3_with_bucket():
 
 def _make_uploader(client) -> CodeUploader:
     config = S3StorageConfig(bucket=_BUCKET, prefix=_PREFIX, region="us-east-1")
-    return CodeUploader(S3StorageAdapter(config, client=client))
+    return CodeUploader.from_s3_adapter(S3StorageAdapter(config, client=client))
 
 
 def test_upload_includes_curated_subset(tmp_path: Path, mocked_s3_with_bucket) -> None:
@@ -187,3 +187,46 @@ def test_local_hash_changes_when_a_file_changes(tmp_path: Path) -> None:
     )
     h2 = compute_local_code_hash(tmp_path)
     assert h1 != h2
+
+
+# ── F7.7.A5: OVH-CLI uploader ────────────────────────────────────────
+
+
+class _CapturingOvhClient:
+    """In-memory stand-in for OvhClient.bucket_put_object — captures every call."""
+
+    def __init__(self):
+        self.objects: dict[tuple[str, str, str], bytes] = {}
+
+    def bucket_put_object(self, region: str, bucket: str, key: str, body: bytes) -> None:
+        self.objects[(region, bucket, key)] = body
+
+
+def test_from_ovh_client_routes_puts_through_bucket_put_object(tmp_path: Path) -> None:
+    """``CodeUploader.from_ovh_client`` wraps OvhClient — every file lands at
+    the same key the S3 path produces (just via a different transport)."""
+    _mk_repo(tmp_path)
+    fake = _CapturingOvhClient()
+    uploader = CodeUploader.from_ovh_client(fake, region="GRA", bucket="ms-test-code")
+    out = uploader.upload(tmp_path)
+
+    keys = sorted(k for (_r, _b, k) in fake.objects)
+    # Same shape as the S3 test: file set + .code_hash sidecar.
+    assert "src/multi_scenario/cli.py" in keys
+    assert "pyproject.toml" in keys
+    assert CODE_HASH_KEY in keys
+    # Returned list mirrors the S3 path's contract.
+    assert Path("src/multi_scenario/cli.py") in out
+    # And the hash matches local compute.
+    blob = fake.objects[("GRA", "ms-test-code", CODE_HASH_KEY)].decode("utf-8")
+    assert blob == compute_local_code_hash(tmp_path)
+
+
+def test_from_ovh_client_dry_run_doesnt_call_put(tmp_path: Path) -> None:
+    """``dry_run=True`` returns the path list but never invokes put."""
+    _mk_repo(tmp_path)
+    fake = _CapturingOvhClient()
+    uploader = CodeUploader.from_ovh_client(fake, region="GRA", bucket="ms-test-code")
+    out = uploader.upload(tmp_path, dry_run=True)
+    assert out, "dry-run should still produce a non-empty preview list"
+    assert fake.objects == {}, "dry-run must not call put"

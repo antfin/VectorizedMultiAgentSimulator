@@ -106,11 +106,24 @@ class EvaluationSection(BaseModel):
 
 
 class RunnerSection(BaseModel):
-    """Runner adapter selection — where the experiment executes (local, ovh, ...)."""
+    """Runner adapter selection — where the experiment executes.
+
+    ``type`` is the *dispatch* layer (the Python class that wraps the
+    submission), not what runs *inside* the host:
+
+    - ``local`` → ``LocalRunner`` — runs the BenchMARL training loop in the
+      current Python process. Use when training on the user's machine.
+    - ``ovh``   → ``OvhRunner``   — shells out ``ovhai job run`` which boots
+      an OVH container that then invokes ``LocalRunner`` *inside*. Use when
+      training on OVH GPU nodes.
+
+    The CLI ``--runner`` flag overrides this YAML field at submit time
+    (rare; mostly useful for forcing a YAML to run locally for debugging).
+    """
 
     model_config = STRICT
 
-    type: str = Field(default="local", min_length=1)
+    type: Literal["local", "ovh"] = "local"
     params: dict[str, Any] = Field(default_factory=dict)
 
 

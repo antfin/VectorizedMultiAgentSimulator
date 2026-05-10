@@ -205,8 +205,14 @@ def test_ovh_target_cascade_when_ovh_yaml_missing(tmp_experiments: Path, monkeyp
     monkeypatch.chdir(tmp_experiments.parent)
     at = _new_apptest(tmp_experiments)
     _drive_pick(at)
-    # Switch submit target → ovh via the radio inside Step 2's expander.
+    # Switch submit target → ovh via the radio. F7.7.A4: this now legitimately
+    # modifies the YAML's runner.type, so Step 3 blocks Step 4 until saved.
     at.radio(key="step2_submit_target").set_value("ovh")
+    at.run()
+    # Save as a new file so Step 4 unlocks (Step 3's "save before preflight" gate).
+    at.text_input(key="step3_new_name").set_value("seed0_ovh.yaml")
+    at.run()
+    at.button(key="step3_save").click()
     at.run()
     at.button(key="step4_run").click()
     at.run()
@@ -273,3 +279,170 @@ def test_local_submit_dispatches_to_local_runner(tmp_experiments: Path, monkeypa
     )
     assert status.get("status") == "done", status
     assert calls, "LocalRunner.run was not invoked"
+
+
+# ── Stage 3: _refresh_ovh_status helper ───────────────────────────────
+
+
+@pytest.fixture
+def _refresh_helper():
+    """Import the refresh helper inside a Streamlit-friendly context.
+
+    The helper writes to ``st.session_state`` so we run it inside a fresh
+    ``AppTest`` script that just calls it; assertions then read the recorded
+    state through ``at.session_state``.
+    """
+    from streamlit.testing.v1 import AppTest
+
+    def _drive(initial_state: dict, after_helper):
+        """Run a tiny Streamlit script that calls _refresh_ovh_status; return AppTest."""
+        script = """
+import streamlit as st
+from multi_scenario.frontend.pages.submit import _refresh_ovh_status
+_refresh_ovh_status()
+st.write("done")
+"""
+        at = AppTest.from_string(script, default_timeout=10.0)
+        for k, v in initial_state.items():
+            at.session_state[k] = v
+        at.run()
+        return at
+
+    return _drive
+
+
+def _ovh_status(**overrides):
+    base = {
+        "status": "submitted",
+        "runner": "ovh",
+        "run_id": "demo_s0",
+        "run_dir": "/tmp/demo_s0__t",
+        "job_id": "uuid-1",
+        "s3_prefix": "ms-test-results@GRA/demo_s0__t",
+        "dashboard_url": "https://ovh/x",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_refresh_helper_noop_when_status_not_submitted(_refresh_helper):
+    """Defensive: helper should never crash if the panel was already DONE."""
+    at = _refresh_helper(
+        {"submit_submission_status": _ovh_status(status="done")},
+        after_helper=None,
+    )
+    assert at.session_state["submit_submission_status"]["status"] == "done"
+
+
+def test_refresh_helper_records_state_when_job_still_running(
+    _refresh_helper, monkeypatch
+):
+    """Non-terminal info: status stays 'submitted', latest state recorded."""
+    info = type("I", (), {"is_terminal": False, "state": "RUNNING"})()
+    fake_client = type("C", (), {"get": lambda self, jid: info})()
+    monkeypatch.setattr(
+        "multi_scenario.adapters.runners.ovh_cli.OvhClient",
+        lambda: fake_client,
+    )
+    at = _refresh_helper(
+        {"submit_submission_status": _ovh_status()},
+        after_helper=None,
+    )
+    out = at.session_state["submit_submission_status"]
+    assert out["status"] == "submitted"
+    assert out["state"] == "RUNNING"
+
+
+def test_refresh_helper_marks_crashed_on_failed_terminal_state(
+    _refresh_helper, monkeypatch
+):
+    """Terminal but not DONE → crashed + logs tail."""
+    info = type("I", (), {"is_terminal": True, "state": "FAILED"})()
+    fake_client = type(
+        "C",
+        (),
+        {
+            "get": lambda self, jid: info,
+            "logs": lambda self, jid, tail=200: "boom\ntraceback line",
+        },
+    )()
+    monkeypatch.setattr(
+        "multi_scenario.adapters.runners.ovh_cli.OvhClient",
+        lambda: fake_client,
+    )
+    at = _refresh_helper(
+        {"submit_submission_status": _ovh_status()},
+        after_helper=None,
+    )
+    out = at.session_state["submit_submission_status"]
+    assert out["status"] == "crashed"
+    assert "FAILED" in out["error"]
+    assert "boom" in out["traceback"]
+
+
+def test_refresh_helper_calls_pullback_then_marks_done(
+    tmp_path: Path, _refresh_helper, monkeypatch
+):
+    """DONE → pullback runs, status flips to done with file counts."""
+    info = type("I", (), {"is_terminal": True, "state": "DONE"})()
+    fake_client = type(
+        "C", (), {"get": lambda self, jid: info, "logs": lambda *a, **k: ""}
+    )()
+    monkeypatch.setattr(
+        "multi_scenario.adapters.runners.ovh_cli.OvhClient",
+        lambda: fake_client,
+    )
+    # Stub _try_load_ovh_config so we don't depend on a real configs/ovh.yaml.
+    fake_ovh_cfg = type("Cfg", (), {"region": "GRA", "bucket_results": "x"})()
+    monkeypatch.setattr(
+        "multi_scenario.frontend.pages.submit._try_load_ovh_config",
+        lambda: (fake_ovh_cfg, None),
+    )
+    # Stub pullback to record the call and pretend everything came back.
+    pullback_calls = []
+
+    def _fake_pullback(**kwargs):
+        pullback_calls.append(kwargs)
+        result = type("R", (), {"n_downloaded": 5, "n_skipped": 1})()
+        # Plant a videos/ folder so video-regen is skipped.
+        run_dir = kwargs["dest_dir"]
+        (run_dir / "videos").mkdir(parents=True, exist_ok=True)
+        (run_dir / "videos" / "after.mp4").write_bytes(b"x")
+        return result
+
+    monkeypatch.setattr(
+        "multi_scenario.application.ovh_pullback.pullback_run_dir",
+        _fake_pullback,
+    )
+    run_dir = tmp_path / "demo_s0__t"
+    at = _refresh_helper(
+        {"submit_submission_status": _ovh_status(run_dir=str(run_dir))},
+        after_helper=None,
+    )
+    out = at.session_state["submit_submission_status"]
+    assert out["status"] == "done"
+    assert out["pullback_n_downloaded"] == 5
+    assert out["pullback_n_skipped"] == 1
+    assert pullback_calls and pullback_calls[0]["dest_dir"] == run_dir
+
+
+def test_refresh_helper_marks_crashed_when_status_check_raises(
+    _refresh_helper, monkeypatch
+):
+    """OvhClient.get raising → status crashed (don't leave panel stuck)."""
+
+    def _boom(_self, _jid):
+        raise RuntimeError("ovhai unreachable")
+
+    fake_client = type("C", (), {"get": _boom})()
+    monkeypatch.setattr(
+        "multi_scenario.adapters.runners.ovh_cli.OvhClient",
+        lambda: fake_client,
+    )
+    at = _refresh_helper(
+        {"submit_submission_status": _ovh_status()},
+        after_helper=None,
+    )
+    out = at.session_state["submit_submission_status"]
+    assert out["status"] == "crashed"
+    assert "ovhai unreachable" in out["error"]

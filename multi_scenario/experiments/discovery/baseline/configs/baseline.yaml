@@ -8,7 +8,7 @@
 # Per-field parity is checked by tests/reproducibility/test_er1_config_parity.py
 # against the rendezvous_comm source — silent drift fails the test.
 #
-# ── Two things to know before reading this YAML ─────────────────────
+# ── Three things to know before reading this YAML ───────────────────
 #
 # 1. ``shared_reward: true`` is intentional. The rendezvous_comm filename
 #    encodes the feature flags (``al`` = Agent Lidar, ``lp`` = Low Penalty,
@@ -20,14 +20,23 @@
 #    ``info()`` to return per-agent rewards. M8=0 for ER1 matches
 #    rendezvous_comm's own ER1 numbers.
 #
-# 2. ``runtime.runner.type: local`` is the canonical value even when this
-#    baseline runs on OVH. LocalRunner is what reads this YAML and drives
-#    the BenchMARL training loop, whether on a laptop or inside an OVH
-#    container. The OVH-vs-local choice is at the *submit* layer:
-#      multi-scenario sweep --runner ovh --ovh-config configs/ovh.yaml \\
-#                           --seeds 0 1 2 <this-yaml>
-#    or via the Submit page's "Submit target: ovh" radio. The YAML stays
-#    portable across both paths (F7.7.A2 architecture).
+# 2. ``runtime.runner.type: ovh`` + ``training.device: cuda`` is the
+#    canonical OVH+GPU combo (F7.7.A4). To run locally for debugging,
+#    override at submit time:
+#      multi-scenario run --runner local <this-yaml>          # local CPU
+#      multi-scenario sweep --runner local --seeds 0 1 2 <this-yaml>
+#    Inside the OVH container, LocalRunner reads this YAML and drives
+#    BenchMARL on CUDA against the V100S the OvhJobConfig requests.
+#
+# 3. ``runtime.storage.path: /workspace/results`` is the in-CONTAINER mount
+#    (per OvhJobConfig.mount_results). For ``--runner local`` overrides
+#    on a Mac, edit the path to a host directory (e.g. ``experiments/...``)
+#    or expect a write-permission error.
+#
+# 4. Reproducibility note: rendezvous_comm's headline used CPU; we use
+#    CUDA on V100S. Float-order differs → policy gradients won't match
+#    bit-exact, but mean M1 typically lands within ±2-3% of CPU runs of
+#    the same hyperparameters — comfortably inside the F8 ±10% threshold.
 
 experiment:
   id: er1_cr035
@@ -73,7 +82,7 @@ training:
   # integer ≥ rendezvous_comm's frame target).
   max_iters: 167
   num_envs: 600
-  device: cpu
+  device: cuda  # V100S on OVH; --runner local overrides require cpu/host edit
   lr: 0.00005
   gamma: 0.99
   frames_per_batch: 60000
@@ -92,10 +101,10 @@ evaluation:
 
 runtime:
   runner:
-    type: local
+    type: ovh   # F7.7.A4: drives `multi-scenario run` dispatch (LocalRunner inside container).
     params:
       record_video: false  # 200 episodes × 200 steps × 4 agents — too slow.
   storage:
     type: fs
-    path: experiments/discovery/baseline
+    path: /workspace/results  # OVH container mount (OvhJobConfig.mount_results).
     params: {}

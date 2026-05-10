@@ -202,31 +202,6 @@ def test_sync_to_local_downloads_all_keys(tmp_path: Path, mocked_s3) -> None:
     assert (local_run / "run_state.json").is_file()
 
 
-def test_sync_from_local_uploads_all_files(tmp_path: Path, mocked_s3) -> None:
-    """sync_from_local uploads every file under local_dir to S3, mirroring tree."""
-    adapter = S3StorageAdapter(_config(), client=mocked_s3)
-    local_run = tmp_path / "s3_demo_s0__20260507_1200"
-    (local_run / "input").mkdir(parents=True)
-    (local_run / "input" / "config.json").write_text("{}", encoding="utf-8")
-    (local_run / "output").mkdir()
-    (local_run / "output" / "metrics.json").write_text('{"x": 1}', encoding="utf-8")
-    (local_run / "logs").mkdir()
-    (local_run / "logs" / "run.log").write_text("log line\n", encoding="utf-8")
-
-    adapter.sync_from_local(local_run, Path("s3_demo_s0__20260507_1200"))
-
-    listed = mocked_s3.list_objects_v2(Bucket=_BUCKET).get("Contents", [])
-    keys = sorted(obj["Key"] for obj in listed)
-    expected = sorted(
-        [
-            f"{_PREFIX}/s3_demo_s0__20260507_1200/input/config.json",
-            f"{_PREFIX}/s3_demo_s0__20260507_1200/output/metrics.json",
-            f"{_PREFIX}/s3_demo_s0__20260507_1200/logs/run.log",
-        ]
-    )
-    assert keys == expected
-
-
 def test_s3_storage_config_yaml_round_trip(tmp_path: Path) -> None:
     """``S3StorageConfig.from_yaml`` round-trips cleanly."""
     cfg_path = tmp_path / "s3.yaml"

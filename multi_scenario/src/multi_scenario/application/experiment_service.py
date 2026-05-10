@@ -111,7 +111,7 @@ class ExperimentService:
             scenario=cfg.scenario.type,
             algorithm=cfg.algorithm.type,
             seed=cfg.experiment.seed,
-            run_timestamp=started_at.strftime("%Y%m%d_%H%M"),
+            run_timestamp=started_at.strftime("%Y%m%d_%H%M%S"),
             metrics=metric_dict,
             config_snapshot={**cfg.scenario.params, **cfg.algorithm.params},
             n_envs=cfg.training.num_envs,

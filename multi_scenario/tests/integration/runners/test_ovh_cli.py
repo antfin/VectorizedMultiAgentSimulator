@@ -61,13 +61,46 @@ def test_ensure_available_silent_when_binary_present() -> None:
     OvhClient(runner=runner).ensure_available()  # must not raise
 
 
-def test_submit_returns_job_id_from_plain_text() -> None:
-    """Plain-text ``ovhai job run`` output → first whitespace token of first line."""
+def test_submit_returns_job_id_from_plain_text_uuid() -> None:
+    """Plain-text fallback: scan all lines for a UUID-shaped token."""
 
     def runner(args, timeout=60):  # noqa: ARG001
-        return _make_proc(stdout="job_42  CREATED  some other text\n")
+        return _make_proc(stdout="49c01e83-faf0-4e1d-a2e7-5534554f8f00  some other text\n")
 
-    assert OvhClient(runner=runner).submit(["--gpu", "V100S", "image"]) == "job_42"
+    out = OvhClient(runner=runner).submit(["--gpu", "V100S", "image"])
+    assert out == "49c01e83-faf0-4e1d-a2e7-5534554f8f00"
+
+
+def test_submit_handles_created_then_uuid_format_smoke_2026_05_09() -> None:
+    """Regression: ovhai 3.35 prints ``Created\\n<uuid>``; pre-fix returned 'Created'."""
+
+    def runner(args, timeout=60):  # noqa: ARG001
+        return _make_proc(stdout="Created\n49c01e83-faf0-4e1d-a2e7-5534554f8f00\n")
+
+    out = OvhClient(runner=runner).submit(["image"])
+    assert out == "49c01e83-faf0-4e1d-a2e7-5534554f8f00"
+
+
+def test_submit_raises_when_no_uuid_in_text() -> None:
+    """Plain-text without any UUID → clean error mentioning the stdout snippet."""
+
+    def runner(args, timeout=60):  # noqa: ARG001
+        return _make_proc(stdout="Created\nbut no UUID here\n")
+
+    with pytest.raises(OvhCliError, match="UUID-shaped"):
+        OvhClient(runner=runner).submit(["image"])
+
+
+def test_submit_passes_output_json_flag() -> None:
+    """F7.7.A5: ``--output json`` is appended to keep the JSON path active."""
+    captured: list = []
+
+    def runner(args, timeout=60):  # noqa: ARG001
+        captured.append(args)
+        return _make_proc(stdout=json.dumps({"id": "job_99"}))
+
+    OvhClient(runner=runner).submit(["--gpu", "V100S", "image"])
+    assert captured[0][-2:] == ["--output", "json"]
 
 
 def test_submit_returns_job_id_from_json() -> None:

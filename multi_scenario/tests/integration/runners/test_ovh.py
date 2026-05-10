@@ -202,7 +202,12 @@ def test_run_happy_path_returns_loaded_result(tmp_path: Path) -> None:
 
 
 def test_submit_args_include_per_run_s3_prefix(tmp_path: Path) -> None:
-    """Per-experiment S3 prefix isolation — `bucket_results/<run_id>` (no trailing slash)."""
+    """Per-RUN S3 prefix isolation (Stage 1) — ``bucket_results/<run_dir.name>``.
+
+    Pre-Stage 1 the prefix was just ``<run_id>`` (``ovh_demo_s0``). Now it
+    includes the timestamp from the run_dir name (``ovh_demo_s0__test``)
+    so re-runs of same exp_id+seed don't clobber.
+    """
     run_dir = _seed_done_run_dir(tmp_path)
     client = _StubClient(states_after_submit=["DONE"])
     runner = OvhRunner(
@@ -215,8 +220,8 @@ def test_submit_args_include_per_run_s3_prefix(tmp_path: Path) -> None:
     )
     runner.run(_exp_cfg(tmp_path), run_dir)
     args = " ".join(client.submit_calls[0])
-    # Per-experiment prefix appears, no trailing slash, mounted ``rwd``.
-    assert "results-bucket@GRA/ovh_demo_s0:/workspace/results:rwd" in args
+    # Per-RUN prefix (timestamped via run_dir.name): isolation per submission.
+    assert f"results-bucket@GRA/{run_dir.name}:/workspace/results:rwd" in args
     assert "results-bucket@GRA/ovh_demo_s0/:" not in args
     # Code volume is read-only lowercase.
     assert "code-bucket@GRA:/workspace/code:ro" in args
@@ -227,6 +232,9 @@ def test_submit_args_include_per_run_s3_prefix(tmp_path: Path) -> None:
     # HOME=/tmp is mandatory for pip install in OVH containers.
     assert "HOME=/tmp" in args
     assert "pip install -e /workspace/code" in args
+    # Container short-circuit: build_run_dir must NOT add a nested timestamp
+    # under the per-run S3 prefix (Smoke 3 lesson, 2026-05-10).
+    assert "MULTI_SCENARIO_USE_STORAGE_ROOT_AS_RUN_DIR=1" in args
 
 
 def test_run_failed_state_raises_with_logs_tail(tmp_path: Path) -> None:

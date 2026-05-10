@@ -16,7 +16,6 @@ Each card shows a status badge derived from :class:`SubmitState`.
 # pylint: disable=wrong-import-position,invalid-name
 
 import traceback
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,14 +23,13 @@ import streamlit as st
 import yaml
 
 from multi_scenario.adapters.logging.file_logger import FileLogger
-from multi_scenario.adapters.runners.local import LocalRunner
 from multi_scenario.application.factories import (
     available_algorithms,
     available_runners,
     available_scenarios,
     runner_spec,
 )
-from multi_scenario.domain.models import ExperimentConfig, RunId
+from multi_scenario.domain.models import ExperimentConfig
 from multi_scenario.frontend.forms import (
     render_algorithm_params,
     render_scenario_params,
@@ -186,17 +184,19 @@ def _try_load_ovh_config() -> tuple[Any, str | None]:
 def _run_ovh_submission(cfg_dict: dict[str, Any], yaml_path_in_repo: str) -> None:
     """Submit an OVH job (no polling); record status + job_id for the panel.
 
+    Caller-specific concerns only — error wrapping (catches Exception →
+    session_state) + post-submission rendering. The actual orchestration
+    lives in :func:`application.submission.submit_to_ovh` so the CLI's
+    ``multi-scenario run --runner ovh`` and this page take the same path
+    (F7.7.A6 hex compliance).
+
     ``yaml_path_in_repo`` is the per-experiment config relative to the repo
     root (NOT ``configs/ovh.yaml`` — that's the OVH deployment cfg loaded
-    separately by ``OvhJobConfig.from_yaml``). The runner concatenates it
-    with ``OvhJobConfig.mount_code`` to derive the in-container path the
-    bash entry point invokes.
+    separately by ``OvhJobConfig.from_yaml``).
     """
     # pylint: disable=import-outside-toplevel
-    from multi_scenario.adapters.runners.ovh import OvhRunner
-    from multi_scenario.adapters.runners.ovh_cli import OvhClient
-    from multi_scenario.adapters.secrets.fernet import FernetSecretsAdapter
     from multi_scenario.application.config_validation import validate_known_types
+    from multi_scenario.application.submission import build_run_dir, submit_to_ovh
 
     cfg = ExperimentConfig.model_validate(cfg_dict)
     validate_known_types(cfg)
@@ -209,15 +209,17 @@ def _run_ovh_submission(cfg_dict: dict[str, Any], yaml_path_in_repo: str) -> Non
         }
         return
 
-    run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-    storage_root = (
-        Path(cfg.runtime.storage.path)
-        if cfg.runtime is not None
-        else Path("experiments")
+    _, run_dir = build_run_dir(cfg)
+    # OVH-specific: ``run_dir`` lives in the container path
+    # (``/workspace/results/<run_dir.name>/``), unreachable from the host. The
+    # local pullback destination must mirror where Run Detail looks for runs:
+    # next to the YAML's experiment folder. Smoke 4 lesson, 2026-05-10.
+    yaml_repo = Path(yaml_path_in_repo) if yaml_path_in_repo else None
+    pullback_dir = (
+        yaml_repo.parent.parent / run_dir.name
+        if yaml_repo and len(yaml_repo.parts) >= 3
+        else Path("experiments") / run_dir.name
     )
-    run_dir = storage_root / run_id.folder_name(timestamp)
-    run_dir.mkdir(parents=True, exist_ok=True)
 
     class _StreamlitLogger:
         # pylint: disable=missing-function-docstring,missing-class-docstring
@@ -233,39 +235,177 @@ def _run_ovh_submission(cfg_dict: dict[str, Any], yaml_path_in_repo: str) -> Non
         def error(self, msg: str) -> None:
             ...
 
-    runner = OvhRunner(
-        ovh_config=ovh_cfg,
-        client=OvhClient(),
-        secrets=FernetSecretsAdapter(),
-        logger=_StreamlitLogger(),
-        yaml_path_in_repo=yaml_path_in_repo,
-    )
     try:
-        job_id = runner.submit(cfg, run_dir)
+        submission = submit_to_ovh(
+            cfg,
+            ovh_cfg=ovh_cfg,
+            yaml_path_in_repo=yaml_path_in_repo,
+            run_dir=run_dir,
+            logger=_StreamlitLogger(),
+        )
     except Exception as exc:  # pylint: disable=broad-except
         st.session_state["submit_submission_status"] = {
             "status": "crashed",
-            "run_id": str(run_id),
+            "run_id": f"{cfg.experiment.id}_s{cfg.experiment.seed}",
             "run_dir": str(run_dir),
             "error": str(exc),
             "traceback": traceback.format_exc(),
         }
         return
 
-    s3_prefix = f"{ovh_cfg.bucket_results}@{ovh_cfg.region}/{run_id}"
     st.session_state["submit_submission_status"] = {
         "status": "submitted",
         "runner": "ovh",
-        "run_id": str(run_id),
-        "run_dir": str(run_dir),
-        "job_id": job_id,
-        "s3_prefix": s3_prefix,
-        "dashboard_url": f"https://www.ovh.com/manager/#/dedicated/aiTraining/jobs/{job_id}",
+        "run_id": str(submission.run_id),
+        "run_dir": str(submission.run_dir),
+        "pullback_dir": str(pullback_dir),
+        "job_id": submission.job_id,
+        "s3_prefix": submission.s3_prefix,
+        "dashboard_url": submission.dashboard_url,
     }
+
+
+def _refresh_ovh_status() -> None:
+    """Poll the OVH job once; if DONE → pullback + (best-effort) regen videos.
+
+    Triggered by the Refresh button in the in-flight submission panel. Uses
+    the per-run S3 prefix established at submit time (Stage 1) so the local
+    destination (``run_dir``) and S3 source share one identifier — pullback
+    materialises the OVH run-folder where Run Detail expects it.
+
+    Failure modes:
+    - Job still running: status stays ``submitted``; user clicks again later.
+    - Job FAILED/KILLED: status becomes ``crashed`` with logs tail.
+    - Pullback fails: status becomes ``crashed`` with the exception; the OVH
+      job itself stays DONE on OVH side, user can retry via CLI.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.adapters.runners.ovh_cli import OvhClient
+    from multi_scenario.application.ovh_pullback import pullback_run_dir
+
+    sub = st.session_state.get("submit_submission_status") or {}
+    if sub.get("status") != "submitted" or sub.get("runner") != "ovh":
+        return  # button shouldn't have been visible — defensive no-op
+
+    job_id = sub["job_id"]
+    # ``pullback_dir`` is the LOCAL destination (set by _run_ovh_submission).
+    # Falling back to ``run_dir`` keeps backwards-compat with older session
+    # state shapes — but that path may be a container path, in which case
+    # pullback will fail (the user can hit Refresh again after a re-submit).
+    run_dir = Path(sub.get("pullback_dir") or sub["run_dir"])
+    client = OvhClient()
+    try:
+        info = client.get(job_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        st.session_state["submit_submission_status"] = {
+            **sub,
+            "status": "crashed",
+            "error": f"status check failed: {exc}",
+            "traceback": traceback.format_exc(),
+        }
+        return
+
+    if not info.is_terminal:
+        # Still running — leave status untouched, just let the rerun show the
+        # latest state string in the panel.
+        sub["state"] = info.state
+        st.session_state["submit_submission_status"] = sub
+        return
+
+    if info.state.upper() != "DONE":
+        # FAILED / KILLED / etc. — fetch a logs tail for the panel.
+        try:
+            tail = client.logs(job_id, tail=200)
+        except Exception:  # pylint: disable=broad-except
+            tail = "(could not fetch logs)"
+        st.session_state["submit_submission_status"] = {
+            **sub,
+            "status": "crashed",
+            "error": f"OVH job ended in state={info.state}",
+            "traceback": tail,
+        }
+        return
+
+    # DONE — pull the run-folder back so Run Detail sees it.
+    ovh_cfg, err = _try_load_ovh_config()
+    if err is not None:
+        st.session_state["submit_submission_status"] = {
+            **sub,
+            "status": "crashed",
+            "error": err,
+            "traceback": "",
+        }
+        return
+    try:
+        result = pullback_run_dir(
+            ovh_cfg=ovh_cfg,
+            run_dir_name=run_dir.name,
+            dest_dir=run_dir,
+            client=client,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        st.session_state["submit_submission_status"] = {
+            **sub,
+            "status": "crashed",
+            "error": f"pullback failed: {exc}",
+            "traceback": traceback.format_exc(),
+        }
+        return
+
+    # Best-effort video regen: container may have been headless; surface a
+    # warning if it fails but don't flip status to crashed (results are
+    # already on disk, user can hit the Run Detail button to retry).
+    # Use ``sys.executable -m multi_scenario.cli`` instead of the
+    # ``multi-scenario`` console script — when streamlit launches outside an
+    # active virtualenv, the script isn't on PATH (Smoke 4 lesson, 2026-05-10).
+    regen_warning: str | None = None
+    if not _videos_present(run_dir):
+        # pylint: disable=import-outside-toplevel
+        import subprocess
+        import sys
+
+        try:
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "multi_scenario.cli",
+                    "regenerate-videos",
+                    str(run_dir),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                regen_warning = (proc.stderr or proc.stdout or "(no output)")[:2000]
+        except OSError as exc:
+            regen_warning = f"could not invoke regenerate-videos: {exc}"
+
+    st.session_state["submit_submission_status"] = {
+        **sub,
+        "status": "done",
+        "pullback_n_downloaded": result.n_downloaded,
+        "pullback_n_skipped": result.n_skipped,
+        "regen_warning": regen_warning,
+    }
+
+
+def _videos_present(run_dir: Path) -> bool:
+    """True iff ``run_dir/videos/`` has ≥1 mp4 — used to skip needless regen."""
+    videos_dir = run_dir / "videos"
+    if not videos_dir.is_dir():
+        return False
+    return any(p.suffix.lower() == ".mp4" for p in videos_dir.iterdir())
 
 
 def _run_local_submission(cfg_dict: dict[str, Any]) -> None:
     """Execute the run synchronously via LocalRunner; record status to session.
+
+    Caller-specific concerns only (st.spinner + session_state UX). The
+    actual orchestration lives in :func:`application.submission.submit_to_local`
+    so the CLI's ``multi-scenario run --runner local`` and this page take
+    the same path (F7.7.A6 hex compliance).
 
     Synchronous v1: blocks the page with ``st.spinner`` for the duration.
     Background-thread + live-tail variant is **deferred** to a future
@@ -274,18 +414,12 @@ def _run_local_submission(cfg_dict: dict[str, Any]) -> None:
     """
     # pylint: disable=import-outside-toplevel
     from multi_scenario.application.config_validation import validate_known_types
+    from multi_scenario.application.submission import build_run_dir, submit_to_local
 
     cfg = ExperimentConfig.model_validate(cfg_dict)
     validate_known_types(cfg)
-    run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-    storage_root = (
-        Path(cfg.runtime.storage.path)
-        if cfg.runtime is not None
-        else Path("experiments")
-    )
-    run_dir = storage_root / run_id.folder_name(timestamp)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    # Local path needs the dir on disk for FileLogger + LocalRunner outputs.
+    run_id, run_dir = build_run_dir(cfg, mkdir=True)
 
     st.session_state["submit_submission_status"] = {
         "status": "running",
@@ -296,12 +430,11 @@ def _run_local_submission(cfg_dict: dict[str, Any]) -> None:
     with st.spinner(f"Running {run_id} — this blocks the tab until done."):
         try:
             logger = FileLogger(run_dir / "logs" / "run.log")
-            runner = LocalRunner(logger=logger)
-            result = runner.run(cfg, run_dir=run_dir)
+            submission = submit_to_local(cfg, run_dir=run_dir, logger=logger)
             st.session_state["submit_submission_status"] = {
                 "status": "done",
-                "run_id": result.run_id,
-                "run_dir": str(run_dir),
+                "run_id": submission.run_id,
+                "run_dir": str(submission.run_dir),
             }
         except Exception as exc:  # pylint: disable=broad-except
             st.session_state["submit_submission_status"] = {
@@ -602,7 +735,15 @@ with st.container(border=True):
                 SubmitState.set_submit_target(submit_target_choice)
                 # No rerun — Step 2 will re-render once and downstream steps
                 # pick up the new target on the next event cycle.
-            runner_params: dict[str, Any] = {"record_video": bool(rec_video)}
+            # Spread loaded runner.params first so YAML fields the form
+            # doesn't render round-trip; only override the ones we render.
+            cfg_runner_params = (
+                cfg_data.get("runtime", {}).get("runner", {}).get("params", {})
+            )
+            runner_params: dict[str, Any] = {
+                **cfg_runner_params,
+                "record_video": bool(rec_video),
+            }
 
             # Storage
             st.markdown("---")
@@ -637,7 +778,13 @@ with st.container(border=True):
             )
             storage_extra: dict[str, Any] = {"path": storage_path}
 
-            # Assemble the live form value
+            # Assemble the live form value. For ``training`` + ``evaluation``
+            # we spread cfg_data first so YAML fields the form doesn't render
+            # (``lr``, ``gamma``, ``share_policy_params``,
+            # ``checkpoint_interval_iters``, …) round-trip cleanly — otherwise
+            # loading any YAML that uses these would falsely flag dirty.
+            cfg_training = cfg_data.get("training", {})
+            cfg_evaluation = cfg_data.get("evaluation", {})
             current = {
                 "experiment": {
                     "id": exp_id,
@@ -648,6 +795,7 @@ with st.container(border=True):
                 "scenario": {"type": scen_type, "params": scen_params},
                 "algorithm": {"type": algo_type, "params": algo_params},
                 "training": {
+                    **cfg_training,
                     "max_iters": int(max_iters),
                     "num_envs": int(num_envs),
                     "device": device,
@@ -656,15 +804,20 @@ with st.container(border=True):
                     "n_minibatch_iters": int(nmb),
                 },
                 "evaluation": {
+                    **cfg_evaluation,
                     "interval_iters": int(ev_int),
                     "episodes": int(ev_eps),
                 },
                 "runtime": {
-                    # ``runner.type`` is **always** ``local`` — whether we
-                    # submit locally or via OVH, LocalRunner is what reads
-                    # this YAML and drives the training loop. The OVH wrap
-                    # is decided at submit time via SubmitState.submit_target().
-                    "runner": {"type": "local", "params": runner_params},
+                    # F7.7.A4: ``runner.type`` drives ``multi-scenario run``
+                    # dispatch. The Submit page seeds ``submit_target`` from
+                    # the YAML on load and the radio overrides per session;
+                    # both end up pointing at the same value, so we emit it
+                    # back into the form output to keep the YAML round-trip
+                    # consistent (loading a runner.type=ovh YAML and clicking
+                    # Save-as-new must produce a runner.type=ovh YAML, not
+                    # silently rewrite to local).
+                    "runner": {"type": submit_target_choice, "params": runner_params},
                     # ``runtime.storage`` is always ``fs`` per StorageSection
                     # schema. S3 details for OVH live separately in
                     # ``configs/ovh.yaml``, loaded by OvhRunner.
@@ -907,23 +1060,49 @@ with st.container(border=True):
             st.info("Running…")
         elif sub_status["status"] == "submitted":
             # OVH path — job has been queued, not yet run/finished.
+            last_state = sub_status.get("state")
+            state_suffix = f" — state `{last_state}`" if last_state else ""
             st.success(
                 f"📤 SUBMITTED: `{sub_status['run_id']}` "
-                f"→ job_id `{sub_status['job_id']}`"
+                f"→ job_id `{sub_status['job_id']}`{state_suffix}"
             )
             info_cols = st.columns(2)
             info_cols[0].caption(f"**S3 prefix** &nbsp; `{sub_status['s3_prefix']}`")
             info_cols[1].markdown(
                 f"[Open in OVH dashboard ↗]({sub_status['dashboard_url']})"
             )
+            refresh_col, _ = st.columns([1, 3])
+            with refresh_col:
+                if st.button(
+                    "🔄 Refresh status",
+                    key="refresh_ovh_status",
+                    use_container_width=True,
+                    help=(
+                        "Re-checks the OVH job. When DONE, pulls results back "
+                        "to the local run folder and regenerates missing videos."
+                    ),
+                ):
+                    _refresh_ovh_status()
+                    st.rerun()
             st.caption(
-                "The job is running asynchronously on OVH. Pull results "
-                "back later via `multi-scenario sweep --follow` or "
-                "`OvhRunner.run()`. After pullback, F7.3 detail page picks up "
-                "the run automatically."
+                "Click Refresh when the OVH dashboard shows the job near DONE. "
+                "On DONE: results auto-pull to the local folder so the Run "
+                "Detail page can read them."
             )
         elif sub_status["status"] == "done":
-            st.success(f"✅ DONE: `{sub_status['run_id']}` → `{sub_status['run_dir']}`")
+            display_dir = sub_status.get("pullback_dir") or sub_status["run_dir"]
+            st.success(f"✅ DONE: `{sub_status['run_id']}` → `{display_dir}`")
+            n_dl = sub_status.get("pullback_n_downloaded")
+            n_sk = sub_status.get("pullback_n_skipped")
+            if n_dl is not None:
+                st.caption(
+                    f"Pullback: {n_dl} files downloaded, {n_sk} skipped (already present)."
+                )
+            regen_warn = sub_status.get("regen_warning")
+            if regen_warn:
+                st.warning("Video regeneration failed — open Run Detail to retry.")
+                with st.expander("regenerate-videos error output"):
+                    st.code(regen_warn)
             st.markdown(
                 f"[Open run detail →](/run_detail?run_id={sub_status['run_id']})"
             )

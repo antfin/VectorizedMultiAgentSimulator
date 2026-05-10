@@ -1,0 +1,39 @@
+{
+  "run_id": "er1_cr035_s0",
+  "exp_id": "er1_cr035",
+  "scenario": "discovery",
+  "algorithm": "mappo",
+  "seed": 0,
+  "run_timestamp": "20260510_144329",
+  "metrics": {
+    "M1_success_rate": 0.32499998807907104,
+    "M2_avg_return": 5.9582014083862305,
+    "M3_steps": 200.0,
+    "M4_collisions": 6.170000076293945,
+    "M5_tokens": null,
+    "M6_coverage_progress": 0.8662499785423279,
+    "M7_sample_efficiency": null,
+    "M8_agent_utilization": null,
+    "M9_spatial_spread": null
+  },
+  "config_snapshot": {
+    "n_agents": 4,
+    "n_targets": 4,
+    "agents_per_target": 2,
+    "lidar_range": 0.35,
+    "covering_range": 0.35,
+    "use_agent_lidar": true,
+    "n_lidar_rays_entities": 15,
+    "n_lidar_rays_agents": 12,
+    "targets_respawn": false,
+    "shared_reward": true,
+    "max_steps": 200,
+    "agent_collision_penalty": -0.01,
+    "covering_rew_coeff": 1.0,
+    "time_penalty": -0.01,
+    "lmbda": 0.95
+  },
+  "n_envs": 600,
+  "n_eval_episodes": 200,
+  "convergence_frame": null
+}

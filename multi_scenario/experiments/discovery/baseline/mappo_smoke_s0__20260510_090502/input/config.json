@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "id": "mappo_smoke",
+    "seed": 0,
+    "name": "Discovery / MAPPO smoke",
+    "description": "1-iter, 1-env smoke run used to validate the F2.x adapter slice."
+  },
+  "scenario": {
+    "type": "discovery",
+    "params": {
+      "n_agents": 2,
+      "n_targets": 2,
+      "agents_per_target": 2,
+      "covering_range": 0.25,
+      "targets_respawn": false,
+      "shared_reward": true,
+      "max_steps": 10
+    }
+  },
+  "algorithm": {
+    "type": "mappo",
+    "params": {}
+  },
+  "training": {
+    "max_iters": 1,
+    "num_envs": 1,
+    "device": "cpu",
+    "lr": 0.0003,
+    "gamma": 0.99,
+    "frames_per_batch": 50,
+    "minibatch_size": 25,
+    "n_minibatch_iters": 1,
+    "share_policy_params": true,
+    "checkpoint_interval_iters": 10
+  },
+  "evaluation": {
+    "interval_iters": 1,
+    "episodes": 1
+  },
+  "runtime": {
+    "runner": {
+      "type": "local",
+      "params": {
+        "record_video": false
+      }
+    },
+    "storage": {
+      "type": "fs",
+      "path": "experiments/discovery/baseline",
+      "params": {}
+    }
+  }
+}

@@ -15,6 +15,7 @@ ovhai's OAuth session, so the user never needs separate AWS-style S3 keys.
 """
 
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -138,8 +139,15 @@ class OvhClient:
         )
 
     def submit(self, args: Sequence[str]) -> str:
-        """Run ``ovhai job run <args>``; return the job ID parsed from output."""
-        res = self._run(["job", "run", *args])
+        """Run ``ovhai job run <args> --output json``; return the job ID.
+
+        Forces ``--output json`` so the parser reads the structured response
+        instead of the text-mode "Created\\n<uuid>" stream — the smoke run
+        on 2026-05-09 surfaced a parse bug where "Created" was taken as the
+        job id (the actual UUID was on the second line). JSON path is
+        unambiguous and forward-compatible with future ovhai output tweaks.
+        """
+        res = self._run(["job", "run", *args, "--output", "json"])
         if res.returncode != 0:
             raise OvhCliError(
                 f"ovhai job run failed (rc={res.returncode}): {res.stderr.strip()}"
@@ -290,17 +298,65 @@ class OvhClient:
                 )
             return local.read_bytes()
 
+    def bucket_put_object(
+        self, region: str, bucket: str, key: str, body: bytes
+    ) -> None:
+        """Upload one in-memory blob to ``<bucket>/<key>`` via ``ovhai bucket object upload``.
+
+        Mirrors :meth:`bucket_get_object` for the put direction. Used by
+        :class:`CodeUploader` (F7.7.A5) so ``multi-scenario upload-code``
+        works with only ``ovhai login`` — no AWS-style S3 credentials.
+
+        Implementation: stages ``body`` to a tempfile shaped like ``<key>``
+        (so ovhai picks the right object name), then ``--remove-prefix``
+        strips the temp dir off the upload path. Per-call subprocess cost
+        is ~100ms; ~10s for the full ~100-file upload-code corpus.
+        """
+        with tempfile.TemporaryDirectory(prefix="ovh_put_") as tmpdir:
+            staged = Path(tmpdir) / key
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(body)
+            # ``--remove-prefix`` peels off the tmpdir root (with trailing /)
+            # so the uploaded object lands at <bucket>/<key>.
+            res = self._run(
+                [
+                    "bucket",
+                    "object",
+                    "upload",
+                    f"{bucket}@{region}",
+                    str(staged),
+                    "--remove-prefix",
+                    f"{tmpdir}/",
+                ]
+            )
+            if res.returncode != 0:
+                raise OvhCliError(
+                    f"ovhai bucket object upload {key} failed "
+                    f"(rc={res.returncode}): {res.stderr.strip()}"
+                )
+
     def _run(
         self, args: Sequence[str], timeout: int = 60
     ) -> subprocess.CompletedProcess:
         return self._runner([self._binary, *args], timeout=timeout)
 
 
+#: UUID-ish pattern: 8-4-4-4-12 hex with dashes (matches ``ovhai`` job IDs).
+_JOB_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
 def _parse_job_id(stdout: str) -> str:
     """Extract the job ID from ``ovhai job run`` output.
 
-    The CLI prints one line per submitted job in the form ``<id>  ...``.
-    Newer versions print JSON when ``--output json`` is set; we accept either.
+    Two formats observed:
+
+    - **JSON** (when ``--output json`` is set; the canonical path post-F7.7.A5):
+      ``{"id": "<uuid>", ...}`` or ``[{"id": "<uuid>"}]``.
+    - **Plain text** (legacy / fallback): the CLI prints ``Created\\n<uuid>\\n``.
+      The first line is a status word ("Created"), the second is the UUID.
+      The pre-F7.7.A5 parser took the first whitespace token of the first
+      line and ended up returning ``"Created"`` (smoke run 2026-05-09
+      caught this). Now we scan all lines for a UUID-shaped token.
     """
     text = stdout.strip()
     if not text:
@@ -317,8 +373,15 @@ def _parse_job_id(stdout: str) -> str:
         if isinstance(record, dict) and "id" in record:
             return str(record["id"])
         raise OvhCliError(f"ovhai job run JSON missing 'id' field: {record}")
-    # Plain-text path: first whitespace-separated token of the first line.
-    return text.splitlines()[0].split()[0]
+    # Plain-text path: scan every line for a UUID-shaped token. Survives
+    # leading status words ("Created") and trailing blank lines.
+    for line in text.splitlines():
+        for token in line.split():
+            if _JOB_ID_RE.match(token):
+                return token
+    raise OvhCliError(
+        f"ovhai job run produced text without a UUID-shaped job id: {text[:200]}"
+    )
 
 
 def _job_info_from_json(stdout: str) -> JobInfo:

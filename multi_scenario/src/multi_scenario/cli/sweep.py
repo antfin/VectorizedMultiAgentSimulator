@@ -186,7 +186,7 @@ def _expand_cells(
     we still build a placeholder for consistency.
     """
     del runner_kind  # currently same expansion either way; reserved for future divergence.
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     cells: list[tuple[ExperimentConfig, Path, Path]] = []
     for yaml_path in yaml_paths:
         base_cfg = ExperimentConfig.from_yaml(yaml_path)
@@ -277,7 +277,7 @@ def _sweep_run_ovh(
 
     if not follow:
         return
-    _follow_ovh_jobs(job_ids, OvhClient())
+    _follow_ovh_jobs(job_ids, OvhClient(), ovh_cfg=ovh_cfg)
 
 
 def _wait_for_capacity(
@@ -296,8 +296,19 @@ def _wait_for_capacity(
 def _follow_ovh_jobs(
     job_ids: list[tuple[str, ExperimentConfig, Path]],
     client: Any,
+    *,
+    ovh_cfg: Any = None,
 ) -> None:
-    """Poll ``ovhai job get`` until every submitted job reaches a terminal state."""
+    """Poll ``ovhai job get`` until every submitted job reaches a terminal state.
+
+    When ``ovh_cfg`` is supplied, each DONE job triggers a Stage 2 pullback —
+    the OVH-side run-folder is materialised at the same local path local runs
+    use, so post-sweep tooling (Streamlit, regenerate-videos, eval) sees OVH
+    cells indistinguishably from local cells.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.application.ovh_pullback import pullback_run_dir
+
     pending = list(job_ids)
     while pending:
         still_running = []
@@ -307,6 +318,26 @@ def _follow_ovh_jobs(
                 run_id = f"{cfg.experiment.id}_s{cfg.experiment.seed}"
                 marker = "DONE" if info.state.upper() == "DONE" else f"{info.state}"
                 typer.echo(f"  {marker} {run_id} → {run_dir}")
+                if info.state.upper() == "DONE" and ovh_cfg is not None:
+                    try:
+                        result = pullback_run_dir(
+                            ovh_cfg=ovh_cfg,
+                            run_dir_name=run_dir.name,
+                            dest_dir=run_dir,
+                            client=client,
+                        )
+                        typer.echo(
+                            f"    pulled {result.n_downloaded} files "
+                            f"({result.n_skipped} skipped) → {run_dir}"
+                        )
+                    # pylint: disable=broad-except
+                    except Exception as exc:
+                        # Don't stall the whole sweep on a single pullback hiccup;
+                        # surface the failure and let the user retry manually.
+                        typer.echo(
+                            f"    ✗ pullback failed for {run_id}: {exc}",
+                            err=True,
+                        )
             else:
                 still_running.append((job_id, cfg, run_dir))
         pending = still_running
