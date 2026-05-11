@@ -1,0 +1,9 @@
+version: v1_global
+author: rendezvous_comm
+date: 2026-04-16
+description: >
+  L4 ablation — v1's verbose content (research history, task description,
+  coordination guidance, distance-scale warnings, magnitude tips) rewritten
+  for replace+global mode. Single state dict instead of v1's dual
+  reward_state/obs_state; signature is `compute_reward` (not bonus).
+  Use this to test whether verbose prompt context helps vs paper-minimal v2.

@@ -36,6 +36,11 @@ from multi_scenario.domain.lero.candidate import (
     CandidateResult,
     Verdict,
 )
+from multi_scenario.domain.lero.codegen import (
+    ALLOWED_IMPORTS,
+    extract_candidates,
+    validate_function,
+)
 from multi_scenario.domain.lero.exceptions import (
     CandidateGenerationFailed,
     FairnessViolation,
@@ -43,16 +48,27 @@ from multi_scenario.domain.lero.exceptions import (
     LlmCostCapExceeded,
 )
 from multi_scenario.domain.lero.llm_completion import LlmCompletion, LlmUsage
+from multi_scenario.domain.lero.strategy import SignalTier, StrategyCard
 from multi_scenario.domain.lero.summary import FallbackEntry, LeroRunSummary
 from multi_scenario.domain.lero.traces import PromptTrace, ReasoningTrace, ResponseTrace
+from multi_scenario.domain.lero.whitelist import (
+    AllowedKeysDict,
+    LOCAL_ALLOWED_KEYS,
+    LOCAL_FORBIDDEN_KEYS,
+)
 
 
 __all__ = [
+    "ALLOWED_IMPORTS",
+    "AllowedKeysDict",
     "Candidate",
     "CandidateCode",
     "CandidateGenerationFailed",
     "CandidateMetrics",
     "CandidateResult",
+    "extract_candidates",
+    "LOCAL_ALLOWED_KEYS",
+    "LOCAL_FORBIDDEN_KEYS",
     "FairnessViolation",
     "FallbackEntry",
     "LeroError",
@@ -63,5 +79,8 @@ __all__ = [
     "PromptTrace",
     "ReasoningTrace",
     "ResponseTrace",
+    "SignalTier",
+    "StrategyCard",
+    "validate_function",
     "Verdict",
 ]

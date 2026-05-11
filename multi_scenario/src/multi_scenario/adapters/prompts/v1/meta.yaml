@@ -1,0 +1,7 @@
+version: v1
+author: rendezvous_comm
+date: 2026-04-01
+description: >
+  Initial LERO prompt set for VMAS Discovery scenario.
+  Generates hybrid reward functions and observation enhancement functions.
+  Uses string.Template substitution ($variable syntax).

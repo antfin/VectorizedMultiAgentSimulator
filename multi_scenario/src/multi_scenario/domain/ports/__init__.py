@@ -13,17 +13,24 @@ from .cost_ledger import CostLedger
 from .llm import LlmClient
 from .logger import Logger
 from .metrics import MetricsBundle
+from .prompt_composer import ComposedPrompt, PromptComposer
+from .prompt_renderer import PromptRenderer
 from .runner import Runner
 from .scenario import Scenario
 from .storage import Storage
+from .trace_writer import TraceWriter
 
 __all__ = [
     "Algorithm",
+    "ComposedPrompt",
     "CostLedger",
     "LlmClient",
     "Logger",
     "MetricsBundle",
+    "PromptComposer",
+    "PromptRenderer",
     "Runner",
     "Scenario",
     "Storage",
+    "TraceWriter",
 ]

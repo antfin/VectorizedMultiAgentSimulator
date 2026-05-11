@@ -1,0 +1,7 @@
+version: v2_fewshot_k2_local
+author: rendezvous_comm
+date: 2026-04-17
+description: >
+  LOCAL-only observation prompt for k=2 rendezvous. Only advertises
+  lidar_targets, lidar_agents, agent_pos/vel/idx. Explicitly warns
+  NOT to use global state keys. Fair comparison to ER1/ER2/ER3.

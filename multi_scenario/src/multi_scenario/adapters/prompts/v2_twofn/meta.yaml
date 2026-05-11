@@ -1,0 +1,9 @@
+version: v2_twofn
+author: rendezvous_comm
+date: 2026-04-16
+description: >
+  L21 ablation — asks the LLM to structure compute_reward as
+  alpha * agent_reward(state) + (1 - alpha) * global_reward(state)
+  via two internal helper functions. Tests hypothesis H11: does explicit
+  local/team credit decomposition improve reward design?
+  Pure prompt-level change — no codegen or scenario_patch changes needed.

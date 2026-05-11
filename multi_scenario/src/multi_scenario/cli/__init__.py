@@ -21,6 +21,7 @@ Public surface:
 from . import (  # noqa: F401
     consolidate,
     eval_run,
+    inspect_lero,
     regenerate_videos,
     resume,
     run,

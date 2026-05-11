@@ -37,7 +37,7 @@ class CandidateGenerationFailed(LeroError):
     """
 
 
-class FairnessViolation(LeroError):
+class FairnessViolation(LeroError, KeyError):
     """Raised by ``AllowedKeysDict`` when LLM code reads a forbidden key.
 
     Used in CTDE-fair (``local`` observation mode) runs to enforce that
@@ -46,4 +46,11 @@ class FairnessViolation(LeroError):
     state via dictionary access. The orchestrator treats this as an
     invalid candidate (same as a NaN-action crash) and the fallback
     chain skips to the next-ranked candidate.
+
+    Multiple inheritance from :class:`KeyError` is intentional: LLM
+    code commonly uses ``state[key]`` patterns and catches ``KeyError``
+    defensively. Subclassing both means ``except FairnessViolation``,
+    ``except LeroError``, and ``except KeyError`` all catch the same
+    exception, matching rendezvous_comm's semantics so the byte-parity
+    test for downstream LLM code paths holds.
     """

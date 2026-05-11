@@ -1,0 +1,7 @@
+version: v2
+author: rendezvous_comm
+date: 2026-04-05
+description: >
+  Paper-faithful minimal prompts. Matches LERO paper style:
+  short role description, env code injection, simple function signatures.
+  No research context, no technical warnings, no magnitude guidance.
