@@ -77,8 +77,10 @@ def test_runtime_when_present(tmp_path: Path):
 
 
 def test_from_yaml_parses_example(repo_root: Path):
-    """The shipped docs/example_config.yaml round-trips through ExperimentConfig."""
-    cfg = ExperimentConfig.from_yaml(repo_root / "docs" / "example_config.yaml")
+    """The shipped docs/getting_started/example_config.yaml round-trips through ExperimentConfig."""
+    cfg = ExperimentConfig.from_yaml(
+        repo_root / "docs" / "getting_started" / "example_config.yaml"
+    )
     assert cfg.experiment.id == "disc_baseline_smoke"
     assert cfg.scenario.type == "discovery"
     assert cfg.algorithm.type == "mappo"

@@ -64,7 +64,9 @@ def test_implements_storage_protocol():
 def test_save_load_config_roundtrip(repo_root: Path, tmp_path: Path):
     """ExperimentConfig parsed from YAML round-trips through disk."""
     storage = LocalStorageAdapter()
-    cfg = ExperimentConfig.from_yaml(repo_root / "docs" / "example_config.yaml")
+    cfg = ExperimentConfig.from_yaml(
+        repo_root / "docs" / "getting_started" / "example_config.yaml"
+    )
     storage.save_config(tmp_path, cfg)
     assert (tmp_path / "input" / "config.json").exists()
     assert storage.load_config(tmp_path) == cfg

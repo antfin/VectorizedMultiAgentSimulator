@@ -43,6 +43,11 @@ playwright = [
     "playwright>=1.40",
     "pytest-playwright>=0.4",
 ]
+# F10.1 — opt-in doc-site build. ``mkdocs serve`` for local preview,
+# ``mkdocs build --strict`` for CI (link integrity).
+docs = [
+    "mkdocs-material>=9.5",
+]
 
 [project.scripts]
 multi-scenario = "multi_scenario.cli:main"

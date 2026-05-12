@@ -1308,24 +1308,37 @@ adapters/prompt_composers/
 ### Phase 10 — Docs, naming, extraction
 
 > **Locked:** new name = `coopvmas`, GitHub personal account, license = GPL-v3 (matches parent VMAS), fresh-import extraction (no history preservation), Streamlit FE stays in same repo, .env at project root.
+>
+> **Audit update (2026-05-12):** plan re-validated after F8.4 Phase 6 + Phase 9 (F9.x including F9.8 widgets) + recent test work (dispatch_matrix, --json CLI, Playwright opt-in) landed. Key adjustments below: F10.3 names updated, F10.7 effort upgraded from XS to M (609 refs found), F10.1 scope expanded with new docs, new sub-features F10.9 (rendezvous_comm history port) + F10.10 (results gitignore). User-review checkpoints flagged on F10.2/F10.3/F10.10.
 
 #### F10.1 — mkdocs-material wiki — M
 
 - `mkdocs.yml` + `docs/` reorganised into topic-per-file structure under `docs/{getting_started, concepts, scenarios, cli, frontend, operations, results_analysis, ports, reproducibility}/`. Full file list in `docs/_drafts/F8_F11_plan_draft.md` Section D.
 - `mkdocs build --strict` runs in CI to catch broken links.
 - `docs/concepts/lero.md` ported and adapted from `rendezvous_comm/docs/lero.md` for the coopvmas codebase + Section C of the draft (architecture deep-dive).
+- **New (post-F8.4/F9):** fold in `docs/f8_4_phase6_comparison.md` → `docs/reproducibility/lero_s3b_local.md`; add a `docs/getting_started/submitting_experiments.md` documenting the Streamlit Submit workflow as the canonical entry point (user locked Streamlit-only post-extraction); add `docs/cli/run.md` covering `--json` output for scripted submissions; add `docs/frontend/submit_page.md` covering F9.8 LERO/LLM widgets + auto-poll + pullback lifecycle.
 
-#### F10.2 — Rewrite README as wiki landing page — S
+#### F10.2 — Rewrite README as wiki landing page — S [USER-REVIEW CHECKPOINT]
 
 Replaces the F0.6 stub. README links to every top-level `docs/` section; no orphans.
 
-#### F10.3 — Pre-extraction YAML cleanup — XS
+**User-review gate**: I draft, user reviews in depth before extraction. Must surface every doc — no orphaned wiki pages.
 
-User asked: before extracting to coopvmas, **delete every per-experiment YAML except the canonical ER1 + S3b-local references** (created at F8.1 / F8.4 with cleaner names). Goal: the new repo ships with ONLY the two reference configs that prove the reproducibility story; everything else (smoke variants, debugging runs, OVH-pre-flight tests, etc.) gets deleted.
+#### F10.3 — Pre-extraction YAML cleanup — XS [USER-REVIEW CHECKPOINT]
 
-- Files to delete: `experiments/<scenario>/*/configs/*.yaml` EXCEPT `experiments/discovery/baseline/configs/baseline.yaml` and `experiments/discovery/lero/configs/lero_obs_only_local.yaml` (final names TBD with user at F8.1/F8.4).
+User asked: before extracting to coopvmas, **delete every per-experiment YAML except the canonical references** that prove the reproducibility story.
+
+**Canonical references after F8.4 (names settled, plan-original `lero_obs_only_local.yaml` superseded):**
+
+- `experiments/discovery/baseline/configs/baseline.yaml` — ER1 baseline reference (non-LERO).
+- `experiments/discovery/lero/configs/lero_s3b_local.yaml` — rendezvous_comm S3b-local port (cr=0.25, ms=400); Phase 5a hit M1=0.795 vs rendezvous_comm 0.88.
+- `experiments/discovery/lero/configs/lero_s3b_local_er1params.yaml` — Phase 5b apples-to-apples ER1-parameter LERO; M1=0.570 vs ER1 baseline 0.405 (+40% relative).
+
+**User-review gate**: user confirms 2 vs 3 references (er1params variant is the F8.4 science result — keeping it preserves the comparison; dropping it makes the new repo lean) before any file deletion.
+
+- Files to delete: every OTHER YAML under `experiments/<scenario>/*/configs/` (smoke variants, OVH-preflight tests, per-algorithm scratch, F8.4 Phase 3 smoke YAMLs).
 - Smoke YAMLs used as CI fixtures stay (they're test fixtures, not dev scratch). If we have CI smoke YAMLs in `tests/fixtures/`, those are fine.
-- Run dirs under `experiments/*/` (results from prior runs) — wipe.
+- Run dirs under `experiments/*/` (results from prior runs) — wipe (covered by F10.10's gitignore review).
 
 #### F10.4 — CI pipeline — S
 
@@ -1335,6 +1348,7 @@ User asked: before extracting to coopvmas, **delete every per-experiment YAML ex
 #### F10.5 — Reproducibility test (general, not LERO-specific) — S
 
 - Run the same config with the same seed twice; assert all metrics agree within tolerance. Lives in `tests/reproducibility/`. Distinct from F8 (which is reproducing rendezvous_comm); F10.5 is general "same-config-same-seed → same numbers".
+- **Audit note**: `tests/reproducibility/test_compare_to_reference.py` already exists but tests F8.2's `compare_to_reference.py` threshold-logic — different contract. F10.5's specific "same-config-same-seed-byte-equal" test still needs writing.
 
 #### F10.6 — Repo extraction to coopvmas — M (manual)
 
@@ -1354,9 +1368,10 @@ User asked: before extracting to coopvmas, **delete every per-experiment YAML ex
    - First-run validation in the new repo: `pre-commit run --all-files` green, `pytest` green, `mkdocs serve` works locally.
 3. **User copies the zip + executes EXTRACT.md.** I'm not in the loop after step 2; user tells me when the new repo is live and we resume from there.
 
-#### F10.7 — Comment cleanup pass — XS
+#### F10.7 — Comment cleanup pass — M [audit-updated from XS]
 
 - Sweep all source files (everything *outside* the planning markdowns) for comments that reference phase or feature IDs (`F0.1`, `F2.4`, `Phase 9`, etc.) or section anchors from this plan (`§3.5.2`, etc.). These references are scaffolding from the build process — useful during development to trace which feature added what, useless and confusing once the project is extracted to its own repo (where this plan no longer lives).
+- **Audit count (2026-05-12)**: 609 matches across `src/` `tests/` `pyproject.toml`. Effort bumped from "XS" to "M" — realistic ~3-4h scripted sweep + spot-check pass. Mechanise via `git ls-files | xargs sed` for trivial deletes; manual review for comments where the phase ref is interleaved with substantive prose.
 - For each comment found: if there is a substantive WHY behind the reference, keep that prose and drop the phase pointer. If the comment was *only* a phase pointer, delete the comment entirely. Per project style (CLAUDE.md) — comments justify *why*, not *which-feature-added-this*.
 - Files in scope: `src/**`, `tests/**`, `docs/**` (non-markdown), `pyproject.toml`, `.pre-commit-config.yaml`, `.markdownlint.json`, `.gitignore`, YAML configs under `experiments/**`. Out of scope: `plan.md`, `implementation_plan.md`, and any other markdown documents in `docs/` whose purpose is planning/architectural narrative — those are allowed to keep phase references.
 - **Demo:** `grep -rnE 'F[0-9]+\.[0-9]+|Phase [0-9]+|§[0-9]' src tests pyproject.toml .pre-commit-config.yaml .markdownlint.json .gitignore docs experiments --include='*.py' --include='*.toml' --include='*.yaml' --include='*.yml' --include='*.json' --include='.gitignore' --include='.pre-commit-config.yaml'` returns no matches.
@@ -1381,7 +1396,41 @@ Some artefacts produced *during* development serve a one-time purpose — inform
 - **`docs/operations/ovh_setup.md` + `docs/operations/ovh_smoke_checklist.md`** — operational user docs (evergreen).
 - **`configs/ovh.yaml`** — user-editable production config.
 
-**Order:** F10.7 (comment cleanup) → F10.8 (scaffolding cleanup) → F10.3 (YAML cleanup) → F10.6 (extraction).
+#### F10.9 — Port rendezvous_comm experiment history into a reference doc — S [NEW, audit-added]
+
+User asked: distil `rendezvous_comm/docs/lero.md` + the empirical results scattered across `rendezvous_comm/results/` into a SINGLE reference document inside this repo. User will cite from this doc when writing the new repo's reports (Phase 6 comparison, per-scenario campaign), then **delete the file** after reproducing the relevant results in the new repo.
+
+- Source: `rendezvous_comm/docs/lero.md` (canonical single-source-of-truth doc per project memory 2026-04-16) + `rendezvous_comm/results/*` summary tables.
+- Destination: `docs/_drafts/rendezvous_comm_history.md` (under `_drafts/` so F10.8 cleanup picks it up when the user signals "done with citations").
+- Content: LERO Phase 4 results table (n=3 t=3 k=1 numbers, ms200/ms400 ablation), infra lessons (max_steps bug, env-leak Fernet, M8 covering_reward fix, etc.), pending experiments user planned but never ran.
+- Format: markdown with citation-friendly section anchors (the user pulls quotes from it into new-repo reports).
+
+#### F10.10 — Pre-extraction .gitignore review for results — S [NEW, user-review checkpoint]
+
+User asked: review WHAT currently gets committed to git under `experiments/*/results/`, `output/`, and friends. Decide which artefact types are worth versioning vs ignoring in the new repo.
+
+**My pass (proposal)**:
+
+- Inventory every glob currently matched under `experiments/`, `output/`, `results/` across recent runs (sizes, file types, science-load-bearing or not).
+- Propose `.gitignore` patterns: typically ignore everything under `experiments/*/results/`, `output/`, `*.pt` (checkpoints), `videos/` (regenerable). Keep YAML configs + `.gitkeep` placeholders for required dirs.
+- Highlight grey-area items (eval_episodes.json, run_state.json, scalars CSVs) for user decision.
+
+**User-review gate**: user reviews the proposed gitignore + decides what to keep on commits before extraction. Lives in `EXTRACT.md` (F10.6).
+
+**Order (revised after audit):**
+
+1. **F10.5** (repro test, smallest, no review needed) — closes the F10.5 missing-test contract first.
+2. **F10.9** (rendezvous_comm history port) — write the reference doc the user wants to cite from in new-repo reports.
+3. **F10.1** (mkdocs structure + ports docs).
+4. **F10.2** (README rewrite) → **USER REVIEWS** before extraction.
+5. **F10.4** (CI workflows template for new repo).
+6. **F10.7** (comment cleanup, 609 refs).
+7. **F10.8** (scaffolding cleanup).
+8. **F10.10** (gitignore review) → **USER REVIEWS** before extraction.
+9. **F10.3** (YAML cleanup, final canonical list) → **USER REVIEWS** before extraction.
+10. **F10.6** (zip + EXTRACT.md, user-executed).
+
+**Total Phase 10 effort (audit-revised)**: ~17-21h dev + 3 user-review checkpoints.
 
 ---
 
@@ -1398,6 +1447,7 @@ After F8 + F9 + F10 land in coopvmas, run the full discovery experiment campaign
 Adapt ER1 + LERO to navigation. Identify scenario-specific tweaks (different success_predicate semantics, different default params).
 
 #### F11.3 — Transport campaign — TBD
+
 #### F11.4 — Flocking campaign — TBD
 
 Note: flocking has no natural M1 success rate; campaign uses M2/M9 instead.

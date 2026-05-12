@@ -1,0 +1,109 @@
+site_name: multi_scenario
+site_description: Cooperative multi-agent RL on VMAS — ER1 + LERO with Streamlit UI.
+repo_url: https://github.com/afin/coopvmas  # placeholder until extraction
+edit_uri: ""
+
+# csv_format_decision.md is F10.8 cleanup-pending (one-shot decision
+# artifact); excluded from the site build. _drafts/ is left in: the
+# rendezvous_comm history doc is referenced from operations/ +
+# reproducibility/ as a citation source, gets deleted at F10.8 once
+# coopvmas has reproduced the relevant results.
+exclude_docs: |
+  csv_format_decision.md
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+# Treat any broken intra-site link as a build error.
+# Run with ``mkdocs build --strict`` in CI.
+strict: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - getting_started/index.md
+      - Installation: getting_started/installation.md
+      - Submitting experiments: getting_started/submitting_experiments.md
+      - Example config: getting_started/example_config.yaml
+  - Concepts:
+      - concepts/index.md
+      - Hex architecture: concepts/hex_architecture.md
+      - Metrics M1–M9: concepts/metrics.md
+      - LERO: concepts/lero.md
+      - Reward safeguards: concepts/reward_safeguards.md
+  - Scenarios:
+      - scenarios/index.md
+      - Discovery: scenarios/discovery.md
+      - Navigation: scenarios/navigation.md
+      - Transport: scenarios/transport.md
+      - Flocking: scenarios/flocking.md
+  - CLI:
+      - cli/index.md
+      - "multi-scenario run": cli/run.md
+      - "multi-scenario inspect-lero": cli/inspect_lero.md
+      - "multi-scenario eval": cli/eval.md
+      - "multi-scenario regenerate-videos": cli/regenerate_videos.md
+      - "multi-scenario sweep": cli/sweep.md
+      - "multi-scenario upload-code": cli/upload_code.md
+      - "multi-scenario validate": cli/validate.md
+  - Frontend:
+      - frontend/index.md
+      - Submit page: frontend/submit_page.md
+      - Experiments page: frontend/experiments_page.md
+      - Run detail page: frontend/run_detail_page.md
+      - Comparison page: frontend/comparison_page.md
+  - Operations:
+      - operations/index.md
+      - OVH setup: operations/ovh_setup.md
+      - OVH smoke checklist: operations/ovh_smoke_checklist.md
+      - Secrets + env: operations/secrets_and_env.md
+      - Testing: operations/testing.md
+      - Lessons learned: operations/lessons_learned.md
+  - Results analysis:
+      - results_analysis/index.md
+      - Streamlit dashboard: results_analysis/streamlit_dashboard.md
+      - CSV aggregation: results_analysis/csv_aggregation.md
+  - Ports:
+      - ports/index.md
+  - Reproducibility:
+      - reproducibility/index.md
+      - "LERO S3b-local reproduction": reproducibility/lero_s3b_local_reproduction.md
+      - Determinism test: reproducibility/determinism_test.md
+      - "rendezvous_comm history (scaffolding)": _drafts/rendezvous_comm_history.md

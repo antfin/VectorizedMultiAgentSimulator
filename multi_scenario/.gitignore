@@ -18,6 +18,9 @@ env/
 .pytest_cache/
 .playwright-mcp/
 .ruff_cache/
+
+# mkdocs build output
+/site/
 .mypy_cache/
 .coverage
 coverage.xml
