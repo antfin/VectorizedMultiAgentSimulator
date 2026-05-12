@@ -50,6 +50,15 @@ def run(
             "of an OVH-targeted YAML (or vice versa) without editing it."
         ),
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help=(
+            "Emit a single JSON record as the final stdout line: "
+            "``{run_id, job_id?, run_dir, s3_prefix?, dashboard_url?, runner}``. "
+            "Use for scripted submissions / programmatic pipelines."
+        ),
+    ),
 ) -> None:
     """Execute one experiment run from a YAML config file."""
     cfg = ExperimentConfig.from_yaml(yaml_path)
@@ -64,13 +73,16 @@ def run(
         )
 
     if runner_type == "local":
-        _dispatch_local(cfg)
+        _dispatch_local(cfg, emit_json=json_output)
     else:
-        _dispatch_ovh(cfg, yaml_path)
+        _dispatch_ovh(cfg, yaml_path, emit_json=json_output)
 
 
-def _dispatch_local(cfg: ExperimentConfig) -> None:
+def _dispatch_local(cfg: ExperimentConfig, *, emit_json: bool = False) -> None:
     """Local path: build run_dir (mkdir), surface cuda-availability errors, dispatch."""
+    # pylint: disable=import-outside-toplevel
+    import json as _json
+
     # Surface cuda-on-host-without-CUDA *before* mkdir — otherwise the user
     # hits an opaque "Read-only filesystem" error if the YAML's storage path
     # is a container mount (e.g. /workspace/results) that doesn't exist
@@ -80,10 +92,24 @@ def _dispatch_local(cfg: ExperimentConfig) -> None:
     _, run_dir = build_run_dir(cfg, mkdir=True)
     logger = FileLogger(run_dir / "logs" / "run.log")
     result = submit_to_local(cfg, run_dir=run_dir, logger=logger)
-    typer.echo(f"DONE: {result.run_id} -> {result.run_dir}")
+    if emit_json:
+        # B: parseable line for scripted / chat-trigger workflows.
+        typer.echo(
+            _json.dumps(
+                {
+                    "runner": "local",
+                    "run_id": str(result.run_id),
+                    "run_dir": str(result.run_dir),
+                }
+            )
+        )
+    else:
+        typer.echo(f"DONE: {result.run_id} -> {result.run_dir}")
 
 
-def _dispatch_ovh(cfg: ExperimentConfig, yaml_path: Path) -> None:
+def _dispatch_ovh(
+    cfg: ExperimentConfig, yaml_path: Path, *, emit_json: bool = False
+) -> None:
     """OVH path: load configs/ovh.yaml + resolve repo-relative YAML + submit.
 
     Phase 9 (#12): auto-uploads the local code tree when the bucket's
@@ -125,10 +151,29 @@ def _dispatch_ovh(cfg: ExperimentConfig, yaml_path: Path) -> None:
         run_dir=run_dir,
         logger=_StdoutLogger(),
     )
-    typer.echo(f"SUBMITTED: {submission.run_id} -> job_id={submission.job_id}")
-    typer.echo(f"  results: {submission.s3_prefix}")
-    typer.echo(f"  dashboard: {submission.dashboard_url}")
-    typer.echo(f"  pull back: multi-scenario sweep --follow --runner ovh {yaml_path}")
+    if emit_json:
+        # pylint: disable=import-outside-toplevel
+        import json as _json
+
+        typer.echo(
+            _json.dumps(
+                {
+                    "runner": "ovh",
+                    "run_id": str(submission.run_id),
+                    "job_id": submission.job_id,
+                    "run_dir": str(submission.run_dir),
+                    "s3_prefix": submission.s3_prefix,
+                    "dashboard_url": submission.dashboard_url,
+                }
+            )
+        )
+    else:
+        typer.echo(f"SUBMITTED: {submission.run_id} -> job_id={submission.job_id}")
+        typer.echo(f"  results: {submission.s3_prefix}")
+        typer.echo(f"  dashboard: {submission.dashboard_url}")
+        typer.echo(
+            f"  pull back: multi-scenario sweep --follow --runner ovh {yaml_path}"
+        )
 
 
 def _maybe_upload_stale_code(ovh_cfg) -> None:

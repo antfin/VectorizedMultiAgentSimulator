@@ -156,6 +156,23 @@ def default_checks() -> list[PreflightCheck]:
             description="OvhJobConfig.estimate_cost_eur(...) < cost_cap_eur.",
             category="system",
         ),
+        # F9.8 — LERO-only: LLM API key present in env. Shown when the
+        # YAML carries an ``lero:`` section (loaded YAML's form dict has
+        # a non-empty ``lero`` key). Without this, the OVH container's
+        # LiteLlmClient raises 401 mid-iter after ~5 min of boot+pull —
+        # very expensive to discover. We catch it at preflight instead.
+        PreflightCheck(
+            name="LLM API key present for cfg.lero",
+            runners=("local", "ovh"),
+            description=(
+                "When the YAML has an ``lero:`` block, the corresponding "
+                "``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY`` / ``OVH_API_KEY`` "
+                "(by ``cfg.llm.model`` prefix) must be in the env or ``.env`` "
+                "so the LERO loop can place LLM calls. Missing → block submit."
+            ),
+            category="system",
+            condition=lambda f: bool(f.get("lero")),
+        ),
         # ── Storage ──────────────────────────────────────────────────
         PreflightCheck(
             name="Storage path writable",
@@ -363,6 +380,32 @@ def _probe_run_dir_collision(form: dict[str, Any]) -> tuple[CheckStatus, str]:
     return CheckStatus.PASS, f"{candidate.name} is fresh"
 
 
+def _probe_lero_api_key(form_dict: dict[str, Any]) -> tuple[CheckStatus, str]:
+    """F9.8: bridge :func:`lero_preflight.check_lero_api_key` to the probe shape.
+
+    No-op (PASS) when the YAML has no ``lero:`` block — the row's
+    ``condition`` would also exclude it via :func:`applicable_checks`,
+    but the probe stays defensive so a caller that passes raw checks
+    around can't trip a false-FAIL.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.domain.models import ExperimentConfig
+    from multi_scenario.frontend.lero_preflight import check_lero_api_key
+
+    if not form_dict.get("lero"):
+        return CheckStatus.PASS, "no lero: section — check skipped"
+    try:
+        cfg = ExperimentConfig.model_validate(form_dict)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Schema failure surfaces on its own row ("Config schema valid").
+        # We can't run our key check without a parsed cfg — stay IDLE.
+        return CheckStatus.IDLE, f"waiting on schema: {exc!s}"[:200]
+    result = check_lero_api_key(cfg)
+    if result.ok:
+        return CheckStatus.PASS, result.detail
+    return CheckStatus.FAIL, result.detail
+
+
 def run_real_local_checks(
     checks: list[PreflightCheck], form_dict: dict[str, Any]
 ) -> list[PreflightCheck]:
@@ -381,6 +424,7 @@ def run_real_local_checks(
         "Runner provisioning consistent with device": (
             lambda _f: _provision_for_runner("local", form_dict)
         ),
+        "LLM API key present for cfg.lero": _probe_lero_api_key,
     }
     for check in checks:
         probe = real_probes.get(check.name)
@@ -743,6 +787,7 @@ def run_real_ovh_checks(
             exp_id, seed, client=client
         ),
         "Cost cap not exceeded": lambda _f: _probe_cost_cap(ovh_cfg, seconds_per_run),
+        "LLM API key present for cfg.lero": _probe_lero_api_key,
     }
     for check in checks:
         if config_blocked and check.name in skip_ovh_keys:

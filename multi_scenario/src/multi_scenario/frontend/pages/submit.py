@@ -32,6 +32,8 @@ from multi_scenario.application.factories import (
 from multi_scenario.domain.models import ExperimentConfig
 from multi_scenario.frontend.forms import (
     render_algorithm_params,
+    render_lero_section,
+    render_llm_section,
     render_scenario_params,
 )
 from multi_scenario.frontend.preflight import (
@@ -481,6 +483,11 @@ def _build_cfg_dict(form: dict[str, Any]) -> dict[str, Any]:
         out["experiment"]["name"] = name
     if description:
         out["experiment"]["description"] = description
+    # F9.8: round-trip LERO + LLM sections when the form carries them.
+    if form.get("lero"):
+        out["lero"] = form["lero"]
+    if form.get("llm"):
+        out["llm"] = form["llm"]
     return out
 
 
@@ -639,6 +646,35 @@ with st.container(border=True):
                 cfg_data.get("algorithm", {}).get("params", {}),
                 key_prefix=f"step2_algo_{algo_type}",
             )
+
+            # F9.8: LERO + LLM sections — rendered only when the loaded YAML
+            # has them. Non-LERO YAMLs keep the same simpler form they always
+            # had. Toggling LERO on via the Submit page (without an underlying
+            # YAML) is intentionally NOT supported here — the user should
+            # start from a `lero_*.yaml` template (or hand-edit), then load
+            # it into Submit to tweak knobs.
+            lero_overrides = cfg_data.get("lero") or {}
+            llm_overrides = cfg_data.get("llm") or {}
+            lero_params: dict[str, Any] | None = None
+            llm_params: dict[str, Any] | None = None
+            if lero_overrides:
+                st.markdown("---")
+                st.markdown(
+                    '<div data-testid="submit-lero-section"></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown("**LERO**")
+                lero_params = render_lero_section(
+                    lero_overrides, key_prefix="step2_lero"
+                )
+            if llm_overrides:
+                st.markdown("---")
+                st.markdown(
+                    '<div data-testid="submit-llm-section"></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown("**LLM**")
+                llm_params = render_llm_section(llm_overrides, key_prefix="step2_llm")
 
             # Training
             st.markdown("---")
@@ -830,6 +866,15 @@ with st.container(border=True):
                     "storage": {"type": "fs", "params": {}, **storage_extra},
                 },
             }
+            # F9.8: thread LERO + LLM sections through the form when present.
+            # The widget render skips ``None``-default fields entirely
+            # (see ``forms._schema_from_pydantic``), so the dict ready to
+            # round-trip carries exactly what the snapshot did — no extra
+            # cleanup needed here.
+            if lero_params is not None:
+                current["lero"] = lero_params
+            if llm_params is not None:
+                current["llm"] = llm_params
             # Drop None entries from experiment so dirty-comparison vs the
             # snapshot (which doesn't carry None placeholders) stays accurate.
             current["experiment"] = {

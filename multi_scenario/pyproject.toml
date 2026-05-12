@@ -35,6 +35,14 @@ dev = [
     "pylint",
     "moto>=5.0",
 ]
+# Opt-in extra for real-browser Playwright tests. Adds ~150 MiB of
+# Chromium on first ``playwright install chromium`` after pip install.
+# Tests under ``tests/integration/playwright/`` skip cleanly when this
+# extra isn't installed.
+playwright = [
+    "playwright>=1.40",
+    "pytest-playwright>=0.4",
+]
 
 [project.scripts]
 multi-scenario = "multi_scenario.cli:main"
@@ -55,6 +63,7 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
     "slow: marks tests as slow (deselect with -m 'not slow')",
+    "playwright: real-browser tests (opt-in via -m playwright, needs `pip install -e .[playwright] && playwright install chromium`)",
 ]
 
 [tool.pylint.main]

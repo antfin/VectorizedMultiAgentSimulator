@@ -51,6 +51,73 @@ def render_algorithm_params(
     return render_params_from_defaults(schema, overrides, key_prefix)
 
 
+def render_lero_section(overrides: dict[str, Any], key_prefix: str) -> dict[str, Any]:
+    """F9.8 — render :class:`LeroSection` fields as Submit-page widgets.
+
+    Schema comes from the Pydantic model's field defaults so the widget
+    set stays in sync when fields are added/removed. The user's YAML
+    values (``overrides``) win over the schema defaults; any extra key
+    in the loaded YAML that the schema doesn't know about still gets
+    rendered (typed by its value) — same union semantics as scenario /
+    algorithm params, so saving the YAML never silently drops fields.
+
+    Called by the Submit page only when the loaded YAML carries a
+    non-empty ``lero:`` block — non-LERO submissions skip this widget
+    entirely.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.domain.models import LeroSection
+
+    return render_params_from_defaults(
+        _schema_from_pydantic(LeroSection), overrides, key_prefix
+    )
+
+
+def render_llm_section(overrides: dict[str, Any], key_prefix: str) -> dict[str, Any]:
+    """F9.8 — render :class:`LlmSection` fields as Submit-page widgets.
+
+    Same data-driven shape as :func:`render_lero_section`. The
+    ``api_base`` field defaults to ``None``; the schema-from-pydantic
+    helper substitutes empty-string-as-seed so the user gets a normal
+    text input that maps back to ``None`` only when blank.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.domain.models import LlmSection
+
+    return render_params_from_defaults(
+        _schema_from_pydantic(LlmSection), overrides, key_prefix
+    )
+
+
+def _schema_from_pydantic(model_cls: Any) -> dict[str, Any]:
+    """Build a default-value dict from a Pydantic model's concrete defaults.
+
+    Mirrors the shape expected by :func:`render_params_from_defaults`:
+    each key → its default value, used by :func:`_render_one` to pick
+    a widget type.
+
+    **Skipped fields**:
+
+    - Required fields with no default (``PydanticUndefined``) — rare in
+      LERO/LLM sections; rendering as a text area would mismatch their
+      eventual concrete type at validation time.
+    - Fields with ``None`` default (e.g. ``llm.api_base``, ``llm.seed``).
+      Rendering an empty text input for these would over-emit on the
+      cfg-dict side (the snapshot wouldn't have them either, so dirty-
+      detection misfires). When the YAML explicitly sets one, the
+      ``overrides`` union in :func:`render_params_from_defaults` still
+      surfaces it as a widget — the user can edit existing values, just
+      not introduce a new optional field via the Submit form.
+    """
+    out: dict[str, Any] = {}
+    for name, info in model_cls.model_fields.items():
+        default = info.default
+        if default is None or repr(default) == "PydanticUndefined":
+            continue
+        out[name] = default
+    return out
+
+
 def render_params_from_defaults(
     schema: dict[str, Any],
     overrides: dict[str, Any],

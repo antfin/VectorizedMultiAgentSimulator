@@ -95,6 +95,65 @@ def test_run_real_local_checks_fails_config_with_bad_schema(tmp_path):
     assert "experiment.seed" in by_name["Config schema valid"].detail
 
 
+# ── F9.8 — LERO API-key preflight integration ───────────────────────
+
+
+def _lero_cfg(storage_path: str) -> dict:
+    """Minimal cfg with a ``lero:`` block, triggering F9.8's preflight row."""
+    cfg = _good_cfg(storage_path)
+    cfg["lero"] = {"n_iterations": 1, "n_candidates": 1}
+    cfg["llm"] = {"model": "gpt-4o-mini"}
+    return cfg
+
+
+def test_lero_key_row_absent_on_non_lero_cfg(tmp_path):
+    """No ``lero:`` block → the row is filtered out by ``applicable_checks``."""
+    cfg = _good_cfg(str(tmp_path))
+    names = {c.name for c in applicable_checks("local", cfg)}
+    assert "LLM API key present for cfg.lero" not in names
+
+
+def test_lero_key_row_present_on_lero_cfg(tmp_path):
+    """``lero:`` block → the row appears for both local and OVH runners."""
+    cfg = _lero_cfg(str(tmp_path))
+    for runner in ("local", "ovh"):
+        names = {c.name for c in applicable_checks(runner, cfg)}
+        assert "LLM API key present for cfg.lero" in names, runner
+
+
+def test_lero_key_probe_pass_when_openai_key_in_env(tmp_path, monkeypatch):
+    """``OPENAI_API_KEY`` set + gpt-4o-mini model → preflight PASS."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.frontend.preflight import run_real_local_checks
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-stub")
+    cfg = _lero_cfg(str(tmp_path))
+    checks = applicable_checks("local", cfg)
+    run_real_local_checks(checks, cfg)
+    by_name = {c.name: c for c in checks}
+    assert by_name["LLM API key present for cfg.lero"].status == CheckStatus.PASS
+
+
+def test_lero_key_probe_fail_when_no_key_in_env(tmp_path, monkeypatch):
+    """No API key → preflight FAIL with the expected env-var name."""
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.frontend.preflight import run_real_local_checks
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OVH_API_KEY", raising=False)
+    # Stop ``check_lero_api_key`` from autoloading the dev's real ``.env``
+    # via python-dotenv (would mask the FAIL we're testing).
+    monkeypatch.chdir(tmp_path)
+    cfg = _lero_cfg(str(tmp_path))
+    checks = applicable_checks("local", cfg)
+    run_real_local_checks(checks, cfg)
+    by_name = {c.name: c for c in checks}
+    row = by_name["LLM API key present for cfg.lero"]
+    assert row.status == CheckStatus.FAIL
+    assert "OPENAI_API_KEY" in row.detail
+
+
 # ── Real OVH probes (F7.7.A2: routed through OvhClient, not boto3) ──
 
 

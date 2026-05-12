@@ -260,6 +260,43 @@ def _fill_schema_defaults(snap: dict[str, Any]) -> None:
     storage.setdefault("type", "fs")
     storage.setdefault("params", {})
 
+    # F9.8: LERO + LLM section schema fill.
+    # The Submit form's LERO/LLM widgets always render every field in
+    # ``LeroSection`` / ``LlmSection`` (data-driven from Pydantic). If
+    # the loaded YAML omits any of those keys, the widget output ends
+    # up with MORE keys than the snapshot, falsely flagging dirty. We
+    # only fill these when the YAML actually has the parent block —
+    # non-LERO YAMLs stay untouched.
+    if snap.get("lero"):
+        # pylint: disable=import-outside-toplevel
+        from multi_scenario.domain.models import LeroSection
+
+        _fill_pydantic_defaults(snap["lero"], LeroSection)
+    if snap.get("llm"):
+        # pylint: disable=import-outside-toplevel
+        from multi_scenario.domain.models import LlmSection
+
+        _fill_pydantic_defaults(snap["llm"], LlmSection)
+
+
+def _fill_pydantic_defaults(block: dict[str, Any], model_cls: Any) -> None:
+    """Set every field in ``model_cls`` that ``block`` doesn't already have.
+
+    Mirrors the F9.8 ``_schema_from_pydantic`` helper in
+    :mod:`frontend.forms`: skips fields with ``None`` default (e.g.
+    ``llm.api_base``, ``llm.seed``) so the snapshot's keys match the
+    widget render's keys byte-for-byte — otherwise loading a YAML
+    that omits an optional field falsely flags dirty. Keys with
+    concrete defaults are filled with the model's declared value.
+    """
+    for name, info in model_cls.model_fields.items():
+        if name in block:
+            continue  # YAML had it; don't overwrite
+        default = info.default
+        if default is None or repr(default) == "PydanticUndefined":
+            continue  # don't fill — widget skips these too
+        block[name] = default
+
 
 # ── Browser helpers ──────────────────────────────────────────────────
 

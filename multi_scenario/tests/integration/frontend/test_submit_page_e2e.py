@@ -128,6 +128,125 @@ def test_submit_page_renders_with_a_valid_config(tmp_experiments: Path):
 # ── Pick → state.selected_path ───────────────────────────────────────
 
 
+# ── F9.8: LERO YAMLs round-trip through Submit ──────────────────────
+
+
+def _lero_cfg(storage_path: str) -> dict:
+    """Minimal LERO-flavoured ExperimentConfig YAML — lero+llm + scenario+algo."""
+    return {
+        "experiment": {"id": "lero_demo", "seed": 0},
+        "scenario": {
+            "type": "discovery",
+            "params": {"n_agents": 2, "n_targets": 2, "max_steps": 5},
+        },
+        "algorithm": {"type": "mappo", "params": {}},
+        "training": {
+            "max_iters": 1,
+            "num_envs": 1,
+            "device": "cpu",
+            "frames_per_batch": 50,
+            "minibatch_size": 25,
+            "n_minibatch_iters": 1,
+        },
+        "evaluation": {"interval_iters": 1, "episodes": 1},
+        "runtime": {
+            "runner": {"type": "local", "params": {"record_video": False}},
+            "storage": {"type": "fs", "path": storage_path, "params": {}},
+        },
+        "lero": {
+            "n_iterations": 2,
+            "n_candidates": 3,
+            "evolve_reward": False,
+            "evolve_observation": True,
+            "prompt_version": "v2_fewshot_k2_local",
+        },
+        "llm": {"model": "gpt-4o-mini", "temperature": 0.7},
+    }
+
+
+@pytest.fixture
+def tmp_lero_experiments(tmp_path: Path) -> Path:
+    """Experiments tree with a LERO YAML for the F9.8 round-trip tests."""
+    cfg_dir = tmp_path / "discovery" / "lero" / "configs"
+    cfg_dir.mkdir(parents=True)
+    storage = tmp_path / "results"
+    storage.mkdir()
+    (cfg_dir / "lero_demo.yaml").write_text(
+        yaml.dump(_lero_cfg(str(storage)), sort_keys=False), encoding="utf-8"
+    )
+    return tmp_path
+
+
+@pytest.mark.slow
+def test_submit_renders_lero_yaml_with_lero_and_llm_sections(
+    tmp_lero_experiments: Path,
+):
+    """F9.8 round-trip: load a LERO YAML through Submit → session_state's
+    current_form carries the lero + llm blocks (not silently dropped)."""
+    at = _new_apptest(tmp_lero_experiments)
+    _drive_pick(at, scenario="discovery", folder="lero", config="lero_demo.yaml")
+    # AppTest's session_state raises on missing keys instead of returning None.
+    assert "submit_current_form" in at.session_state
+    current = at.session_state["submit_current_form"]
+    assert current is not None
+    assert "lero" in current, f"lero section dropped from form: keys={list(current)}"
+    assert "llm" in current, f"llm section dropped from form: keys={list(current)}"
+    # Specific knobs survive the widget round-trip.
+    assert current["lero"]["n_iterations"] == 2
+    assert current["lero"]["n_candidates"] == 3
+    assert current["lero"]["evolve_reward"] is False
+    assert current["lero"]["evolve_observation"] is True
+    assert current["llm"]["model"] == "gpt-4o-mini"
+    assert current["llm"]["temperature"] == pytest.approx(0.7)
+
+
+@pytest.mark.slow
+def test_lero_yaml_is_clean_after_pick_no_dirty_flag(tmp_lero_experiments: Path):
+    """F9.8 dirty-detection regression: loading a LERO YAML and not touching
+    any widget must NOT flag the form as dirty.
+
+    The bug: my F9.8 widgets render the full LeroSection/LlmSection field
+    set even when the YAML omits some fields, so the widget-output dict
+    had MORE keys than the snapshot → ``snapshot != current`` → "Save"
+    button erroneously visible. The fix (see ``submit_workflow._fill_pydantic_defaults``)
+    aligns the snapshot's filled keys with what the widget emits.
+    """
+    at = _new_apptest(tmp_lero_experiments)
+    _drive_pick(at, scenario="discovery", folder="lero", config="lero_demo.yaml")
+    assert "submit_snapshot_form" in at.session_state
+    assert "submit_current_form" in at.session_state
+    snapshot = at.session_state["submit_snapshot_form"]
+    current = at.session_state["submit_current_form"]
+    # Walk through the LERO/LLM blocks specifically — diff_summary would
+    # surface any drift here.
+    assert snapshot["lero"] == current["lero"], (
+        f"LERO section drift on fresh load: "
+        f"snapshot={snapshot['lero']!r}\ncurrent={current['lero']!r}"
+    )
+    assert snapshot["llm"] == current["llm"], (
+        f"LLM section drift on fresh load: "
+        f"snapshot={snapshot['llm']!r}\ncurrent={current['llm']!r}"
+    )
+    # Top-level: form not dirty overall.
+    assert snapshot == current, "Submit form flagged dirty on a fresh LERO YAML load"
+
+
+@pytest.mark.slow
+def test_submit_renders_lero_yaml_validates_as_lero_cfg(tmp_lero_experiments: Path):
+    """The form's round-tripped dict must still validate as a LERO
+    ExperimentConfig (cfg.lero is not None, cfg.llm is not None)."""
+    from multi_scenario.domain.models import ExperimentConfig
+
+    at = _new_apptest(tmp_lero_experiments)
+    _drive_pick(at, scenario="discovery", folder="lero", config="lero_demo.yaml")
+    current = at.session_state["submit_current_form"]
+    cfg = ExperimentConfig.model_validate(current)
+    assert cfg.lero is not None
+    assert cfg.llm is not None
+    assert cfg.lero.n_iterations == 2
+    assert cfg.llm.model == "gpt-4o-mini"
+
+
 @pytest.mark.slow
 def test_pick_a_config_records_selected_path(tmp_experiments: Path):
     """After clicking 'Use this config', session_state holds the chosen file."""
