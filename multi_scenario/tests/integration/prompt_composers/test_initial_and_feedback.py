@@ -208,3 +208,77 @@ def test_composer_satisfies_protocol():
     sig = inspect.signature(InitialAndFeedbackComposer.compose)
     params = set(sig.parameters)
     assert {"iteration", "history", "task_params", "strategy_card"} <= params
+
+
+# ── obs_lidar_agents derivation (prompt-only, derived from real params) ─
+
+
+def test_obs_lidar_agents_derived_when_use_agent_lidar_true(composer):
+    """``use_agent_lidar=True`` → obs_state schema includes the lidar_agents line.
+
+    The Jinja template ``v2_fewshot_k2_local/initial_user.j2`` interpolates
+    ``{{ obs_lidar_agents }}`` as one row of the obs_state schema block.
+    It is *not* a scenario param — the composer derives it so YAMLs
+    (smoke + lero_s3b_local) don't have to repeat prompt-formatting noise.
+    """
+    params = {
+        "n_agents": 4,
+        "n_targets": 4,
+        "agents_per_target": 2,
+        "covering_range": 0.35,
+        "n_lidar_rays_entities": 15,
+        "n_lidar_rays_agents": 12,
+        "use_agent_lidar": True,
+        # NOTE: obs_lidar_agents intentionally absent — composer derives it.
+    }
+    out = composer.compose(iteration=0, history=[], task_params=params)
+    initial_user = out.messages[1]["content"]
+    assert "lidar_agents" in initial_user
+    assert "[batch, 12]" in initial_user
+
+
+def test_obs_lidar_agents_empty_when_use_agent_lidar_false(composer):
+    """``use_agent_lidar=False`` → obs_state schema OMITS the lidar_agents line.
+
+    Sanity check that the derivation respects the toggle — a False here
+    must keep ``lidar_agents`` out of the prompt entirely (the LLM
+    can't reference an obs key the scenario doesn't expose).
+    """
+    params = {
+        "n_agents": 4,
+        "n_targets": 4,
+        "agents_per_target": 2,
+        "covering_range": 0.35,
+        "n_lidar_rays_entities": 15,
+        "n_lidar_rays_agents": 0,
+        "use_agent_lidar": False,
+    }
+    out = composer.compose(iteration=0, history=[], task_params=params)
+    initial_user = out.messages[1]["content"]
+    # The line in initial_user.j2 reads `"lidar_agents":` only when the
+    # derivation injected the schema fragment. Both v2_fewshot_k2_local
+    # and v1 use the same `{{ obs_lidar_agents }}` placeholder, so the
+    # empty-string branch removes the obs key reference.
+    assert '"lidar_agents":' not in initial_user
+
+
+def test_obs_lidar_agents_explicit_param_wins_over_derivation(composer):
+    """Explicit ``obs_lidar_agents`` in task_params bypasses the derivation.
+
+    Back-compat: any YAML that already passes the rendered fragment
+    (or a test fixture like ours) must keep its hand-written value so
+    rendezvous_comm-port runs reproduce byte-for-byte.
+    """
+    sentinel = '"lidar_agents":     # custom-sentinel-XYZ'
+    params = {
+        "n_agents": 4,
+        "n_targets": 4,
+        "agents_per_target": 2,
+        "covering_range": 0.35,
+        "n_lidar_rays_entities": 15,
+        "n_lidar_rays_agents": 12,
+        "use_agent_lidar": True,
+        "obs_lidar_agents": sentinel,
+    }
+    out = composer.compose(iteration=0, history=[], task_params=params)
+    assert "custom-sentinel-XYZ" in out.messages[1]["content"]

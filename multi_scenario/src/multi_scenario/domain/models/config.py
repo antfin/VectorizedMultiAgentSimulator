@@ -92,6 +92,14 @@ class TrainingSection(BaseModel):
     # best-checkpoint-policy callback needs the full history to find the peak.
     # Smoke runs ignore this (no checkpoints written).
     keep_checkpoints_num: int = Field(default=1000, gt=0)
+    # Phase 5a aftermath: a 167-iter run writes 17 × 107 MiB = 1.83 GiB of
+    # checkpoints, and a LERO run also dumps ~2.5 GiB of throwaway inner-loop
+    # checkpoints. When the run finishes cleanly, almost none of these are
+    # ever needed again (Streamlit replay + eval CLI need only the last one).
+    # When this flag is true, post-success cleanup deletes every checkpoint
+    # except the final one. False = current behaviour (keep all). LERO YAMLs
+    # default to true; ER1-style YAMLs leave it off for back-compat.
+    delete_intermediate_checkpoints_on_success: bool = False
 
     @model_validator(mode="after")
     def _minibatch_fits_in_batch(self) -> "TrainingSection":

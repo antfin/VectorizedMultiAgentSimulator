@@ -200,6 +200,158 @@ def test_path_helpers_stable_layout():
     )
 
 
+# ── Phase 5: prompts/ markdown side-files + evolution_doc.md ────────
+
+
+def test_write_prompt_emits_system_and_user_initial_markdown(tmp_path: Path, writer):
+    """Phase 5: prompts/iter_N/{system.md, user_initial.md} populated."""
+    trace = PromptTrace(
+        prompt_version="v2_fewshot_k2_local",
+        messages=[
+            {"role": "system", "content": "you are a reward designer"},
+            {"role": "user", "content": "task is rendezvous with 4 agents"},
+        ],
+    )
+    writer.write_prompt(
+        run_dir=tmp_path, iteration=0, candidate_idx=0, attempt=0, trace=trace
+    )
+    prompts_iter_0 = tmp_path / "output" / "lero" / "prompts" / "iter_0"
+    assert (prompts_iter_0 / "system.md").read_text() == "you are a reward designer"
+    assert (
+        prompts_iter_0 / "user_initial.md"
+    ).read_text() == "task is rendezvous with 4 agents"
+    # user_feedback.md only appears on iter > 0.
+    assert not (prompts_iter_0 / "user_feedback.md").exists()
+
+
+def test_write_prompt_emits_user_feedback_on_iter_gt_zero(tmp_path: Path, writer):
+    """Phase 5: feedback user message goes to prompts/iter_N/user_feedback.md."""
+    trace = PromptTrace(
+        prompt_version="v2_fewshot_k2_local",
+        messages=[
+            {"role": "system", "content": "system text"},
+            {"role": "user", "content": "initial user text"},
+            {"role": "user", "content": "feedback referencing prior candidates"},
+        ],
+    )
+    writer.write_prompt(
+        run_dir=tmp_path, iteration=1, candidate_idx=0, attempt=0, trace=trace
+    )
+    feedback_path = (
+        tmp_path / "output" / "lero" / "prompts" / "iter_1" / "user_feedback.md"
+    )
+    assert feedback_path.read_text() == "feedback referencing prior candidates"
+
+
+def test_write_response_emits_response_md(tmp_path: Path, writer):
+    """Phase 5: ResponseTrace.text → prompts/iter_N/cand_M/response.md."""
+    trace = ResponseTrace(text="```python\ndef enhance_observation(s): return s\n```")
+    writer.write_response(
+        run_dir=tmp_path, iteration=2, candidate_idx=3, attempt=0, trace=trace
+    )
+    md_path = (
+        tmp_path / "output" / "lero" / "prompts" / "iter_2" / "cand_3" / "response.md"
+    )
+    assert md_path.is_file()
+    assert "enhance_observation" in md_path.read_text()
+
+
+def test_write_candidate_result_extracts_obs_and_reward_source(tmp_path: Path, writer):
+    """Phase 5: obs_source + reward_source → separate .py files under prompts/."""
+    result = CandidateResult(
+        candidate=Candidate(
+            iteration=0,
+            candidate_idx=1,
+            code=CandidateCode(
+                reward_source="def compute_reward(s): return s['agent_pos']\n",
+                obs_source="def enhance_observation(s): return s['lidar_targets']\n",
+            ),
+        ),
+        metrics=CandidateMetrics(M1_success_rate=0.5),
+        verdict="progress",
+    )
+    writer.write_candidate_result(run_dir=tmp_path, result=result)
+    cand_prompts = tmp_path / "output" / "lero" / "prompts" / "iter_0" / "cand_1"
+    assert "compute_reward" in (cand_prompts / "reward_source.py").read_text()
+    assert "enhance_observation" in (cand_prompts / "obs_source.py").read_text()
+
+
+def test_write_candidate_result_skips_code_files_when_source_empty(
+    tmp_path: Path, writer
+):
+    """Empty code → no placeholder file (keeps prompts/ tree noise-free)."""
+    result = CandidateResult(
+        candidate=Candidate(
+            iteration=0,
+            candidate_idx=0,
+            code=CandidateCode(reward_source=None, obs_source=None),
+        ),
+        metrics=CandidateMetrics(),
+        verdict="invalid",
+    )
+    writer.write_candidate_result(run_dir=tmp_path, result=result)
+    cand_prompts = tmp_path / "output" / "lero" / "prompts" / "iter_0" / "cand_0"
+    assert not (cand_prompts / "reward_source.py").exists()
+    assert not (cand_prompts / "obs_source.py").exists()
+
+
+def test_write_summary_renders_evolution_doc_md(tmp_path: Path, writer):
+    """Phase 5: evolution_doc.md appears next to final_summary.json with
+    headline, per-iter tables, and relative links to prompts/."""
+    # Seed history + summary.
+    history = [
+        CandidateResult(
+            candidate=Candidate(
+                iteration=0,
+                candidate_idx=0,
+                code=CandidateCode(obs_source="def enhance_observation(s): pass\n"),
+            ),
+            metrics=CandidateMetrics(M1_success_rate=0.1, M2_avg_return=-2.0),
+            verdict="progress",
+        ),
+        CandidateResult(
+            candidate=Candidate(
+                iteration=0,
+                candidate_idx=1,
+                code=CandidateCode(obs_source="def enhance_observation(s): pass\n"),
+            ),
+            metrics=CandidateMetrics(M1_success_rate=0.4, M2_avg_return=1.0),
+            verdict="progress",
+        ),
+    ]
+    # Need evolution_history.json on disk so write_summary reads it.
+    writer.write_evolution_history(run_dir=tmp_path, results=history)
+    summary = LeroRunSummary(
+        exp_id="lero_smoke",
+        seed=0,
+        n_iterations_completed=1,
+        n_candidates_total=2,
+        total_cost_usd=0.0123,
+        best_candidate_metrics=CandidateMetrics(M1_success_rate=0.4, M2_avg_return=1.0),
+        best_candidate_verdict="progress",
+        best_candidate_full_metrics=CandidateMetrics(
+            M1_success_rate=0.85, M2_avg_return=15.0
+        ),
+        fallback_chain=[],
+        full_training_succeeded=True,
+    )
+    writer.write_summary(run_dir=tmp_path, summary=summary)
+
+    doc_md = tmp_path / "output" / "lero" / "evolution_doc.md"
+    assert doc_md.is_file()
+    text = doc_md.read_text()
+    # Headline carries both inner + full M1 (Phase 1 metric capture).
+    assert "0.400" in text and "0.850" in text
+    # Per-iter table mentions both candidates.
+    assert "## Iterations" in text
+    assert "| 0 |" in text and "| 1 |" in text
+    # Relative links point at the prompts/ folder (no absolute paths).
+    assert "prompts/iter_0/system.md" in text
+    assert "prompts/iter_0/cand_0/obs_source.py" in text
+    # No CRLF / no path leak — files live under output/lero/.
+    assert "/output/lero/" not in text
+
+
 def test_writer_satisfies_protocol():
     """Structural check: FilesystemTraceWriter has every TraceWriter method."""
     import inspect

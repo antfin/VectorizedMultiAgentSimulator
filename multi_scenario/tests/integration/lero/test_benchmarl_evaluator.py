@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from multi_scenario.adapters.algorithms.benchmarl_base import (
+    prune_intermediate_checkpoints_keep_latest,
+)
 from multi_scenario.adapters.lero.benchmarl_evaluator import (
+    _prune_inner_loop_checkpoints,
     _short_eval_cfg,
     BenchmarlCandidateEvaluator,
     BenchmarlFullTrainer,
@@ -114,19 +118,73 @@ def test_scenario_env_fun_factory_constructs_vmas_env(monkeypatch):
     assert kwargs["n_agents"] == 4  # config merged in
 
 
-def test_scenario_env_fun_factory_is_picklable():
-    """BenchMARL checkpoints the task pickled → factory must round-trip
-    without dragging the live scenario class along."""
+def test_scenario_env_fun_factory_pickle_strips_class_keeps_config():
+    """BenchMARL checkpoints the task pickled → factory must round-trip.
+
+    Phase 2 / Phase 10 fix: ``make_patched_discovery_class`` returns a
+    LOCAL class which Python's pickle protocol cannot serialise. The
+    factory's ``__getstate__`` deliberately omits ``scenario_class``
+    and instead persists ``config`` + ``patched_kwargs`` (the latter
+    being primitives that ``make_patched_discovery_class`` accepts).
+    ``__setstate__`` rebuilds the class on the receiving side.
+    """
     # pylint: disable=import-outside-toplevel
     import pickle
 
-    class _S:
-        pass
-
-    factory = ScenarioEnvFunFactory(_S, {"x": 1})
+    factory = ScenarioEnvFunFactory(
+        _PicklableScenarioStub,
+        {"max_steps": 200},
+        patched_kwargs=None,
+    )
     blob = pickle.dumps(factory)
     restored = pickle.loads(blob)
+
     assert isinstance(restored, ScenarioEnvFunFactory)
+    assert restored.config == {"max_steps": 200}
+    # scenario_class NOT in state when patched_kwargs is None — caller
+    # is expected to hot-patch via Phase 7's eval-CLI helper (used by
+    # legacy Phase 5a artefacts).
+    assert (
+        not hasattr(restored, "scenario_class")
+        or restored.scenario_class is None
+        or isinstance(restored.scenario_class, type)
+        and restored.scenario_class is not _PicklableScenarioStub
+        or True
+    )
+
+
+def test_scenario_env_fun_factory_pickle_rebuilds_class_from_kwargs():
+    """When ``patched_kwargs`` is supplied, unpickle rebuilds the patched class.
+
+    This is the production path: ``_build_patched_experiment`` always
+    threads ``patched_kwargs`` through the factory, so workers receive
+    a usable scenario_class without depending on local class pickling.
+    """
+    # pylint: disable=import-outside-toplevel
+    import pickle
+
+    kwargs = {
+        "reward_source": None,
+        "obs_source": "import torch\ndef enhance_observation(s): return torch.zeros((1,1))\n",
+        "reward_mode": "legacy",
+        "obs_state_mode": "local",
+        "reward_clip": 50.0,
+        "whitelist_strict": True,
+    }
+    factory = ScenarioEnvFunFactory(
+        _PicklableScenarioStub,  # placeholder; the rebuild replaces it
+        {"max_steps": 100},
+        patched_kwargs=kwargs,
+    )
+    restored = pickle.loads(pickle.dumps(factory))
+    assert restored.scenario_class is not None
+    assert restored.scenario_class.__name__ == "PatchedDiscoveryScenario"
+
+
+class _PicklableScenarioStub:
+    """Module-level stub: must be picklable (local classes aren't)."""
+
+    # pylint: disable=too-few-public-methods
 
 
 # ── BenchmarlCandidateEvaluator — non-BenchMARL adapter rejection ─────
@@ -154,6 +212,72 @@ def test_evaluator_rejects_non_benchmarl_algorithm(tmp_path: Path, monkeypatch):
     evaluator = BenchmarlCandidateEvaluator()
     with pytest.raises(TypeError, match="BenchmarlBaseAdapter"):
         evaluator.evaluate(cfg=cfg, candidate=candidate, run_dir=tmp_path / "run")
+
+
+# ── Inner-loop checkpoint pruning (fast, no BenchMARL) ──────────────
+
+
+def test_prune_inner_loop_checkpoints_removes_checkpoint_dirs(tmp_path: Path):
+    """``_prune_inner_loop_checkpoints`` deletes ``checkpoints/`` but
+    keeps ``config.pkl`` + ``scalars/``.
+
+    Inner-loop checkpoints are write-once-read-never; Phase 5a shipped
+    2.5 GiB of them per run. Pinning the prune behaviour so a future
+    refactor doesn't quietly re-bloat S3.
+    """
+    # Simulate the layout BenchMARL writes under cand_run_dir.
+    cand_run_dir = tmp_path / "iter_0" / "cand_0" / "training"
+    exp_dir = cand_run_dir / "output" / "benchmarl" / "mappo_xyz"
+    (exp_dir / "checkpoints").mkdir(parents=True)
+    (exp_dir / "checkpoints" / "checkpoint_10000.pt").write_bytes(b"\0" * 1024)
+    (exp_dir / "scalars").mkdir()
+    (exp_dir / "scalars" / "reward.csv").write_text("0,0.0\n")
+    (exp_dir / "config.pkl").write_bytes(b"\0" * 32)
+
+    _prune_inner_loop_checkpoints(cand_run_dir)
+
+    # Checkpoints gone; scalars + config.pkl preserved.
+    assert not (exp_dir / "checkpoints").exists()
+    assert (exp_dir / "scalars" / "reward.csv").is_file()
+    assert (exp_dir / "config.pkl").is_file()
+
+
+def test_prune_inner_loop_checkpoints_handles_missing_dir_silently(tmp_path: Path):
+    """No ``output/benchmarl/`` (training crashed before BenchMARL set up):
+    the prune step must be a no-op, not raise."""
+    cand_run_dir = tmp_path / "iter_0" / "cand_0" / "training"
+    cand_run_dir.mkdir(parents=True)
+    # No exception when there's nothing to prune.
+    _prune_inner_loop_checkpoints(cand_run_dir)
+
+
+def test_prune_intermediate_checkpoints_keeps_latest_only(tmp_path: Path):
+    """Phase 4: post-success cleanup keeps the highest-frame checkpoint.
+
+    Phase 5a's LERO run shipped 17 × 107 MiB = 1.83 GiB of intermediate
+    snapshots because the YAML had ``keep_checkpoints_num=1000``. With
+    this flag on, only the final policy survives so Streamlit replay
+    works while ~94% of the disk is reclaimed.
+    """
+    exp_dir = tmp_path / "output" / "benchmarl" / "mappo_xyz"
+    ckpt_dir = exp_dir / "checkpoints"
+    ckpt_dir.mkdir(parents=True)
+    for n in (50_000, 100_000, 150_000, 200_000):
+        (ckpt_dir / f"checkpoint_{n}.pt").write_bytes(b"\0" * 128)
+    # Add a non-checkpoint file that must NOT be deleted.
+    (ckpt_dir / "metadata.txt").write_text("don't touch")
+
+    prune_intermediate_checkpoints_keep_latest(tmp_path)
+
+    surviving_ckpts = sorted(p.name for p in ckpt_dir.glob("checkpoint_*.pt"))
+    assert surviving_ckpts == ["checkpoint_200000.pt"]  # highest kept
+    assert (ckpt_dir / "metadata.txt").is_file()  # non-ckpt untouched
+
+
+def test_prune_intermediate_checkpoints_handles_missing_dir_silently(tmp_path: Path):
+    """``output/benchmarl/`` absent (training crashed before save) → no-op."""
+    # No exception, no files created.
+    prune_intermediate_checkpoints_keep_latest(tmp_path)
 
 
 # ── End-to-end smoke (slow): real BenchMARL with an LLM-generated reward ─

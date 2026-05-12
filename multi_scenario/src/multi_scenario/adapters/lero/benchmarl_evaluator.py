@@ -27,10 +27,14 @@ LERO loop — the orchestrator + 6 of the 8 ports stay pure-Python.
 """
 
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
-from multi_scenario.adapters.algorithms.benchmarl_base import BenchmarlBaseAdapter
+from multi_scenario.adapters.algorithms.benchmarl_base import (
+    BenchmarlBaseAdapter,
+    prune_intermediate_checkpoints_keep_latest,
+)
 from multi_scenario.adapters.lero.scenario_env_fun_factory import ScenarioEnvFunFactory
 from multi_scenario.adapters.metrics.common import CommonMetricsBundle
 from multi_scenario.adapters.scenarios.discovery import VmasDiscoveryAdapter
@@ -72,16 +76,19 @@ def _build_patched_experiment(
     """
     assert cfg.lero is not None
     is_local_obs = cfg.lero.prompt_version.endswith("_local")
-    patched_cls = make_patched_discovery_class(
-        reward_source=(
+    patched_kwargs = {
+        "reward_source": (
             candidate.code.reward_source if cfg.lero.evolve_reward else None
         ),
-        obs_source=(candidate.code.obs_source if cfg.lero.evolve_observation else None),
-        reward_mode="replace",
-        obs_state_mode="local" if is_local_obs else "global",
-        reward_clip=cfg.lero.reward_clip,
-        whitelist_strict=cfg.lero.whitelist_strict,
-    )
+        "obs_source": (
+            candidate.code.obs_source if cfg.lero.evolve_observation else None
+        ),
+        "reward_mode": "replace",
+        "obs_state_mode": "local" if is_local_obs else "global",
+        "reward_clip": cfg.lero.reward_clip,
+        "whitelist_strict": cfg.lero.whitelist_strict,
+    }
+    patched_cls = make_patched_discovery_class(**patched_kwargs)
 
     # Build the adapter via the factory so the algorithm-type
     # registry is the single source of truth (mappo / ippo / etc.).
@@ -104,7 +111,9 @@ def _build_patched_experiment(
     save_folder_path.mkdir(parents=True, exist_ok=True)
 
     task = adapter._task(cfg)  # pylint: disable=protected-access
-    task.get_env_fun = ScenarioEnvFunFactory(patched_cls, dict(task.config))
+    task.get_env_fun = ScenarioEnvFunFactory(
+        patched_cls, dict(task.config), patched_kwargs=patched_kwargs
+    )
 
     bm_cfg = adapter._experiment_config(  # pylint: disable=protected-access
         cfg, save_folder=str(save_folder_path)
@@ -151,6 +160,58 @@ def _compute_metrics(
     return CandidateMetrics(**metrics_dict)
 
 
+def _prune_inner_loop_checkpoints(cand_run_dir: Path) -> None:
+    """Delete the ``checkpoints/`` subtree under a candidate's training dir.
+
+    The inner-loop's saved weights are never reloaded (FullTrainer retrains
+    from scratch on the winning candidate's code). Keeping them costs ~200
+    MiB per candidate × n_iterations × n_candidates — for a 4×3 LERO run
+    that's ~2.5 GiB of throwaway state on S3.
+
+    Best-effort: walks ``cand_run_dir/output/benchmarl/*/checkpoints``
+    and deletes each. Preserves ``config.pkl`` and the ``scalars/`` dir
+    (needed for post-hoc analysis and CLI eval reload paths).
+    Silently skips when nothing matches.
+    """
+    benchmarl_dir = cand_run_dir / "output" / "benchmarl"
+    if not benchmarl_dir.is_dir():
+        return
+    for exp_dir in benchmarl_dir.iterdir():
+        ckpt_dir = exp_dir / "checkpoints"
+        if ckpt_dir.is_dir():
+            try:
+                shutil.rmtree(ckpt_dir)
+                _log.info(f"pruned inner-loop checkpoints at {ckpt_dir}")
+            except OSError as exc:  # pylint: disable=broad-except
+                _log.warning(f"failed to prune {ckpt_dir}: {exc}")
+
+
+# ``_prune_intermediate_checkpoints_keep_latest`` lives in benchmarl_base —
+# both this adapter and the standard ER1-style training share the helper.
+
+
+def _write_eval_episodes_safely(run_dir: Path, rollout: Any) -> None:
+    """Write ``output/eval_episodes.json`` from the post-train rollout.
+
+    Mirrors the non-LERO path's ``LocalStorageAdapter.save_eval_episodes``
+    contract — Streamlit's run-detail page reads this file. Phase 6: the
+    LERO branch was silently skipping it, so LERO runs rendered with
+    empty per-episode panels.
+
+    Best-effort: any I/O or serialisation issue is logged but not
+    raised — the training itself already succeeded by the time we get
+    here, and missing eval_episodes.json is a degraded-UX issue, not a
+    blocker.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.adapters.storage.local import LocalStorageAdapter
+
+    try:
+        LocalStorageAdapter().save_eval_episodes(run_dir, rollout)
+    except Exception as exc:  # pylint: disable=broad-except
+        _log.warning(f"failed to save eval_episodes.json: {exc}")
+
+
 # ── CandidateEvaluator (short training) ──────────────────────────────
 
 
@@ -189,7 +250,15 @@ class BenchmarlCandidateEvaluator:
             f"cand={candidate.candidate_idx} iters={short_cfg.training.max_iters}"
         )
         experiment.run()
-        return _compute_metrics(adapter, experiment, short_cfg, cand_run_dir)
+        metrics = _compute_metrics(adapter, experiment, short_cfg, cand_run_dir)
+        # Inner-loop checkpoints are write-once-read-never: the FullTrainer
+        # builds a fresh experiment + retrains from scratch on the winning
+        # candidate's code, so it never loads these. Phase 5a shipped
+        # ~2.5 GiB of throwaway state per run (12 cands × ~200 MiB each).
+        # Scalars + config.pkl stay — tiny (~50 KiB) and the
+        # ``multi-scenario eval`` CLI needs config.pkl to reconstruct.
+        _prune_inner_loop_checkpoints(cand_run_dir)
+        return metrics
 
 
 # ── FullTrainer (full budget) ────────────────────────────────────────
@@ -220,4 +289,18 @@ class BenchmarlFullTrainer:
             f"cand={candidate.candidate_idx} iters={cfg.training.max_iters}"
         )
         experiment.run()
-        return _compute_metrics(adapter, experiment, cfg, run_dir)
+        # Inline what ``_compute_metrics`` does, so we can re-use the
+        # rollout for ``eval_episodes.json`` below (Phase 6 — match the
+        # ER1 ``output/`` layout so Streamlit can browse LERO runs).
+        rollout = adapter.evaluate(experiment, env=None, cfg=cfg, run_dir=run_dir)
+        metrics_dict = CommonMetricsBundle().compute(rollout, VmasDiscoveryAdapter())
+        metrics = CandidateMetrics(**metrics_dict)
+        # Write per-episode raw eval data to ``output/eval_episodes.json``
+        # using the same writer the non-LERO path uses (LocalStorageAdapter).
+        # Standard path: ExperimentService.run injects this via the
+        # ``eval_episodes_writer`` callable; LERO path was missing it
+        # before this fix.
+        _write_eval_episodes_safely(run_dir, rollout)
+        if cfg.training.delete_intermediate_checkpoints_on_success:
+            prune_intermediate_checkpoints_keep_latest(run_dir)
+        return metrics

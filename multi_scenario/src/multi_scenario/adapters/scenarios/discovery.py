@@ -44,11 +44,24 @@ class VmasDiscoveryAdapter(VmasScenarioBase):
         }
 
     def success_predicate(self, rollout: Any) -> Any:
-        """M1: True per episode if all targets were covered at any step.
+        """M1: True per episode if the cumulative coverage-event total ever ≥ n_targets.
 
-        Project memory: derived from ``targets_covered`` cumsum max — *not*
-        from the ``terminated`` signal (documented bug from rendezvous_comm).
+        ``rollout['targets_covered']`` (after the adapter's cumsum in
+        :meth:`BenchmarlBaseAdapter._extract_targets_covered`) is the
+        running coverage-event total per step. ``max(dim=-1)`` over
+        time then ``>= n_targets`` matches rendezvous_comm's M1::
+
+            # rendezvous_comm/src/metrics.py:109,135
+            self.targets_covered_total += info[0]["targets_covered"]
+            task_done = self.targets_covered_total >= self.n_targets
+
         Returns None when the rollout lacks the required keys.
+
+        Note: cumulative coverage events can exceed ``n_targets``
+        within an episode (empirically observed in Phase 5b — targets
+        get re-covered despite the teleport-out logic). The cumsum
+        ``>= n_targets`` criterion is rendezvous_comm's reported
+        ``success_rate``; comparable to their 0.88 number for S3b-local.
         """
         targets_covered = rollout.get("targets_covered")
         n_targets = rollout.get("n_targets")
@@ -58,14 +71,22 @@ class VmasDiscoveryAdapter(VmasScenarioBase):
         return max_per_episode >= n_targets
 
     def coverage_progress(self, rollout: Any) -> Any | None:
-        """M6: max fraction of targets ever covered, per episode.
+        """M6: clamped(cumulative coverage events, max=n_targets) / n_targets.
 
-        ``= (targets_covered.max(dim=-1).values / n_targets)``. Returns None
-        when the rollout lacks the required keys.
+        Matches rendezvous_comm's coverage_progress::
+
+            # rendezvous_comm/src/metrics.py:165-166
+            targets_covered = self.targets_covered_total.clamp(max=self.n_targets)
+            coverage_progress = (targets_covered / self.n_targets).mean().item()
+
+        The ``clamp(max=n_targets)`` is the load-bearing piece — without
+        it M6 can exceed 1.0 (Phase 5a's M6=1.97 was the symptom). With
+        clamp, M6 in [0, 1].
         """
         targets_covered = rollout.get("targets_covered")
         n_targets = rollout.get("n_targets")
         if targets_covered is None or n_targets is None:
             return None
         max_per_episode = torch.as_tensor(targets_covered).float().max(dim=-1).values
-        return max_per_episode / float(n_targets)
+        # Clamp BEFORE division so the metric stays in [0, 1].
+        return max_per_episode.clamp(max=float(n_targets)) / float(n_targets)

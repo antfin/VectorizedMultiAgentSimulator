@@ -111,7 +111,10 @@ class _RecordingFullTrainer:
         rank = len(self.attempts) - 1
         if rank <= self.crash_until_rank:
             raise RuntimeError(f"simulated full-training crash at rank {rank}")
-        return CandidateMetrics(M1_success_rate=1.0)
+        # Distinct M1 from the inner-loop's so tests can pin which metric
+        # source the summary reports. Inner-loop returns ``m1_table[...]``;
+        # full-training always returns 0.95 here.
+        return CandidateMetrics(M1_success_rate=0.95, M2_avg_return=42.0)
 
 
 # ── happy path: 2 iters × 2 candidates, all valid ───────────────────
@@ -144,6 +147,14 @@ def test_run_persists_history_and_summary(tmp_path: Path):
     assert summary.best_candidate_metrics.M1_success_rate == pytest.approx(0.7)
     assert summary.best_candidate_verdict == "progress"
     assert summary.full_training_succeeded is True
+    # Post-full-train metrics captured (Phase 1 fix — was discarded before).
+    # _RecordingFullTrainer always returns M1=0.95 on success.
+    assert summary.best_candidate_full_metrics is not None
+    assert summary.best_candidate_full_metrics.M1_success_rate == pytest.approx(0.95)
+    # Fallback chain's success entry also carries the full-train metrics.
+    success_entry = next(e for e in summary.fallback_chain if e.outcome == "success")
+    assert success_entry.full_train_metrics is not None
+    assert success_entry.full_train_metrics.M1_success_rate == pytest.approx(0.95)
     # Filesystem layout populated.
     lero_root = run_dir / "output" / "lero"
     assert (lero_root / "final_summary.json").is_file()

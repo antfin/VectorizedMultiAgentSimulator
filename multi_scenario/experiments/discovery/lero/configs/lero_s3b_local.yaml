@@ -1,0 +1,144 @@
+# F8.4 — LERO S3b-local reproduction (port of rendezvous_comm).
+#
+# Source: rendezvous_comm/configs/lero/s3b_local.yaml (commit hash at port
+# time pinned in tests/reproducibility/test_lero_s3b_local_config_parity.py).
+# Field mapping doc:
+#   - `task.*`          → `scenario.params.*`
+#   - `train.max_n_frames` (10M) ÷ `frames_per_batch` (60k) → 167 max_iters
+#   - `train.evaluation_interval` (120k frames) ÷ 60k → 2 evaluation interval iters
+#   - `lero.eval_frames`        → `lero.eval_frames_per_candidate`
+#   - `lero.obs_state_mode=local` → implicit via prompt_version suffix `_local`
+#                                   (our patched-scenario factory branches
+#                                   on the suffix; F9.6.e wiring)
+#
+# Reproducibility target: rendezvous_comm S3b-local single-seed M1 ≈ 0.88
+# (project memory 2026-04-17). F8.4 threshold (plan-locked):
+#   mean M1 across 3 seeds ≥ 0.70  AND  best M1 ≥ 0.80.
+#
+# ── Three things to know before reading this YAML ───────────────────
+#
+# 1. ``evolve_observation=true, evolve_reward=false``: obs-only LERO.
+#    The LLM designs ``enhance_observation(scenario_state)`` to extract
+#    coordination signals from LOCAL sensors; the original Discovery
+#    reward is untouched. This is what rendezvous_comm found best.
+#
+# 2. ``whitelist_strict=true`` + ``prompt_version: v2_fewshot_k2_local``:
+#    the LLM ONLY sees lidar / own pos+vel / static constants. Any
+#    fishing for ``state['agents_pos']`` raises FairnessViolation at
+#    runtime (F9.5 enforcement) — the candidate is marked invalid and
+#    the orchestrator's fallback chain skips to rank+1.
+#
+# 3. ``runtime.runner.type: ovh`` + ``training.device: cuda`` is the
+#    canonical OVH+GPU combo. Override at submit time:
+#      multi-scenario run --runner local <this-yaml>          # local CPU
+#    Inside the OVH container, LocalRunner reads this YAML and drives
+#    BenchMARL on the V100S the OvhJobConfig requests.
+
+experiment:
+  id: lero_s3b_local
+  seed: 0
+  name: "LERO S3b-local — obs-only LERO with LOCAL sensors only (F8.4)"
+  description: >
+    Port of rendezvous_comm/configs/lero/s3b_local.yaml.
+    Obs-only LERO (ER1 reward kept), CTDE-fair (local sensors only).
+    LLM designs ``enhance_observation`` features from lidar + own state;
+    no access to global target positions, agent counts, or coverage
+    status. Reproducibility target: M1 ≈ 0.88 single-seed.
+
+scenario:
+  type: discovery
+  params:
+    # ── Task topology (k=2 rendezvous, n=4 agents share 4 targets) ──
+    n_agents: 4
+    n_targets: 4
+    agents_per_target: 2
+    # ── Sensor geometry. covering_range=0.25 here (NOT 0.35 like ER1
+    #    baseline) — that's the rendezvous_comm S3b-local default and
+    #    is what reproduces M1=0.88. Don't change without recompare.
+    lidar_range: 0.35
+    covering_range: 0.25
+    use_agent_lidar: true
+    n_lidar_rays_entities: 15
+    n_lidar_rays_agents: 12
+    # ── Episode dynamics
+    targets_respawn: false      # required for M1 cumsum semantics
+    shared_reward: true
+    max_steps: 400              # rendezvous_comm S3b-local default
+    # ── Reward shaping (kept; LERO doesn't replace this in obs-only mode)
+    agent_collision_penalty: -0.01
+    covering_rew_coeff: 1.0
+    time_penalty: -0.01
+
+algorithm:
+  type: mappo
+  params:
+    # GAE lambda — PPO-specific, lives in algorithm.params (not training.*).
+    lmbda: 0.95
+
+training:
+  # max_n_frames=10M ÷ frames_per_batch=60k → 167 iters
+  max_iters: 167
+  num_envs: 600
+  device: cuda  # V100S on OVH; --runner local requires cpu override
+  lr: 0.00005
+  gamma: 0.99
+  frames_per_batch: 60000
+  minibatch_size: 4096
+  n_minibatch_iters: 45
+  share_policy_params: true
+  # Match ER1's policy (default = 3 most-recent). The "keep all" choice
+  # cost 1.83 GiB per LERO run on Phase 5a; the F8.5.D best-checkpoint
+  # use case was hypothetical and the rendezvous_comm-prune incident
+  # involved only the last-3 cliff — which is already what 3 keeps.
+  # Bump back to a higher value if a future ablation actually uses
+  # intermediate-checkpoint selection.
+  keep_checkpoints_num: 3
+  checkpoint_interval_iters: 10
+  # Phase 4 fix: drop intermediate checkpoints once full-training succeeds.
+  # Keeps only the final checkpoint (~107 MiB) so Streamlit replay still
+  # works; the other 2 of the rolling-3 get unlinked. With LERO's ~1.83 GiB
+  # full-train footprint, that recovers ~70% of the space on success while
+  # preserving the policy for downstream eval/video regen.
+  delete_intermediate_checkpoints_on_success: true
+
+evaluation:
+  # rendezvous_comm: evaluation_interval=120k frames = 2 iters @ 60k/batch
+  interval_iters: 2
+  episodes: 200
+
+runtime:
+  runner:
+    type: ovh   # F7.7.A4: drives `multi-scenario run` dispatch
+    params: {}
+    # F8.2.A: record_video defaults to True for non-smoke; the LERO
+    # full-trainer writes its videos under run_dir/output/videos/
+    # alongside the standard run.
+  storage:
+    type: fs
+    path: /workspace/results  # OVH container mount
+
+# ── LERO loop ─────────────────────────────────────────────────────────
+lero:
+  prompt_version: v2_fewshot_k2_local
+  n_iterations: 4
+  n_candidates: 3
+  evolve_reward: false
+  evolve_observation: true
+  reward_clip: 50.0
+  eval_frames_per_candidate: 1_000_000  # rendezvous_comm Phase-4 default
+  meta_prompting: false   # F9.7.A stub off; F9.7.B unlocks post-extraction
+  whitelist_strict: true  # CTDE-fair: forbidden-key lookups raise FairnessViolation
+
+# ── LLM client ────────────────────────────────────────────────────────
+llm:
+  # rendezvous_comm specified ``gpt-5.4-mini`` in s3b_local.yaml; we keep
+  # the same model so token costs + behaviour match. Set
+  # ``OPENAI_API_KEY`` in the project-root ``.env``.
+  model: gpt-5.4-mini
+  temperature: 0.8
+  max_tokens: 4096
+  # Default rolling caps. €10/day × 3 parallel seeds ≈ €6 total burn
+  # expected; bump if you need to.
+  cost_cap_per_day_eur: 10.0
+  cost_cap_per_month_eur: 100.0
+  cache_enabled: false   # reproducibility: never reuse stale completions

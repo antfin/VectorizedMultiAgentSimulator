@@ -42,12 +42,33 @@ def inspect_lero(
         typer.echo(f"  candidates total:        {summary['n_candidates_total']}")
         typer.echo(f"  total cost (ledger USD): {summary['total_cost_usd']:.2f}")
         typer.echo(f"  best inner-loop verdict: {summary['best_candidate_verdict']}")
-        best = summary["best_candidate_metrics"]
+        # Inner-loop metrics (1M-frame screening eval).
+        best_inner = summary["best_candidate_metrics"]
         for key in ("M1_success_rate", "M2_avg_return", "M6_coverage_progress"):
-            val = best.get(key)
+            val = best_inner.get(key)
             if val is not None:
                 typer.echo(f"  best inner {key:24s} {val:.3f}")
         typer.echo(f"  full training succeeded: {summary['full_training_succeeded']}")
+        # Post-full-train metrics (10M-frame eval — the science result).
+        best_full = summary.get("best_candidate_full_metrics")
+        if best_full is not None:
+            typer.echo("  ── POST-FULL-TRAIN METRICS (the science result) ──")
+            for key in (
+                "M1_success_rate",
+                "M2_avg_return",
+                "M3_steps",
+                "M4_collisions",
+                "M6_coverage_progress",
+            ):
+                val = best_full.get(key)
+                if val is not None:
+                    typer.echo(f"  best full  {key:24s} {val:.3f}")
+        else:
+            typer.echo(
+                "  (no post-full-train metrics — full training crashed on every "
+                "rank in the fallback chain, or summary was written by an older "
+                "orchestrator that discarded train_full() return values)"
+            )
         if summary.get("fallback_chain"):
             typer.echo("  fallback chain:")
             for entry in summary["fallback_chain"]:

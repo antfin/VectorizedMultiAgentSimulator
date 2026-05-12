@@ -1,0 +1,124 @@
+# F8.4 Phase 3 — OVH LERO smoke (~€0.20-0.50 expected burn).
+#
+# Purpose: de-risk the OVH dispatch path for LERO YAMLs BEFORE
+# committing to Phase 5's €2-3 seeds. What this validates that the
+# local Phase 1/2 smokes can't:
+#
+#   1. F8.4 Phase 2.5 secret shipping — Fernet-encrypted
+#      OPENAI_API_KEY actually reaches the container and primes
+#      ``os.environ`` before the LERO orchestrator instantiates
+#      LiteLlmClient.
+#   2. OvhRunner's --env plumbing carries both ``MS_ENCRYPTED_SECRETS``
+#      and ``MS_SECRETS_PASSPHRASE`` through to the running pod.
+#   3. The S3 result pullback finds the run_dir/output/lero/ tree and
+#      ``inspect-lero`` prints a usable summary from the local copy.
+#   4. The container's BenchMARL install actually accepts the patched
+#      scenario class (pickle survives the worker fork on Linux/CUDA,
+#      which is what bit F2.9).
+#
+# Cost ceiling: 2 LLM calls × ~€0.02 ≈ €0.04 + ~5-10 min V100S
+# ≈ €0.20-0.50. Cost caps below are LOOSE on purpose — a smoke
+# tripping the cap would mask the real OVH path test.
+#
+# Run it:
+#   python -m multi_scenario.cli run \
+#     experiments/discovery/lero/configs/_lero_smoke.yaml
+#
+# Or via the Streamlit Submit page (preflight will warn if
+# OPENAI_API_KEY is missing from the local env).
+#
+# After completion:
+#   python -m multi_scenario.cli inspect-lero \
+#     output/lero_smoke_phase3/output/lero/
+
+experiment:
+  id: lero_smoke_phase3
+  seed: 0
+  name: "LERO OVH-dispatch smoke (Phase 3 de-risk)"
+  description: >
+    Tiny LERO loop on OVH to validate the secret-shipping path +
+    pullback + inspect-lero CLI. NOT a science run — outputs are
+    expected to be noise (max_iters=5 won't converge).
+
+scenario:
+  type: discovery
+  params:
+    # Same topology shape as S3b-local so the prompt template renders
+    # the same task description (we want the LLM path exercised, just
+    # with tiny eval frames).
+    n_agents: 4
+    n_targets: 4
+    agents_per_target: 2
+    lidar_range: 0.35
+    covering_range: 0.25
+    use_agent_lidar: true
+    n_lidar_rays_entities: 15
+    n_lidar_rays_agents: 12
+    targets_respawn: false
+    shared_reward: true
+    max_steps: 200
+    agent_collision_penalty: -0.01
+    covering_rew_coeff: 1.0
+    time_penalty: -0.01
+
+algorithm:
+  type: mappo
+  params:
+    lmbda: 0.95
+
+training:
+  # max_iters=5 × frames_per_batch=10k = 50k frames for the final
+  # full-train step. Tiny on purpose — we're testing dispatch, not
+  # learning.
+  max_iters: 5
+  num_envs: 100
+  device: cuda
+  lr: 0.00005
+  gamma: 0.99
+  frames_per_batch: 10000
+  minibatch_size: 1024
+  n_minibatch_iters: 10
+  share_policy_params: true
+  keep_checkpoints_num: 3
+  checkpoint_interval_iters: 5
+  delete_intermediate_checkpoints_on_success: true
+
+evaluation:
+  interval_iters: 5
+  episodes: 10
+
+runtime:
+  runner:
+    type: ovh
+    # Smoke explicitly disables video recording (no `_smoke` suffix
+    # on experiment.id, so the heuristic doesn't trip).
+    params:
+      record_video: false
+  storage:
+    type: fs
+    path: /workspace/results
+
+lero:
+  prompt_version: v2_fewshot_k2_local
+  # 1 iter × 2 cands → 2 LLM calls total. Enough to exercise the
+  # codegen → patched-scenario → BenchMARL path; cheap enough to
+  # iterate on if it breaks.
+  n_iterations: 1
+  n_candidates: 2
+  evolve_reward: false
+  evolve_observation: true
+  reward_clip: 50.0
+  eval_frames_per_candidate: 100000
+  meta_prompting: false
+  whitelist_strict: true
+
+llm:
+  # gpt-4o-mini instead of gpt-5.4-mini — same prompts work, ~5×
+  # cheaper. The dispatch path is the same.
+  model: gpt-4o-mini
+  temperature: 0.8
+  max_tokens: 4096
+  # Loose caps: we don't want a smoke to silently fail on cost.
+  cost_cap_per_day_eur: 5.0
+  cost_cap_per_month_eur: 20.0
+  cache_enabled: false

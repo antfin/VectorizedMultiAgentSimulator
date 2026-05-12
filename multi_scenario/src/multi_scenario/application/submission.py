@@ -123,16 +123,26 @@ def submit_to_ovh(
     ``client`` and ``secrets`` are injectable for tests. Defaults instantiate
     fresh real adapters — same behaviour the previous duplicated glue had.
 
+    F8.4 Phase 2.5: when ``cfg.lero is not None``, collect LLM API keys
+    from the submitter's local environment (``OPENAI_API_KEY`` /
+    ``ANTHROPIC_API_KEY`` / ``OVH_API_KEY``) and ship them via the
+    Fernet-encrypted ``secret_env`` channel. The in-container
+    ``experiment_service._run_lero`` decrypts them into ``os.environ``
+    before constructing the LLM client (see :mod:`secrets_priming`).
+
     Doesn't catch exceptions: ``OvhRunner.submit`` raises
     :class:`OvhCliError` (via :class:`OvhClient`) on failure; callers wrap
     according to their UX (CLI re-raises, Streamlit writes to session_state).
     """
+    secret_env, secret_passphrase = _collect_lero_secret_env(cfg)
     runner = OvhRunner(
         ovh_config=ovh_cfg,
         client=client or OvhClient(),
         secrets=secrets or FernetSecretsAdapter(),
         logger=logger,
         yaml_path_in_repo=yaml_path_in_repo,
+        secret_env=secret_env,
+        secret_passphrase=secret_passphrase,
     )
     job_id = runner.submit(cfg, run_dir)
     run_id = RunId(exp_id=cfg.experiment.id, seed=cfg.experiment.seed)
@@ -149,6 +159,70 @@ def submit_to_ovh(
             f"https://www.ovh.com/manager/#/dedicated/aiTraining/jobs/{job_id}"
         ),
     )
+
+
+#: LLM-provider API keys that LERO needs in-container. Order matters
+#: for the F9.8 preflight check, but here we just collect any that
+#: the submitter exported locally; LiteLLM picks the right one per
+#: model prefix.
+_LERO_API_KEY_ENV_VARS: tuple[str, ...] = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OVH_API_KEY",
+)
+
+
+def _collect_lero_secret_env(
+    cfg: ExperimentConfig,
+) -> tuple[dict[str, str] | None, str | None]:
+    """Build the Fernet-encrypted secret_env when ``cfg.lero`` is set.
+
+    Returns ``(secret_env, passphrase)`` where:
+    - ``secret_env`` is the dict of LLM API keys present in the
+      submitter's local environment, OR ``None`` when none are set
+      OR ``cfg.lero is None`` (non-LERO submissions don't need keys).
+    - ``passphrase`` is a freshly-generated 32-byte urlsafe token
+      that decrypts the blob in-container, OR ``None`` matching the
+      env-dict.
+
+    The passphrase is held only in this process and in the OVH job's
+    ``--env`` ciphertext — never written to disk locally, never
+    persisted in the OVH dashboard's job-args (it's just an env var
+    on the running container).
+    """
+    # pylint: disable=import-outside-toplevel
+    import os
+    import secrets as _secrets_module
+
+    if cfg.lero is None:
+        return None, None
+    # Best-effort ``.env`` autoload before reading ``os.environ`` — mirrors
+    # the convenience of :func:`litellm_adapter._load_env_once` but at
+    # submit-time, so a user who keeps ``OPENAI_API_KEY`` in
+    # ``multi_scenario/.env`` (or the repo-root ``.env``) doesn't have
+    # to remember to ``export`` it before ``multi-scenario run``.
+    # ``override=False`` means a shell ``export`` still wins, so this
+    # never overrides an intentional value.
+    try:
+        from dotenv import load_dotenv
+
+        here = Path.cwd()
+        for parent in (here, *here.parents):
+            candidate = parent / ".env"
+            if candidate.is_file():
+                load_dotenv(candidate, override=False)
+                break
+    except ImportError:
+        pass
+    collected = {k: v for k in _LERO_API_KEY_ENV_VARS if (v := os.environ.get(k))}
+    if not collected:
+        # No keys to ship — leave the OvhRunner without secret_env.
+        # The in-container LERO will then fail at LiteLLM call time
+        # with a clear 401, which is a better signal than silently
+        # shipping nothing and getting a confusing crash.
+        return None, None
+    passphrase = _secrets_module.token_urlsafe(32)
+    return collected, passphrase
 
 
 def submit_to_local(

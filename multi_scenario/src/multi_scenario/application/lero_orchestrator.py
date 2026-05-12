@@ -219,6 +219,7 @@ class LeroOrchestrator:
         )
         start_iteration = max((r.candidate.iteration for r in history), default=-1) + 1
         cost_cap_hit = False
+        total_cost_usd = 0.0
 
         run_id = f"{cfg.experiment.id}_s{cfg.experiment.seed}"
         for iteration in range(start_iteration, cfg.lero.n_iterations):
@@ -230,7 +231,7 @@ class LeroOrchestrator:
                     task_params=dict(cfg.scenario.params),
                     strategy_card=strategy_card,
                 )
-                iter_results = self._run_iteration(
+                iter_results, iter_cost = self._run_iteration(
                     cfg=cfg,
                     run_dir=run_dir,
                     iteration=iteration,
@@ -238,6 +239,7 @@ class LeroOrchestrator:
                     run_id=run_id,
                 )
                 history.extend(iter_results)
+                total_cost_usd += iter_cost
                 self._trace_writer.write_evolution_history(
                     run_dir=run_dir, results=history
                 )
@@ -257,6 +259,12 @@ class LeroOrchestrator:
 
         # Best inner-loop candidate (rank 0 BEFORE full training).
         best = ranked[0] if ranked else None
+        # The post-full-train metrics belong to the rank that succeeded
+        # in the fallback chain (if any). Walk the chain to find it.
+        full_metrics_winner = next(
+            (e.full_train_metrics for e in fallback_chain if e.outcome == "success"),
+            None,
+        )
 
         summary = LeroRunSummary(
             exp_id=cfg.experiment.id,
@@ -265,11 +273,12 @@ class LeroOrchestrator:
                 cfg.lero.n_iterations if not cost_cap_hit else (iteration)
             ),
             n_candidates_total=len(history),
-            total_cost_usd=0.0,  # cost lives in the ledger; surfaced at write time
+            total_cost_usd=total_cost_usd,
             best_candidate_metrics=(
                 best.metrics if best is not None else CandidateMetrics()
             ),
             best_candidate_verdict=(best.verdict if best is not None else "invalid"),
+            best_candidate_full_metrics=full_metrics_winner,
             fallback_chain=fallback_chain,
             full_training_succeeded=full_success,
         )
@@ -286,8 +295,15 @@ class LeroOrchestrator:
         iteration: int,
         composed: ComposedPrompt,
         run_id: str,
-    ) -> list[CandidateResult]:
-        """Generate + evaluate one iteration's batch of candidates."""
+    ) -> tuple[list[CandidateResult], float]:
+        """Generate + evaluate one iteration's batch of candidates.
+
+        Returns ``(iter_results, iter_cost_usd)``. The cost is the sum
+        of ``LlmCompletion.usage.estimated_cost_usd`` across the
+        iteration's LLM calls — surfaced so :meth:`run` can aggregate
+        a per-run total for :class:`LeroRunSummary.total_cost_usd`
+        (Phase 9 issue #10 fix; the field was hardcoded to 0.0 before).
+        """
         assert cfg.lero is not None and cfg.llm is not None
         n = cfg.lero.n_candidates
 
@@ -351,7 +367,13 @@ class LeroOrchestrator:
         # Quieten unused-variable warnings for the side-effect-only
         # local from the extract_candidates batch pre-flight.
         del valid_codes
-        return results
+        # Sum the iteration's LLM cost. ``estimated_cost_usd`` is
+        # populated by LiteLlmClient on the first sibling per call;
+        # since we issue one call per candidate (n=1 each), each
+        # ``comp.usage`` carries the full call's cost — summing across
+        # completions is correct, not double-counted.
+        iter_cost = sum(c.usage.estimated_cost_usd or 0.0 for c in completions)
+        return results, iter_cost
 
     # ── Per-candidate evaluation ──────────────────────────────────────
 
@@ -412,9 +434,15 @@ class LeroOrchestrator:
                 )
                 continue
             try:
-                _ = self._full_trainer.train_full(
+                full_metrics = self._full_trainer.train_full(
                     cfg=cfg, candidate=r.candidate, run_dir=run_dir
                 )
+                # ``full_metrics`` is the 10M-frame post-train CandidateMetrics
+                # (200-episode eval against the trained policy). Pre-fix this
+                # was discarded — ``final_summary.json`` showed only the
+                # 1M-frame inner-loop M1 (~0.03 on Phase 5a) instead of the
+                # true 10M-frame M1 (~0.79). Keep both: inner = screening
+                # signal, full = science result.
                 chain.append(
                     FallbackEntry(
                         rank=rank,
@@ -422,6 +450,7 @@ class LeroOrchestrator:
                         candidate_idx=r.candidate.candidate_idx,
                         eval_metrics=r.metrics,
                         outcome="success",
+                        full_train_metrics=full_metrics,
                     )
                 )
                 return chain, True

@@ -168,6 +168,16 @@ class ExperimentService:
         from multi_scenario.application.lero_factory import (
             build_default_lero_orchestrator,
         )
+        from multi_scenario.application.secrets_priming import (
+            prime_os_environ_from_encrypted_secrets,
+        )
+
+        # F8.4 Phase 2.5: inside an OVH container the OPENAI_API_KEY
+        # arrives as the encrypted MS_ENCRYPTED_SECRETS blob the
+        # OvhRunner shipped. Decrypt + push into os.environ BEFORE the
+        # factory constructs LiteLlmClient (its ``_load_env_once`` only
+        # reads .env files; the encrypted-blob path is this hook).
+        prime_os_environ_from_encrypted_secrets()
 
         state = state.transition_to(RunState.RUNNING, self._now())
         self._storage.save_run_state(run_dir, state)
@@ -196,9 +206,14 @@ class ExperimentService:
         self._storage.save_result(run_dir, result)
         state = state.transition_to(RunState.DONE, self._now())
         self._storage.save_run_state(run_dir, state)
-        self._logger.info(
-            f"done {run_id} (LERO best M1={summary.best_candidate_metrics.M1_success_rate})"
+        # Prefer the post-full-train M1 (the science result). Fall back to
+        # inner-loop M1 only when full-training crashed on every rank.
+        m1_for_log = (
+            summary.best_candidate_full_metrics.M1_success_rate
+            if summary.best_candidate_full_metrics is not None
+            else summary.best_candidate_metrics.M1_success_rate
         )
+        self._logger.info(f"done {run_id} (LERO full-train M1={m1_for_log})")
         return result
 
     @staticmethod
@@ -211,11 +226,17 @@ def _lero_metrics_to_records(summary) -> list:
 
     ExperimentResult's persistence layer expects a list of records, not
     a Pydantic CandidateMetrics. Hand-flatten the fields here.
+
+    **Source preference**: post-full-training metrics (10M frames) when
+    available, falling back to inner-loop (1M frames) only when every
+    rank in the fallback chain crashed. The exported ``metrics.json`` is
+    what Streamlit + downstream tooling read, so it must reflect the
+    science result, not the screening signal.
     """
     # pylint: disable=import-outside-toplevel
     from multi_scenario.domain.models import MetricRecord
 
-    m = summary.best_candidate_metrics
+    m = summary.best_candidate_full_metrics or summary.best_candidate_metrics
     fields = (
         ("M1_success_rate", m.M1_success_rate),
         ("M2_avg_return", m.M2_avg_return),

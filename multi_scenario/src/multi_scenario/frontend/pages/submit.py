@@ -1077,7 +1077,7 @@ with st.container(border=True):
             info_cols[1].markdown(
                 f"[Open in OVH dashboard ↗]({sub_status['dashboard_url']})"
             )
-            refresh_col, _ = st.columns([1, 3])
+            refresh_col, auto_col = st.columns([1, 1])
             with refresh_col:
                 if st.button(
                     "🔄 Refresh status",
@@ -1090,10 +1090,35 @@ with st.container(border=True):
                 ):
                     _refresh_ovh_status()
                     st.rerun()
+            with auto_col:
+                # Phase 8: auto-poll. When checked, the Submit page polls
+                # OVH on each rerun. If the job is DONE, the pullback fires
+                # automatically and the user lands on the "DONE" view
+                # without needing to click Refresh.
+                auto_poll = st.checkbox(
+                    "Auto-poll + auto-pullback on DONE",
+                    key="auto_poll_ovh",
+                    value=st.session_state.get("auto_poll_ovh", True),
+                    help=(
+                        "On each page render, re-checks the OVH job state. "
+                        "When the job hits DONE, pulls results back automatically. "
+                        "Uncheck to stop polling without cancelling the job."
+                    ),
+                )
+            if auto_poll:
+                _refresh_ovh_status()
+                # If state has flipped (status != submitted anymore),
+                # rerun so the new view renders cleanly.
+                if (
+                    st.session_state.get("submit_submission_status", {}).get("status")
+                    != "submitted"
+                ):
+                    st.rerun()
             st.caption(
-                "Click Refresh when the OVH dashboard shows the job near DONE. "
-                "On DONE: results auto-pull to the local folder so the Run "
-                "Detail page can read them."
+                "Auto-poll is on by default. Uncheck if you want to navigate "
+                "around without the page re-fetching. The OVH job runs "
+                "regardless — pullback can also be triggered later with "
+                "``multi-scenario sweep --follow --runner ovh <yaml>``."
             )
         elif sub_status["status"] == "done":
             display_dir = sub_status.get("pullback_dir") or sub_status["run_dir"]

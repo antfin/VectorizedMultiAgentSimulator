@@ -84,7 +84,14 @@ def _dispatch_local(cfg: ExperimentConfig) -> None:
 
 
 def _dispatch_ovh(cfg: ExperimentConfig, yaml_path: Path) -> None:
-    """OVH path: load configs/ovh.yaml + resolve repo-relative YAML + submit."""
+    """OVH path: load configs/ovh.yaml + resolve repo-relative YAML + submit.
+
+    Phase 9 (#12): auto-uploads the local code tree when the bucket's
+    ``.code_hash`` differs from the local hash. First Phase 3 attempt
+    failed because the newly-created YAML wasn't in the bucket — this
+    closes that gap so the user doesn't have to remember to
+    ``upload-code`` after editing.
+    """
     # pylint: disable=import-outside-toplevel
     from multi_scenario.domain.models import OvhJobConfig
 
@@ -107,6 +114,9 @@ def _dispatch_ovh(cfg: ExperimentConfig, yaml_path: Path) -> None:
             f"({repo_root}); OVH submission needs the repo-relative path."
         ) from exc
 
+    # Auto-upload code when the local tree differs from the bucket.
+    _maybe_upload_stale_code(ovh_cfg)
+
     _, run_dir = build_run_dir(cfg)
     submission = submit_to_ovh(
         cfg,
@@ -119,6 +129,56 @@ def _dispatch_ovh(cfg: ExperimentConfig, yaml_path: Path) -> None:
     typer.echo(f"  results: {submission.s3_prefix}")
     typer.echo(f"  dashboard: {submission.dashboard_url}")
     typer.echo(f"  pull back: multi-scenario sweep --follow --runner ovh {yaml_path}")
+
+
+def _maybe_upload_stale_code(ovh_cfg) -> None:
+    """Compare the local code hash to the bucket's; upload if different.
+
+    No-op when the bucket already has the current code (idempotent
+    submits don't re-upload). When the bucket can't be queried (e.g.
+    first ever submit, before anything was uploaded), assumes stale
+    and uploads.
+
+    Phase 9 fix: pre-Phase 9, the user had to run ``multi-scenario
+    upload-code`` separately whenever a YAML or src file changed.
+    First Phase 3 attempt failed because the new ``_lero_smoke.yaml``
+    wasn't on the bucket — this closes the gap.
+    """
+    # pylint: disable=import-outside-toplevel
+    from multi_scenario.adapters.runners.ovh_cli import OvhClient
+    from multi_scenario.adapters.storage.code_uploader import (
+        CODE_HASH_KEY,
+        CodeUploader,
+        compute_local_code_hash,
+    )
+
+    repo_root = Path.cwd().resolve()
+    local_hash = compute_local_code_hash(repo_root)
+    client = OvhClient()
+    try:
+        remote_hash_blob = client.bucket_get_object(
+            ovh_cfg.region, ovh_cfg.bucket_code, CODE_HASH_KEY
+        )
+        remote_hash = remote_hash_blob.decode("utf-8").strip()
+    except Exception:  # pylint: disable=broad-except
+        # No .code_hash on the bucket → first-ever upload or transient
+        # error. Upload defensively so the job doesn't see stale code.
+        remote_hash = None
+
+    if remote_hash == local_hash:
+        typer.echo(f"code bucket up-to-date (hash={local_hash[:12]}…); skipping upload")
+        return
+
+    if remote_hash is None:
+        typer.echo("no .code_hash on bucket — uploading code…")
+    else:
+        typer.echo(
+            f"code hash drifted (local={local_hash[:12]}… remote={remote_hash[:12]}…); "
+            "uploading…"
+        )
+    uploader = CodeUploader.from_ovh_client(client, ovh_cfg.region, ovh_cfg.bucket_code)
+    files = uploader.upload(repo_root, dry_run=False)
+    typer.echo(f"  uploaded {len(files)} files")
 
 
 class _StdoutLogger:

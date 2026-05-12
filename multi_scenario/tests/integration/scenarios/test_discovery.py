@@ -76,6 +76,43 @@ def test_coverage_progress_returns_max_fraction():
     assert torch.allclose(out, expected)
 
 
+def test_coverage_progress_clamps_at_n_targets():
+    """M6 stays in [0, 1] even when cumulative coverage exceeds n_targets.
+
+    Phase 5b empirical observation: cumulative coverage events can
+    exceed ``n_targets`` per episode (targets get re-covered despite
+    teleport-on-cover). rendezvous_comm's M6 clamps at n_targets
+    (``rendezvous_comm/src/metrics.py:165``):
+
+    ::
+
+        targets_covered = self.targets_covered_total.clamp(max=n_targets)
+
+    Without the clamp, Phase 5a reported M6=1.97 — clearly a bug-symptom
+    not "97% over-coverage". With the clamp, M6 ∈ [0, 1] as intended.
+    """
+    rollout = {
+        "n_targets": 4,
+        # Cumulative coverage events: monotonic, exceeds n_targets (= 4)
+        # by step 4. Without clamp: max=7 → M6 = 7/4 = 1.75. With clamp:
+        # 7 → 4 → M6 = 1.0.
+        "targets_covered": torch.tensor([[1, 3, 5, 7]]),
+    }
+    out = VmasDiscoveryAdapter().coverage_progress(rollout)
+    assert out.max().item() <= 1.0
+    assert out.item() == 1.0
+
+
+def test_coverage_progress_partial_below_n_targets():
+    """M6 reflects partial coverage when cumsum stays below n_targets."""
+    rollout = {
+        "n_targets": 4,
+        "targets_covered": torch.tensor([[1, 2, 2, 2]]),  # max=2 → 0.5
+    }
+    out = VmasDiscoveryAdapter().coverage_progress(rollout)
+    assert out.item() == 0.5
+
+
 def test_utilization_predicate_still_stubbed():
     """M8 stays None until a later feature implements it."""
     assert VmasDiscoveryAdapter().utilization_predicate(state={"any": "thing"}) is None

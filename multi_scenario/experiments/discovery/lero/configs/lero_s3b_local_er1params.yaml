@@ -1,0 +1,95 @@
+# F8.4 Phase 5b — LERO S3b-local with ER1 parameters.
+#
+# Same LERO loop as ``lero_s3b_local.yaml`` (4 iters × 3 cands × 1M
+# eval frames; obs-only; gpt-5.4-mini), but with ER1's scenario knobs
+# (covering_range=0.35, max_steps=200) so the post-full-train M1 is
+# directly comparable to the ER1 baseline (40.5%).
+#
+# Reference points:
+# - rendezvous_comm S3b-local (cr=0.25 ms=400): M1 ≈ 0.88 (target)
+# - ours-as-ported (cr=0.25 ms=400):            M1 = 0.795 (Phase 5a)
+# - ER1 baseline (cr=0.35 ms=200):              M1 ≈ 0.405
+# - **this run (cr=0.35 ms=200)**:              comparable to ER1
+#
+# Hypothesis: LERO on ER1 params should lift M1 well above 0.405. The
+# size of that lift is the science result of Phase 5b.
+
+experiment:
+  id: lero_s3b_local_er1params
+  seed: 0
+  name: "LERO S3b-local with ER1 params (cr=0.35, ms=200, F8.4 Phase 5b)"
+  description: >
+    Same LERO loop as S3b-local but scenario knobs match ER1 baseline:
+    covering_range=0.35 and max_steps=200. The apples-to-apples
+    comparison against ER1's 40.5% M1.
+
+scenario:
+  type: discovery
+  params:
+    n_agents: 4
+    n_targets: 4
+    agents_per_target: 2
+    lidar_range: 0.35
+    # ER1 params:
+    covering_range: 0.35
+    max_steps: 200
+    use_agent_lidar: true
+    n_lidar_rays_entities: 15
+    n_lidar_rays_agents: 12
+    targets_respawn: false
+    shared_reward: true
+    agent_collision_penalty: -0.01
+    covering_rew_coeff: 1.0
+    time_penalty: -0.01
+
+algorithm:
+  type: mappo
+  params:
+    lmbda: 0.95
+
+training:
+  # 10M-frame budget kept (same as S3b-local). ER1 also runs 10M.
+  max_iters: 167
+  num_envs: 600
+  device: cuda
+  lr: 0.00005
+  gamma: 0.99
+  frames_per_batch: 60000
+  minibatch_size: 4096
+  n_minibatch_iters: 45
+  share_policy_params: true
+  keep_checkpoints_num: 3
+  checkpoint_interval_iters: 10
+  # Phase 4 cleanup: keep only the final checkpoint on success.
+  delete_intermediate_checkpoints_on_success: true
+
+evaluation:
+  interval_iters: 2
+  episodes: 200
+
+runtime:
+  runner:
+    type: ovh
+    params: {}
+  storage:
+    type: fs
+    path: /workspace/results
+
+lero:
+  prompt_version: v2_fewshot_k2_local
+  n_iterations: 4
+  n_candidates: 3
+  evolve_reward: false
+  evolve_observation: true
+  reward_clip: 50.0
+  eval_frames_per_candidate: 1_000_000
+  meta_prompting: false
+  whitelist_strict: true
+
+llm:
+  model: gpt-5.4-mini
+  temperature: 0.8
+  max_tokens: 4096
+  cost_cap_per_day_eur: 10.0
+  cost_cap_per_month_eur: 100.0
+  cache_enabled: false

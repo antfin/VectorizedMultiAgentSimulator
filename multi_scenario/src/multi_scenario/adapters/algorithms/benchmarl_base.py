@@ -227,6 +227,13 @@ class BenchmarlBaseAdapter:
                 output_path=videos_dir / "after_training.mp4",
             )
 
+        # Post-success checkpoint pruning. Same flag governs LERO + non-LERO.
+        if (
+            cfg.training.delete_intermediate_checkpoints_on_success
+            and run_dir is not None
+        ):
+            prune_intermediate_checkpoints_keep_latest(run_dir)
+
         return experiment
 
     def evaluate(
@@ -373,6 +380,39 @@ class BenchmarlBaseAdapter:
     def _extract_targets_covered(
         rollout_td: Any, group_map: Any, out: list[torch.Tensor]
     ) -> None:
+        """Extract per-step ``targets_covered`` count from the rollout, cumsum'd.
+
+        VMAS Discovery emits ``self.covered_targets.sum(-1)`` as the
+        per-step COUNT of currently-covered targets. We then ``cumsum``
+        across time so downstream metrics match rendezvous_comm's
+        formula in ``rendezvous_comm/src/metrics.py:109``:
+
+        ::
+
+            self.targets_covered_total += info[0]["targets_covered"]
+            task_done = self.targets_covered_total >= self.n_targets
+
+        - **M1 success** = ``cumsum.max(dim=time) >= n_targets``: fraction
+          of episodes where the running coverage-event total ever
+          crossed ``n_targets``. Empirically targets get re-covered
+          (200-step Phase 5b eval episodes show > n_targets cover
+          events with only n_targets unique targets), so cumsum is the
+          intended training/eval signal — not "distinct targets ever
+          covered". See :meth:`Scenario.success_predicate`.
+        - **M6 coverage_progress** = ``cumsum.max(dim=time).clamp(max=
+          n_targets) / n_targets`` — clamped to [0, 1] matching
+          rendezvous_comm's ``coverage_progress``.
+
+        Phase 11 / 5a / 3 history: a brief Phase 3 attempt removed
+        the cumsum under the theory that VMAS's teleport-on-cover
+        meant each unique target contributes exactly 1 step.
+        Empirically that's false (re-coverage happens), and removing
+        the cumsum broke rendezvous_comm parity. Reverted with this
+        diff. The mystery of WHY targets get re-covered (teleport to
+        outside arena should prevent it) is open but doesn't change
+        the metric — what matters is parity with rendezvous_comm's
+        reported numbers.
+        """
         for group in group_map:
             key = ("next", group, "info", "targets_covered")
             if key in rollout_td.keys(include_nested=True):
@@ -384,8 +424,8 @@ class BenchmarlBaseAdapter:
                     tc_per_env = tc[:, :, 0]
                 else:
                     tc_per_env = tc.unsqueeze(0)
-                # Cumsum: rendezvous_comm pattern — per-step *new* covered count
-                # → cumulative total. NOT from `terminated` (project memory).
+                # Cumsum across time → cumulative coverage-event total per
+                # step. Matches rendezvous_comm/src/metrics.py:109.
                 out.append(tc_per_env.cumsum(dim=1))
                 return
 
@@ -412,6 +452,52 @@ def _long_format_enabled(cfg: ExperimentConfig) -> bool:
     if cfg.runtime is None:
         return False
     return bool(cfg.runtime.storage.params.get("long_format", False))
+
+
+def prune_intermediate_checkpoints_keep_latest(run_dir: Path) -> None:
+    """Delete every ``checkpoint_*.pt`` except the highest-frame-count one.
+
+    Called after a training step completes successfully and the cfg flag
+    ``cfg.training.delete_intermediate_checkpoints_on_success`` is true.
+    The latest checkpoint stays so Streamlit's video-regen / replay-eval
+    flows keep working; intermediates get dropped — Phase 5a kept 17 ×
+    107 MiB = 1.83 GiB on S3 (LERO YAML had keep_checkpoints_num=1000);
+    with this prune the final-training footprint drops to ~107 MiB.
+
+    Walks ``run_dir/output/benchmarl/*/checkpoints/`` looking for files
+    matching ``checkpoint_<frames>.pt`` (BenchMARL's convention). Picks
+    the highest-numbered one to keep and unlinks the rest. No-op when
+    no matches found. Failures on individual files are logged at WARN
+    level rather than raising — partial cleanup is preferable to a
+    failed run on the way out.
+    """
+    benchmarl_dir = run_dir / "output" / "benchmarl"
+    if not benchmarl_dir.is_dir():
+        return
+    log = logging.getLogger(__name__)
+    for exp_dir in benchmarl_dir.iterdir():
+        ckpt_dir = exp_dir / "checkpoints"
+        if not ckpt_dir.is_dir():
+            continue
+        snapshots: list[tuple[int, Path]] = []
+        for p in ckpt_dir.glob("checkpoint_*.pt"):
+            try:
+                frames = int(p.stem.rsplit("_", 1)[-1])
+            except ValueError:
+                continue
+            snapshots.append((frames, p))
+        if not snapshots:
+            continue
+        snapshots.sort()
+        for _, path in snapshots[:-1]:
+            try:
+                path.unlink()
+            except OSError as exc:  # pylint: disable=broad-except
+                log.warning(f"failed to delete intermediate {path}: {exc}")
+        log.info(
+            f"pruned intermediate checkpoints under {ckpt_dir} "
+            f"(kept {snapshots[-1][1].name}, deleted {len(snapshots) - 1})"
+        )
 
 
 def _record_video_safe(label: str, **record_kwargs: Any) -> None:

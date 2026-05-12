@@ -109,6 +109,21 @@ class InitialAndFeedbackComposer:
         # candidates-results / best-idx pair feedback.j2 needs.
         ctx: dict[str, Any] = dict(task_params)
         ctx.setdefault("n_candidates", self._n_candidates)
+        # ``obs_lidar_agents`` is a Jinja-only schema-line fragment that
+        # interpolates the agent-lidar entry into the obs_state schema
+        # block — it is NOT a scenario param. Derive it from the real
+        # task knobs so YAMLs don't need to repeat prompt-formatting
+        # noise under ``scenario.params``.
+        if "obs_lidar_agents" not in ctx:
+            use_agent_lidar = bool(ctx.get("use_agent_lidar"))
+            n_rays = ctx.get("n_lidar_rays_agents")
+            ctx["obs_lidar_agents"] = (
+                f'"lidar_agents":    # [batch, {n_rays}] — distance to nearest '
+                "AGENT in each ray direction (0=touching, larger=farther, "
+                "max=nothing detected)"
+                if use_agent_lidar
+                else ""
+            )
 
         # System + initial_user are always sent (the LLM rebuilds context
         # from scratch each iteration; rendezvous_comm pattern).

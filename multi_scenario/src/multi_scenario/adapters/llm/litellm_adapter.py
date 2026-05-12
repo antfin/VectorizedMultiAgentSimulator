@@ -112,11 +112,14 @@ class LiteLlmClient:
         except Exception:  # pylint: disable=broad-except
             total_cost_usd = 0.0
         usage = response.get("usage") or {}
-        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
-        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
-        # Some providers expose "reasoning_tokens" inside completion_tokens_details
-        details = usage.get("completion_tokens_details") or {}
-        reasoning_tokens = int(details.get("reasoning_tokens", 0) or 0)
+        prompt_tokens = int(_field(usage, "prompt_tokens", 0))
+        completion_tokens = int(_field(usage, "completion_tokens", 0))
+        # Some providers expose "reasoning_tokens" inside
+        # completion_tokens_details. LiteLLM returns this as either a
+        # plain dict OR a Pydantic ``CompletionTokensDetailsWrapper``
+        # depending on the provider; ``_field`` handles both.
+        details = _field(usage, "completion_tokens_details", None) or {}
+        reasoning_tokens = int(_field(details, "reasoning_tokens", 0))
         system_fingerprint = response.get("system_fingerprint")
 
         out: list[LlmCompletion] = []
@@ -140,6 +143,24 @@ class LiteLlmClient:
                 )
             )
         return out
+
+
+def _field(container: Any, name: str, default: Any) -> Any:
+    """Read a field from a dict-or-Pydantic-model with a default.
+
+    LiteLLM's response shape mixes plain dicts and Pydantic models
+    (``CompletionTokensDetailsWrapper`` etc.); this normalises lookups
+    so the adapter doesn't crash when the upstream wraps another field.
+    Returns ``default`` when ``container`` is None, the field is
+    missing, or the field's value is None.
+    """
+    if container is None:
+        return default
+    if isinstance(container, dict):
+        value = container.get(name)
+        return default if value is None else value
+    value = getattr(container, name, None)
+    return default if value is None else value
 
 
 _API_KEY_ENV_VARS = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OVH_API_KEY")
